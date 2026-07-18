@@ -1,0 +1,67 @@
+{
+  "name": "artisanpack-ui/bookings",
+  "description": "Bookings package for the ArtisanPack UI ecosystem.",
+  "type": "library",
+  "license": "GPL-3.0-or-later",
+  "version": "1.0.0",
+  "autoload": {
+    "psr-4": {
+      "ArtisanPackUI\\Bookings\\": "src/"
+    },
+    "files": [
+      "src/helpers.php"
+    ]
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Tests\\": "tests/"
+    }
+  },
+  "authors": [
+    {
+      "name": "Jacob Martella",
+      "email": "me@jacobmartella.com"
+    }
+  ],
+  "require": {
+    "php": "^8.2",
+    "illuminate/support": "^10.0|^11.0|^12.0",
+    "artisanpack-ui/core": "^1.0"
+  },
+  "require-dev": {
+    "pestphp/pest": "^3.8",
+    "pestphp/pest-plugin-laravel": "^3.2",
+    "artisanpack-ui/code-style": "^1.1",
+    "artisanpack-ui/code-style-pint": "^1.1",
+    "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
+    "laravel/pint": "^1.26",
+    "orchestra/testbench": "^10.2",
+    "friendsofphp/php-cs-fixer": "^3.75"
+  },
+  "scripts": {
+    "lint": [
+      "./vendor/bin/php-cs-fixer fix --dry-run --diff",
+      "./vendor/bin/phpcs"
+    ],
+    "fix": "./vendor/bin/php-cs-fixer fix",
+    "cs": "./vendor/bin/phpcs",
+    "cs:fix": "./vendor/bin/phpcbf",
+    "test": "./vendor/bin/pest"
+  },
+  "config": {
+    "allow-plugins": {
+      "pestphp/pest-plugin": true,
+      "dealerdirect/phpcodesniffer-composer-installer": true
+    }
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "ArtisanPackUI\\Bookings\\BookingsServiceProvider"
+      ],
+      "aliases": {
+        "Bookings": "ArtisanPackUI\\Bookings\\Facades\\Bookings"
+      }
+    }
+  }
+}
