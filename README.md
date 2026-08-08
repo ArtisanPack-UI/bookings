@@ -121,6 +121,35 @@ composer lint      # php-cs-fixer --dry-run + pint --test + phpcs
 composer fix       # pint, then php-cs-fixer
 ```
 
+### Testing
+
+Tests run on Pest 3 and Orchestra Testbench. `Tests\TestCase` registers the
+core, hooks, and bookings providers and points the application at an in-memory
+SQLite database, so `composer test` needs nothing installed beyond Composer
+dependencies. Model factories resolve to
+`ArtisanPackUI\Bookings\Database\Factories\<Model>Factory`.
+
+A few tests cannot run on SQLite. Booking creation has to be race-safe — two
+customers must not both take the last slot — and the guard is a named advisory
+lock: MySQL's `GET_LOCK`, Postgres' `pg_advisory_xact_lock`. Those tests use
+`Tests\Concerns\TestsWithMysql` or `TestsWithPostgres` and carry a matching
+group:
+
+```bash
+composer test:sqlite     # everything that runs in memory
+composer test:mysql      # the mysql group, against a real MySQL server
+composer test:postgres   # the postgres group, against a real Postgres server
+
+DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=bookings_test \
+DB_USERNAME=root DB_PASSWORD=secret composer test:mysql
+```
+
+When the server is unreachable those tests skip, so a plain `composer test` is
+green without one running. **CI must not accept that skip** — a skipped lock
+test reads as "race-safety verified" while verifying nothing — so the
+`test-mysql` and `test-postgres` jobs in `.github/workflows/ci.yml` set
+`BOOKINGS_REQUIRE_EXTERNAL_DB=1`, which turns the skip into a failure.
+
 Both formatters come from `artisanpack-ui/code-style-pint`: `pint.json` is
 generated from its `ArtisanPackUIPreset`, and `.php-cs-fixer.dist.php` adds the
 WordPress-style spacing its custom fixers provide — `if ( $condition )`,

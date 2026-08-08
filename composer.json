@@ -14,7 +14,8 @@
   ],
   "autoload": {
     "psr-4": {
-      "ArtisanPackUI\\Bookings\\": "src/"
+      "ArtisanPackUI\\Bookings\\": "src/",
+      "ArtisanPackUI\\Bookings\\Database\\Factories\\": "database/factories/"
     },
     "files": [
       "src/helpers.php"
@@ -77,7 +78,10 @@
     ],
     "cs": "./vendor/bin/phpcs",
     "cs:fix": "./vendor/bin/phpcbf",
-    "test": "./vendor/bin/pest"
+    "test": "./vendor/bin/pest",
+    "test:sqlite": "./vendor/bin/pest --exclude-group=mysql,postgres",
+    "test:mysql": "./vendor/bin/pest --group=mysql",
+    "test:postgres": "./vendor/bin/pest --group=postgres"
   },
   "config": {
     "allow-plugins": {
