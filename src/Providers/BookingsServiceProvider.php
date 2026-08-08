@@ -57,10 +57,14 @@ class BookingsServiceProvider extends ServiceProvider
      *
      * The configuration publishes to `config/artisanpack/bookings.php` so that
      * every ArtisanPack UI package an application installs keeps its config in
-     * one directory rather than scattering files across `config/`. Laravel
-     * derives the config key from that path, which is why the defaults are
-     * merged under `artisanpack.bookings` rather than a bare `bookings` — a
-     * published file has to land on the same key the package reads from.
+     * one directory rather than scattering files across `config/`.
+     *
+     * Laravel's config loader prefixes a key with the nested directory it found
+     * the file in (`LoadConfiguration::getNestedDirectory`), so a file published
+     * to that path loads under `artisanpack.bookings`. `mergeConfigFrom` takes
+     * its key explicitly, and register() passes that same key so the two agree —
+     * merging under a bare `bookings` would leave an application editing a
+     * published file this package never reads.
      *
      * @since 1.0.0
      *

@@ -9,8 +9,12 @@ availability, bookings, calendar sync, and a public booking widget.
 
 ## Requirements
 
-- PHP 8.2+
+- PHP 8.2+ (Laravel 13 itself requires PHP 8.3+)
 - Laravel 10, 11, 12, or 13
+
+The two constraints resolve together rather than conflicting: on PHP 8.2 Composer
+installs Laravel 12 or below, and Laravel 13 becomes available once the host
+application is on PHP 8.3+.
 
 ## Installation
 
@@ -25,8 +29,16 @@ to change the defaults:
 php artisan vendor:publish --tag=bookings-config
 ```
 
-That writes `config/artisanpack/bookings.php`, which is also the key the package
-reads from — every setting is available as `config( 'artisanpack.bookings.*' )`.
+That writes `config/artisanpack/bookings.php`. Laravel's config loader walks
+nested directories under `config/` and prefixes the key with the directory name,
+so that file loads under `artisanpack.bookings` — the same key the package reads
+from. Individual settings are reached with dot notation:
+
+```php
+config( 'artisanpack.bookings.slot_interval' );        // 15
+config( 'artisanpack.bookings.admin.gate' );           // 'bookings.manage'
+config( 'artisanpack.bookings' );                      // the whole array
+```
 
 ## Configuration
 

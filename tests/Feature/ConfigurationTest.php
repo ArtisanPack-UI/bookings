@@ -2,6 +2,26 @@
 
 declare( strict_types=1 );
 
+use ArtisanPackUI\Bookings\Providers\BookingsServiceProvider;
+use Illuminate\Support\ServiceProvider;
+
+it( 'merges under the key Laravel derives from the publish destination', function (): void {
+    // Laravel's config loader prefixes a key with the nested directory it found
+    // the file in, so config/artisanpack/bookings.php loads as
+    // "artisanpack.bookings". mergeConfigFrom takes its key explicitly, so the
+    // two only line up because register() passes the matching string — this
+    // asserts they still do, rather than trusting that they do.
+    $destination = array_values(
+        ServiceProvider::pathsToPublish( BookingsServiceProvider::class, 'bookings-config' ),
+    )[ 0 ];
+
+    $relative   = str_replace( config_path() . DIRECTORY_SEPARATOR, '', $destination );
+    $derivedKey = str_replace( DIRECTORY_SEPARATOR, '.', substr( $relative, 0, -strlen( '.php' ) ) );
+
+    expect( $derivedKey )->toBe( 'artisanpack.bookings' )
+        ->and( config( $derivedKey ) )->toBeArray()->not->toBeEmpty();
+} );
+
 it( 'merges the package defaults under the artisanpack.bookings key', function (): void {
     expect( config( 'artisanpack.bookings' ) )->toBeArray()->not->toBeEmpty();
 } );
