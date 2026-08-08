@@ -4,25 +4,25 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "7ff2bf217785b629310ac1135e03ef2a",
+    "content-hash": "eb5d2d09b76804e3569de400b23286be",
     "packages": [
         {
             "name": "artisanpack-ui/core",
-            "version": "1.2.0",
+            "version": "1.3.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/ArtisanPack-UI/core.git",
-                "reference": "bb7055c4b250612d987398f990b5537fbc28865b"
+                "reference": "2e18d700745aa331683fa5c6afb7864fe355798b"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/ArtisanPack-UI/core/zipball/bb7055c4b250612d987398f990b5537fbc28865b",
-                "reference": "bb7055c4b250612d987398f990b5537fbc28865b",
+                "url": "https://api.github.com/repos/ArtisanPack-UI/core/zipball/2e18d700745aa331683fa5c6afb7864fe355798b",
+                "reference": "2e18d700745aa331683fa5c6afb7864fe355798b",
                 "shasum": ""
             },
             "require": {
                 "composer/semver": "^3.0",
-                "illuminate/support": "^11.0|^12.0|^13.0",
+                "illuminate/support": "^12.0|^13.0",
                 "laravel/prompts": "^0.3",
                 "php": "^8.2"
             },
@@ -32,10 +32,13 @@
                 "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
                 "friendsofphp/php-cs-fixer": "^3.75",
                 "laravel/pint": "^1.27",
-                "orchestra/testbench": "^9.0|^10.0|^11.0",
+                "orchestra/testbench": "^10.0|^11.0",
                 "pestphp/pest": "^3.8|^4.0",
                 "pestphp/pest-plugin-laravel": "^3.1|^4.0",
                 "squizlabs/php_codesniffer": "3.11.3"
+            },
+            "suggest": {
+                "artisanpack-ui/hooks": "Required for HookSiteResolver to resolve the current site through the ap.cmsFramework.currentSite.resolve filter."
             },
             "type": "library",
             "extra": {
@@ -43,6 +46,7 @@
                     "aliases": {
                         "Core": "ArtisanPackUI\\Core\\Facades\\Core",
                         "ArtisanPackLog": "ArtisanPackUI\\Core\\Facades\\ArtisanPackLog",
+                        "ArtisanPackSite": "ArtisanPackUI\\Core\\Facades\\ArtisanPackSite",
                         "ArtisanPackConfig": "ArtisanPackUI\\Core\\Facades\\ArtisanPackConfig"
                     },
                     "providers": [
@@ -71,9 +75,9 @@
             "description": "Supplies the core functionality for ArtisanPack UI that needs to be shared across all packages.",
             "support": {
                 "issues": "https://github.com/ArtisanPack-UI/core/issues",
-                "source": "https://github.com/ArtisanPack-UI/core/tree/v1.2.0"
+                "source": "https://github.com/ArtisanPack-UI/core/tree/v1.3.0"
             },
-            "time": "2026-05-24T02:53:50+00:00"
+            "time": "2026-08-08T17:13:56+00:00"
         },
         {
             "name": "artisanpack-ui/hooks",

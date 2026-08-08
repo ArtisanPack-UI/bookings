@@ -59,8 +59,15 @@ it( 'ships the config keys the package plan defines', function ( string $key ): 
     'admin',
     'public',
     'retention',
-    'multi_tenant',
 ] );
+
+it( 'leaves site scoping to the shared core configuration', function (): void {
+    // Two packages configuring tenancy separately is how one request ends up
+    // being site 2 for analytics while being site 1 for bookings. This package
+    // ships no block of its own and reads artisanpack.core.multi_tenant.
+    expect( config()->has( 'artisanpack.bookings.multi_tenant' ) )->toBeFalse()
+        ->and( config()->has( 'artisanpack.core.multi_tenant.enabled' ) )->toBeTrue();
+} );
 
 it( 'reads the defaults from the file the publish tag copies', function (): void {
     $published = require __DIR__ . '/../../config/artisanpack/bookings.php';

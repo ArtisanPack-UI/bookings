@@ -13,14 +13,15 @@ declare( strict_types=1 );
 
 namespace Tests\Fixtures;
 
-use ArtisanPackUI\Bookings\Contracts\SiteResolver;
+use ArtisanPackUI\Core\Contracts\SiteResolver;
 
 /**
  * A resolver that always reports the same site.
  *
  * Stands in for the application-supplied resolver an operator configures
- * through `multi_tenant.site_resolver`. The default is what the container
- * builds when the class is named in configuration and given no arguments.
+ * through `artisanpack.core.multi_tenant.resolvers`. The default is what the
+ * container builds when the class is named in configuration and given no
+ * arguments.
  *
  * @since 1.0.0
  */
@@ -29,9 +30,9 @@ class FixedSiteResolver implements SiteResolver
     /**
      * The site this resolver reports.
      *
-     * @var int|null
+     * @var int|string|null
      */
-    protected ?int $siteId;
+    protected int|string|null $siteId;
 
     /**
      * Constructs the resolver.
@@ -44,9 +45,9 @@ class FixedSiteResolver implements SiteResolver
      *
      * @since 1.0.0
      *
-     * @param  int|null  $siteId  The site to report. Defaults to site 1.
+     * @param  int|string|null  $siteId  The site to report. Defaults to site 1.
      */
-    public function __construct( ?int $siteId = 1 )
+    public function __construct( int|string|null $siteId = 1 )
     {
         $this->siteId = $siteId;
     }
@@ -56,9 +57,9 @@ class FixedSiteResolver implements SiteResolver
      *
      * @since 1.0.0
      *
-     * @return int|null The configured site identifier.
+     * @return int|string|null The configured site identifier.
      */
-    public function currentSiteId(): ?int
+    public function currentSiteId(): int|string|null
     {
         return $this->siteId;
     }

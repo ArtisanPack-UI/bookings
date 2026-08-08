@@ -53,12 +53,37 @@ The published file documents every key inline. The ones worth knowing up front:
 | `calendar.drivers` | all disabled | Google / Microsoft / Apple sync, opt-in per driver |
 | `admin.route_prefix` | `bookings-admin` | Prefix for the staff-facing routes |
 | `public.route_prefix` | `bookings` | Prefix for the customer-facing routes |
-| `multi_tenant.enabled` | `false` | Scope every query to a resolved site |
 
 Environment variables cover the settings most likely to differ per environment:
 `BOOKING_DEFAULT_TIMEZONE`, `BOOKING_SLOT_INTERVAL`, `BOOKING_SMS_DRIVER`,
 `BOOKING_GOOGLE_ENABLED`, `BOOKING_MICROSOFT_ENABLED`, `BOOKING_APPLE_ENABLED`,
-`BOOKING_PRUNE_DAYS`, and `BOOKING_MULTI_TENANT`.
+and `BOOKING_PRUNE_DAYS`.
+
+## Multi-site
+
+Site scoping is configured once for the whole ecosystem, in
+`artisanpack.core.multi_tenant` — not in this package's config. Set
+`ARTISANPACK_MULTI_TENANT_ENABLED=true` (or the `enabled` key) to switch it on,
+and list resolvers under `artisanpack.core.multi_tenant.resolvers`. Every owned
+table carries a nullable `site_id`, and models using
+`Models\Concerns\BelongsToSite` filter on whatever
+`ArtisanPackUI\Core\MultiTenancy\SiteContext` reports — so a request cannot be
+site 2 for one ArtisanPack package while being site 1 for this one.
+
+Work that has to target or span a specific site pins one explicitly, which is
+what a console command looping over sites needs:
+
+```php
+use ArtisanPackUI\Core\Facades\ArtisanPackSite;
+
+ArtisanPackSite::forSite( $siteId, fn () => /* every bookings query answers for $siteId */ );
+ArtisanPackSite::withoutSite( fn () => /* unscoped, for maintenance work */ );
+```
+
+Enabling scoping on an installation that already holds bookings needs `site_id`
+backfilled first: rows written while it was off carry a null `site_id`, and the
+scope matches on equality, so they leave every site-scoped query the moment a
+site resolves. `acrossAllSites()` still sees them.
 
 ## Usage
 
@@ -96,6 +121,35 @@ composer test      # Pest
 composer lint      # php-cs-fixer --dry-run + pint --test + phpcs
 composer fix       # pint, then php-cs-fixer
 ```
+
+### Testing
+
+Tests run on Pest 3 and Orchestra Testbench. `Tests\TestCase` registers the
+core, hooks, and bookings providers and points the application at an in-memory
+SQLite database, so `composer test` needs nothing installed beyond Composer
+dependencies. Model factories resolve to
+`ArtisanPackUI\Bookings\Database\Factories\<Model>Factory`.
+
+A few tests cannot run on SQLite. Booking creation has to be race-safe — two
+customers must not both take the last slot — and the guard is a named advisory
+lock: MySQL's `GET_LOCK`, Postgres' `pg_advisory_xact_lock`. Those tests use
+`Tests\Concerns\TestsWithMysql` or `TestsWithPostgres` and carry a matching
+group:
+
+```bash
+composer test:sqlite     # everything that runs in memory
+composer test:mysql      # the mysql group, against a real MySQL server
+composer test:postgres   # the postgres group, against a real Postgres server
+
+DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=bookings_test \
+DB_USERNAME=root DB_PASSWORD=secret composer test:mysql
+```
+
+When the server is unreachable those tests skip, so a plain `composer test` is
+green without one running. **CI must not accept that skip** — a skipped lock
+test reads as "race-safety verified" while verifying nothing — so the
+`test-mysql` and `test-postgres` jobs in `.github/workflows/ci.yml` set
+`BOOKINGS_REQUIRE_EXTERNAL_DB=1`, which turns the skip into a failure.
 
 Both formatters come from `artisanpack-ui/code-style-pint`: `pint.json` is
 generated from its `ArtisanPackUIPreset`, and `.php-cs-fixer.dist.php` adds the

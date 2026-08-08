@@ -2,16 +2,16 @@
 
 declare( strict_types=1 );
 
-use ArtisanPackUI\Bookings\Contracts\SiteResolver;
 use ArtisanPackUI\Bookings\Models\Scopes\BelongsToSiteScope;
-use ArtisanPackUI\Bookings\MultiTenancy\HookSiteResolver;
-use ArtisanPackUI\Bookings\MultiTenancy\NullSiteResolver;
-use Illuminate\Container\Container;
+use ArtisanPackUI\Core\Contracts\SiteResolver;
+use ArtisanPackUI\Core\MultiTenancy\NullSiteResolver;
+use ArtisanPackUI\Core\MultiTenancy\SiteContext;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Tests\Fixtures\FixedSiteResolver;
 use Tests\Fixtures\SiteScopedBooking;
+use Tests\Fixtures\StringSiteScopedBooking;
 
 beforeEach( function (): void {
     Schema::create( 'site_scoped_bookings', function ( Blueprint $table ): void {
@@ -29,118 +29,49 @@ beforeEach( function (): void {
     }
 } );
 
-describe( 'the site resolver binding', function (): void {
-    it( 'defaults to the hook-backed resolver', function (): void {
-        expect( app( SiteResolver::class ) )->toBeInstanceOf( HookSiteResolver::class );
+describe( 'the shared site context', function (): void {
+    it( 'is the context this package scopes by', function (): void {
+        // Core owns resolution for the whole ecosystem, so the package binds
+        // no contract of its own. If this binding ever stops being core's, two
+        // packages can disagree about which site a request is for.
+        expect( app( SiteContext::class ) )->toBeInstanceOf( SiteContext::class )
+            ->and( app( SiteContext::class ) )->toBe( app( SiteContext::class ) );
     } );
 
-    it( 'uses the resolver named in configuration', function (): void {
-        config()->set( 'artisanpack.bookings.multi_tenant.site_resolver', FixedSiteResolver::class );
+    it( 'answers the enabled question on this package\'s behalf', function (): void {
+        app()->instance( SiteResolver::class, new FixedSiteResolver( 2 ) );
+        app()->instance( SiteContext::class, new SiteContext( app( SiteResolver::class ), app( 'config' ) ) );
 
-        expect( app( SiteResolver::class ) )->toBeInstanceOf( FixedSiteResolver::class );
-    } );
-
-    it( 'ignores an empty resolver setting', function (): void {
-        config()->set( 'artisanpack.bookings.multi_tenant.site_resolver', '' );
-
-        expect( app( SiteResolver::class ) )->toBeInstanceOf( HookSiteResolver::class );
-    } );
-
-    it( 'resolves the binding as a singleton', function (): void {
-        expect( app( SiteResolver::class ) )->toBe( app( SiteResolver::class ) );
-    } );
-} );
-
-describe( 'the hook-backed resolver', function (): void {
-    it( 'reports no site when nothing answers the filter', function (): void {
-        expect( ( new HookSiteResolver() )->currentSiteId() )->toBeNull();
-    } );
-
-    it( 'returns the site a listener supplies', function (): void {
-        addFilter( HookSiteResolver::HOOK, fn (): int => 7 );
-
-        expect( ( new HookSiteResolver() )->currentSiteId() )->toBe( 7 );
-    } );
-
-    it( 'accepts a numeric string identifier', function (): void {
-        addFilter( HookSiteResolver::HOOK, fn (): string => '7' );
-
-        expect( ( new HookSiteResolver() )->currentSiteId() )->toBe( 7 );
-    } );
-
-    it( 'rejects a value it cannot read as a site identifier', function ( mixed $resolved ): void {
-        // Coercing an unusable value to null would silently unscope every query
-        // and leak one site's bookings into another, so it has to fail loudly.
-        addFilter( HookSiteResolver::HOOK, fn (): mixed => $resolved );
-
-        expect( fn () => ( new HookSiteResolver() )->currentSiteId() )
-            ->toThrow( UnexpectedValueException::class );
-    } )->with( [
-        'array'              => [ [ 'site' => 7 ] ],
-        'non-numeric string' => [ 'seven' ],
-        'empty string'       => [ '' ],
-        'float'              => [ 7.5 ],
-        'boolean'            => [ true ],
-        'object'             => [ new stdClass() ],
-    ] );
-
-    it( 'reflects a site that changes mid-process', function (): void {
-        $siteId = 1;
-
-        addFilter( HookSiteResolver::HOOK, function () use ( &$siteId ): int {
-            return $siteId;
-        } );
-
-        $resolver = new HookSiteResolver();
-
-        expect( $resolver->currentSiteId() )->toBe( 1 );
-
-        $siteId = 2;
-
-        expect( $resolver->currentSiteId() )->toBe( 2 );
+        expect( config( 'artisanpack.core.multi_tenant.enabled' ) )->toBeFalse()
+            ->and( BelongsToSiteScope::currentSiteId() )->toBeNull();
     } );
 } );
 
 describe( 'the site scope', function (): void {
-    it( 'leaves every row visible while multi-tenancy is disabled', function (): void {
+    it( 'leaves every row visible while site scoping is disabled', function (): void {
         app()->instance( SiteResolver::class, new FixedSiteResolver( 1 ) );
+        app()->instance( SiteContext::class, new SiteContext( app( SiteResolver::class ), app( 'config' ) ) );
 
-        expect( config( 'artisanpack.bookings.multi_tenant.enabled' ) )->toBeFalse()
+        expect( config( 'artisanpack.core.multi_tenant.enabled' ) )->toBeFalse()
             ->and( SiteScopedBooking::count() )->toBe( 3 );
     } );
 
-    it( 'reports no site when no resolver is bound', function (): void {
-        // Tenancy is on and configuration is readable, so the two earlier
-        // guards pass and this genuinely lands on the unbound-resolver branch.
-        // Without the config repository the scope would bail one check sooner
-        // and the branch would go untested while still looking covered.
-        $app    = app();
-        $config = $app->make( 'config' );
-        $config->set( 'artisanpack.bookings.multi_tenant.enabled', true );
+    it( 'reports no site when the shared context is not bound', function (): void {
+        // An application that somehow runs this package without core's
+        // provider gets an inert scope rather than a container trying — and
+        // failing — to build a SiteContext out of nothing.
+        config()->set( 'artisanpack.core.multi_tenant.enabled', true );
+        app()->offsetUnset( SiteContext::class );
 
-        $bare = new Container();
-        $bare->instance( 'config', $config );
-        Container::setInstance( $bare );
-
-        try {
-            expect( $bare->bound( SiteResolver::class ) )->toBeFalse()
-                ->and( BelongsToSiteScope::currentSiteId() )->toBeNull();
-        } finally {
-            Container::setInstance( $app );
-        }
-    } );
-
-    it( 'leaves every row visible when no resolver is bound', function (): void {
-        config()->set( 'artisanpack.bookings.multi_tenant.enabled', true );
-        app()->offsetUnset( SiteResolver::class );
-
-        expect( app()->bound( SiteResolver::class ) )->toBeFalse()
+        expect( app()->bound( SiteContext::class ) )->toBeFalse()
+            ->and( BelongsToSiteScope::currentSiteId() )->toBeNull()
             ->and( SiteScopedBooking::count() )->toBe( 3 );
     } );
 
     it( 'leaves every row visible when the resolver reports no site', function (): void {
-        config()->set( 'artisanpack.bookings.multi_tenant.enabled', true );
+        config()->set( 'artisanpack.core.multi_tenant.enabled', true );
         app()->instance( SiteResolver::class, new NullSiteResolver() );
+        app()->instance( SiteContext::class, new SiteContext( app( SiteResolver::class ), app( 'config' ) ) );
 
         expect( SiteScopedBooking::count() )->toBe( 3 );
     } );
@@ -158,6 +89,43 @@ describe( 'the site scope', function (): void {
         scopeToSite( 1 );
 
         expect( SiteScopedBooking::query()->pluck( 'reference' )->all() )->toBe( [ 'site-one' ] );
+    } );
+
+    it( 'scopes on a non-numeric string identifier', function (): void {
+        // Core's contract returns int|string|null because other packages key
+        // on non-integer identifiers, so the scope has to carry a string
+        // through to the query rather than assume an int. The identifier is
+        // deliberately not numeric: seeding 42 and resolving '42' would pass on
+        // the database's own coercion whether or not strings worked.
+        Schema::create( 'string_site_scoped_bookings', function ( Blueprint $table ): void {
+            $table->increments( 'id' );
+            $table->string( 'site_id' )->nullable()->index();
+            $table->string( 'reference' );
+        } );
+
+        foreach ( [ [ 'site-alpha', 'alpha-booking' ], [ 'site-beta', 'beta-booking' ] ] as [ $siteId, $reference ] ) {
+            StringSiteScopedBooking::withoutGlobalScope( BelongsToSiteScope::class )
+                ->forceCreate( [ 'site_id' => $siteId, 'reference' => $reference ] );
+        }
+
+        scopeToSite( 'site-alpha' );
+
+        expect( StringSiteScopedBooking::query()->pluck( 'reference' )->all() )->toBe( [ 'alpha-booking' ] )
+            ->and( StringSiteScopedBooking::acrossAllSites()->count() )->toBe( 2 );
+    } );
+
+    it( 'stamps a new record with a non-numeric string identifier', function (): void {
+        Schema::create( 'string_site_scoped_bookings', function ( Blueprint $table ): void {
+            $table->increments( 'id' );
+            $table->string( 'site_id' )->nullable()->index();
+            $table->string( 'reference' );
+        } );
+
+        scopeToSite( 'site-beta' );
+
+        $booking = StringSiteScopedBooking::create( [ 'reference' => 'fresh' ] );
+
+        expect( $booking->site_id )->toBe( 'site-beta' );
     } );
 
     it( 'scopes a find by primary key', function (): void {
@@ -181,6 +149,54 @@ describe( 'the site scope', function (): void {
         scopeToSite( 2 );
 
         expect( SiteScopedBooking::acrossAllSites()->count() )->toBe( 3 );
+    } );
+} );
+
+describe( 'a site pinned through the shared context', function (): void {
+    it( 'scopes this package\'s queries', function (): void {
+        // This is what a console command looping over sites depends on: pin a
+        // site, run the work, and every bookings query answers for that site.
+        scopeToSite( 1 );
+
+        $seen = app( SiteContext::class )->forSite( 2, function (): array {
+            return SiteScopedBooking::query()->pluck( 'reference' )->all();
+        } );
+
+        expect( $seen )->toBe( [ 'site-two' ] )
+            ->and( SiteScopedBooking::query()->pluck( 'reference' )->all() )->toBe( [ 'site-one' ] );
+    } );
+
+    it( 'wins even when site scoping is switched off', function (): void {
+        // forSite() is an unambiguous instruction from the calling code, so it
+        // does not wait on the enabled flag — a maintenance command can scope
+        // to one site on a single-tenant install.
+        expect( config( 'artisanpack.core.multi_tenant.enabled' ) )->toBeFalse();
+
+        $seen = app( SiteContext::class )->forSite( 2, function (): array {
+            return SiteScopedBooking::query()->pluck( 'reference' )->all();
+        } );
+
+        expect( $seen )->toBe( [ 'site-two' ] );
+    } );
+
+    it( 'is released again when the callback finishes', function (): void {
+        scopeToSite( 1 );
+
+        app( SiteContext::class )->withoutSite( function (): void {
+            expect( SiteScopedBooking::count() )->toBe( 3 );
+        } );
+
+        expect( SiteScopedBooking::query()->pluck( 'reference' )->all() )->toBe( [ 'site-one' ] );
+    } );
+
+    it( 'stamps a new record with the pinned site', function (): void {
+        scopeToSite( 1 );
+
+        $booking = app( SiteContext::class )->forSite( 2, function (): SiteScopedBooking {
+            return SiteScopedBooking::create( [ 'reference' => 'pinned' ] );
+        } );
+
+        expect( $booking->site_id )->toBe( 2 );
     } );
 } );
 
