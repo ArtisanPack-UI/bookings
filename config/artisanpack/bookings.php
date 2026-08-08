@@ -233,7 +233,8 @@ return [
     |
     | Turning it on later is not free. Rows written while it was off carry a
     | null site_id, and the scope matches on equality — so the moment a site
-    | resolves, every one of those rows drops out of every query at once.
+    | resolves, every one of those rows drops out of every site-scoped query at
+    | once — only acrossAllSites() still sees them.
     | Backfill site_id before enabling this on an installation that already has
     | bookings in it.
     |

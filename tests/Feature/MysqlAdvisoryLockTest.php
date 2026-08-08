@@ -41,8 +41,13 @@ it( 'lets the next waiter take the lock once it is released', function (): void 
     $lockName  = 'bookings:harness:' . uniqid();
 
     try {
-        $holder->selectOne( 'select get_lock(?, 0) as acquired', [ $lockName ] );
-        $holder->selectOne( 'select release_lock(?) as released', [ $lockName ] );
+        // Assert the holder's half of the lifecycle rather than assuming it:
+        // if GET_LOCK quietly failed, the contender would be taking a name
+        // nobody ever held and this test would pass without proving anything.
+        expect( (int) $holder->selectOne( 'select get_lock(?, 0) as acquired', [ $lockName ] )->acquired )
+            ->toBe( 1 );
+        expect( (int) $holder->selectOne( 'select release_lock(?) as released', [ $lockName ] )->released )
+            ->toBe( 1 );
 
         expect( (int) $contender->selectOne( 'select get_lock(?, 0) as acquired', [ $lockName ] )->acquired )
             ->toBe( 1 );

@@ -11,6 +11,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Tests\Fixtures\FixedSiteResolver;
 use Tests\Fixtures\SiteScopedBooking;
+use Tests\Fixtures\StringSiteScopedBooking;
 
 beforeEach( function (): void {
     Schema::create( 'site_scoped_bookings', function ( Blueprint $table ): void {
@@ -90,16 +91,41 @@ describe( 'the site scope', function (): void {
         expect( SiteScopedBooking::query()->pluck( 'reference' )->all() )->toBe( [ 'site-one' ] );
     } );
 
-    it( 'scopes on a string identifier as readily as an integer one', function (): void {
+    it( 'scopes on a non-numeric string identifier', function (): void {
         // Core's contract returns int|string|null because other packages key
         // on non-integer identifiers, so the scope has to carry a string
-        // through to the query rather than assume an int.
-        SiteScopedBooking::withoutGlobalScope( BelongsToSiteScope::class )
-            ->forceCreate( [ 'site_id' => 42, 'reference' => 'string-keyed' ] );
+        // through to the query rather than assume an int. The identifier is
+        // deliberately not numeric: seeding 42 and resolving '42' would pass on
+        // the database's own coercion whether or not strings worked.
+        Schema::create( 'string_site_scoped_bookings', function ( Blueprint $table ): void {
+            $table->increments( 'id' );
+            $table->string( 'site_id' )->nullable()->index();
+            $table->string( 'reference' );
+        } );
 
-        scopeToSite( '42' );
+        foreach ( [ [ 'site-alpha', 'alpha-booking' ], [ 'site-beta', 'beta-booking' ] ] as [ $siteId, $reference ] ) {
+            StringSiteScopedBooking::withoutGlobalScope( BelongsToSiteScope::class )
+                ->forceCreate( [ 'site_id' => $siteId, 'reference' => $reference ] );
+        }
 
-        expect( SiteScopedBooking::query()->pluck( 'reference' )->all() )->toBe( [ 'string-keyed' ] );
+        scopeToSite( 'site-alpha' );
+
+        expect( StringSiteScopedBooking::query()->pluck( 'reference' )->all() )->toBe( [ 'alpha-booking' ] )
+            ->and( StringSiteScopedBooking::acrossAllSites()->count() )->toBe( 2 );
+    } );
+
+    it( 'stamps a new record with a non-numeric string identifier', function (): void {
+        Schema::create( 'string_site_scoped_bookings', function ( Blueprint $table ): void {
+            $table->increments( 'id' );
+            $table->string( 'site_id' )->nullable()->index();
+            $table->string( 'reference' );
+        } );
+
+        scopeToSite( 'site-beta' );
+
+        $booking = StringSiteScopedBooking::create( [ 'reference' => 'fresh' ] );
+
+        expect( $booking->site_id )->toBe( 'site-beta' );
     } );
 
     it( 'scopes a find by primary key', function (): void {

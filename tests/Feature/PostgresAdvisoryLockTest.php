@@ -41,8 +41,13 @@ it( 'lets the next waiter take the lock once it is released', function (): void 
     $lockKey   = random_int( 1, 2_000_000_000 );
 
     try {
-        $holder->selectOne( 'select pg_try_advisory_lock(?) as acquired', [ $lockKey ] );
-        $holder->selectOne( 'select pg_advisory_unlock(?) as released', [ $lockKey ] );
+        // The holder's half is asserted rather than assumed: a lock that was
+        // never taken would let the contender succeed against a free name and
+        // this test would prove nothing.
+        expect( (int) $holder->selectOne( 'select pg_try_advisory_lock(?)::int as acquired', [ $lockKey ] )->acquired )
+            ->toBe( 1 );
+        expect( (int) $holder->selectOne( 'select pg_advisory_unlock(?)::int as released', [ $lockKey ] )->released )
+            ->toBe( 1 );
 
         expect( (int) $contender->selectOne( 'select pg_try_advisory_lock(?)::int as acquired', [ $lockKey ] )->acquired )
             ->toBe( 1 );

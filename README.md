@@ -82,7 +82,8 @@ ArtisanPackSite::withoutSite( fn () => /* unscoped, for maintenance work */ );
 
 Enabling scoping on an installation that already holds bookings needs `site_id`
 backfilled first: rows written while it was off carry a null `site_id`, and the
-scope matches on equality, so they leave every query the moment a site resolves.
+scope matches on equality, so they leave every site-scoped query the moment a
+site resolves. `acrossAllSites()` still sees them.
 
 ## Usage
 
