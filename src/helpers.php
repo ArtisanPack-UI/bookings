@@ -12,6 +12,8 @@
  * @since      1.0.0
  */
 
+declare( strict_types=1 );
+
 use ArtisanPackUI\Bookings\Bookings;
 
 if ( ! function_exists( 'bookings' ) ) {

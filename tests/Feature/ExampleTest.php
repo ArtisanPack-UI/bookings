@@ -1,7 +1,9 @@
 <?php
 
-it( 'returns a successful response', function (): void {
-	$status = true;
+declare( strict_types=1 );
 
-	$this->assertTrue( $status );
+it( 'returns a successful response', function (): void {
+    $status = true;
+
+    $this->assertTrue( $status );
 } );

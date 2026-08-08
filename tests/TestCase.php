@@ -4,7 +4,7 @@ declare( strict_types=1 );
 
 namespace Tests;
 
-use ArtisanPackUI\Bookings\BookingsServiceProvider;
+use ArtisanPackUI\Bookings\Providers\BookingsServiceProvider;
 use Orchestra\Testbench\TestCase as BaseTestCase;
 
 /**

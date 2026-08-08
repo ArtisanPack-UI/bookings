@@ -1,9 +1,17 @@
 {
   "name": "artisanpack-ui/bookings",
-  "description": "Bookings package for the ArtisanPack UI ecosystem.",
+  "description": "Appointment scheduling and booking management for Laravel — services, availability, bookings, calendar sync, and a public booking widget.",
   "type": "library",
   "license": "GPL-3.0-or-later",
   "version": "1.0.0",
+  "keywords": [
+    "laravel",
+    "bookings",
+    "appointments",
+    "scheduling",
+    "availability",
+    "calendar"
+  ],
   "autoload": {
     "psr-4": {
       "ArtisanPackUI\\Bookings\\": "src/"
@@ -25,39 +33,65 @@
   ],
   "require": {
     "php": "^8.2",
-    "illuminate/support": "^10.0|^11.0|^12.0",
-    "artisanpack-ui/core": "^1.0"
+    "artisanpack-ui/core": "^1.0",
+    "artisanpack-ui/hooks": "^1.2",
+    "artisanpack-ui/icons": "^2.0",
+    "artisanpack-ui/security": "^2.0",
+    "illuminate/database": "^10.0|^11.0|^12.0|^13.0",
+    "illuminate/http": "^10.0|^11.0|^12.0|^13.0",
+    "illuminate/notifications": "^10.0|^11.0|^12.0|^13.0",
+    "illuminate/support": "^10.0|^11.0|^12.0|^13.0",
+    "nesbot/carbon": "^2.0|^3.0",
+    "sabre/vobject": "^4.5",
+    "simshaun/recurr": "^5.0"
   },
   "require-dev": {
-    "pestphp/pest": "^3.8",
-    "pestphp/pest-plugin-laravel": "^3.2",
     "artisanpack-ui/code-style": "^1.1",
     "artisanpack-ui/code-style-pint": "^1.1",
     "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
+    "friendsofphp/php-cs-fixer": "^3.75",
     "laravel/pint": "^1.26",
-    "orchestra/testbench": "^10.2",
-    "friendsofphp/php-cs-fixer": "^3.75"
+    "orchestra/testbench": "^9.0|^10.0|^11.0",
+    "pestphp/pest": "^3.8",
+    "pestphp/pest-plugin-laravel": "^3.2"
+  },
+  "suggest": {
+    "artisanpack-ui/accessibility": "Derives accessible text colours for the admin screens and the public booking widget theme.",
+    "artisanpack-ui/apple": "Enables the Apple/CalDAV calendar sync driver.",
+    "artisanpack-ui/cms-framework": "Adds the bookings admin navigation, permissions, and settings module. The package runs standalone without it.",
+    "artisanpack-ui/forms": "Enables the booking_slot custom field type and lets a form submission create a booking.",
+    "artisanpack-ui/google": "Enables the Google Calendar sync driver.",
+    "artisanpack-ui/livewire-ui-components": "Renders the admin and widget screens with x-artisanpack-* components. Falls back to plain HTML/DaisyUI when absent.",
+    "artisanpack-ui/media-library": "Stores service and provider images. Plain image URLs are supported when absent.",
+    "artisanpack-ui/microsoft": "Enables the Outlook/Microsoft 365 calendar sync driver."
   },
   "scripts": {
     "lint": [
       "./vendor/bin/php-cs-fixer fix --dry-run --diff",
+      "./vendor/bin/pint --test",
       "./vendor/bin/phpcs"
     ],
-    "fix": "./vendor/bin/php-cs-fixer fix",
+    "fix": [
+      "./vendor/bin/pint",
+      "./vendor/bin/php-cs-fixer fix"
+    ],
     "cs": "./vendor/bin/phpcs",
     "cs:fix": "./vendor/bin/phpcbf",
     "test": "./vendor/bin/pest"
   },
   "config": {
     "allow-plugins": {
-      "pestphp/pest-plugin": true,
-      "dealerdirect/phpcodesniffer-composer-installer": true
-    }
+      "dealerdirect/phpcodesniffer-composer-installer": true,
+      "pestphp/pest-plugin": true
+    },
+    "sort-packages": true
   },
+  "minimum-stability": "dev",
+  "prefer-stable": true,
   "extra": {
     "laravel": {
       "providers": [
-        "ArtisanPackUI\\Bookings\\BookingsServiceProvider"
+        "ArtisanPackUI\\Bookings\\Providers\\BookingsServiceProvider"
       ],
       "aliases": {
         "Bookings": "ArtisanPackUI\\Bookings\\Facades\\Bookings"
