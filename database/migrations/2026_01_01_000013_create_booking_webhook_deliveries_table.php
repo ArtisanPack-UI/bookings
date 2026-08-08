@@ -16,7 +16,17 @@ use Illuminate\Support\Facades\Schema;
  * `dead` is a terminal status distinct from `failed`: it means the retry budget
  * is spent and nothing further will be attempted.
  *
- * Rows are pruned after `artisanpack.bookings.webhooks.delivery_retention_days`.
+ * Rows are pruned after `artisanpack.bookings.webhooks.delivery_retention_days`,
+ * which defaults to 30.
+ *
+ * **Erasure contract.** `payload` is a copy of the event body, so it contains
+ * the customer's name and email. Redacting inside stored JSON is guesswork, so
+ * this table is retention-bound rather than erasure-bound: the payload is
+ * deleted, not rewritten. Two things follow, and both are obligations on the
+ * pruning ticket rather than on this migration. The prune command must actually
+ * be scheduled — an unrun prune turns the retention window into a promise
+ * nobody keeps — and erasing a booking must delete that booking's undelivered
+ * and delivered payloads immediately rather than waiting out the window.
  *
  * @since 1.0.0
  */

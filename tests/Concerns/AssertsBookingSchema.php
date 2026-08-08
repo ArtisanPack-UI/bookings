@@ -254,6 +254,15 @@ trait AssertsBookingSchema
     /**
      * Asserts every planned table is dropped when the batch is rolled back.
      *
+     * The schema is migrated back afterwards. Testbench already restores it
+     * between tests — verified by probing `Schema::hasTable()` in the following
+     * test with this line removed, on MySQL, where DDL commits implicitly and
+     * the transaction `RefreshDatabase` opened therefore cannot undo the drops.
+     * So this is not repairing a live failure. It is here because a test that
+     * drops sixteen tables should put them back itself rather than rely on a
+     * harness detail to notice, and `leaves a usable schema behind the rollback
+     * test` pins that either way.
+     *
      * @since 1.0.0
      *
      * @return void
@@ -262,9 +271,16 @@ trait AssertsBookingSchema
     {
         $this->artisan( 'migrate:rollback', [ '--force' => true ] )->run();
 
-        foreach ( self::EXPECTED_TABLES as $table ) {
-            expect( Schema::hasTable( $table ) )
-                ->toBeFalse( sprintf( 'The "%s" table survived the rollback.', $table ) );
+        try {
+            foreach ( self::EXPECTED_TABLES as $table ) {
+                expect( Schema::hasTable( $table ) )
+                    ->toBeFalse( sprintf( 'The "%s" table survived the rollback.', $table ) );
+            }
+        } finally {
+            // In a finally block so that a failed assertion still leaves the
+            // schema behind it intact: one broken expectation should report one
+            // failure, not cascade into every test that follows.
+            $this->artisan( 'migrate', [ '--force' => true ] )->run();
         }
     }
 

@@ -18,6 +18,11 @@ use Illuminate\Support\Facades\Schema;
  * all following" edits re-derivable rather than approximated: the source of
  * truth is the rule, not the rows it produced.
  *
+ * `customer_name` and `customer_email` follow the same erasure contract as
+ * `bookings`: NOT NULL, redacted with a placeholder rather than nulled, with
+ * `pii_erased_at` as the marker saying which rows have been through it. See the
+ * bookings migration for the reasoning.
+ *
  * @since 1.0.0
  */
 return new class extends Migration {

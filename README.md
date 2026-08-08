@@ -43,12 +43,23 @@ config( 'artisanpack.bookings' );                      // the whole array
 
 Migrations are loaded by the package, so `php artisan migrate` creates the
 sixteen booking tables with nothing else to do. Publish them only if you need to
-edit the schema — a published copy stops tracking the package's, so a later
-release that adds a table will not reach an application holding one:
+edit the schema:
 
 ```bash
 php artisan vendor:publish --tag=bookings-migrations
 ```
+
+Publishing copies the files into `database/migrations` and leaves the package
+loading its own. That is not a conflict and does not run anything twice: the
+migrator keys files by migration name, and the application's path is searched
+last, so your copy shadows the package's and is the one that runs. Editing a
+published migration works.
+
+What publishing does not do is freeze the set. A later release that adds a
+*new* migration has no counterpart in your directory to be shadowed by, so it
+loads from the package and runs on the next `migrate` alongside your edited
+copies. Publish again after upgrading if you want the whole set under your own
+control.
 
 ## Configuration
 

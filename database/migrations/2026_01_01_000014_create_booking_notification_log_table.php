@@ -24,6 +24,17 @@ use Illuminate\Support\Facades\Schema;
  * supported engine, so those are not deduplicated, which is right: two
  * reschedules genuinely warrant two emails.
  *
+ * **Erasure contract.** `recipient` is an email address or a phone number, so
+ * this table holds customer PII without carrying an erasure marker of its own.
+ * It does not need one: every row is keyed to a booking, so erasing a booking
+ * means redacting `recipient` on `booking_id = ?` in the same routine that
+ * redacts the booking. Deletion is already covered — the foreign key cascades,
+ * so retention pruning takes the log with the booking — and
+ * `artisanpack.bookings.retention.notification_log_days` bounds the rest at 90
+ * days. The erasure command in plan §9.5 has to include this table explicitly;
+ * a routine that only walks the four tables with `pii_erased_at` on them leaves
+ * the customer's address sitting here in readable form.
+ *
  * @since 1.0.0
  */
 return new class extends Migration {

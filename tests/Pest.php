@@ -280,4 +280,14 @@ function defineBookingMigrationTests(): void
     it( 'rolls every table back', function (): void {
         $this->assertRollbackDropsEveryTable();
     } );
+
+    it( 'leaves a usable schema behind the rollback test', function (): void {
+        // Deliberately defined after the rollback test, and it has to stay
+        // there. The rollback test drops all sixteen tables, and on MySQL that
+        // DDL commits implicitly — the transaction RefreshDatabase opens cannot
+        // put them back. Testbench restores the schema between tests today, so
+        // this passes either way; it is here so that if that ever stops being
+        // true, one test says so instead of every later test failing at once.
+        expect( $this->insertBooking( [ 'service_id' => $this->insertService() ] ) )->toBeGreaterThan( 0 );
+    } );
 }

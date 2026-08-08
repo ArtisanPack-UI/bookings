@@ -15,6 +15,15 @@ use Illuminate\Support\Facades\Schema;
  * the customer was in when they booked, so the same instant can be rendered
  * back to them the way they chose it.
  *
+ * **Erasure contract.** `customer_name` and `customer_email` stay NOT NULL, and
+ * erasure overwrites them with a redaction placeholder rather than nulling
+ * them. A booking has a customer — that is not a fact the schema should stop
+ * asserting in order to make a later routine's job easier, and nullable columns
+ * would let an ordinary bug write a booking with no customer at all and no
+ * complaint from the database. `pii_erased_at` is what distinguishes an erased
+ * row from a real one; it exists precisely so the placeholder does not have to.
+ * The erasure routine must set it in the same write that redacts the fields.
+ *
  * The manage token is stored only as a SHA-256 hash. The plain token exists in
  * the confirmation email and the widget URL and nowhere else, so a leaked
  * database row does not hand an attacker the ability to cancel someone's
