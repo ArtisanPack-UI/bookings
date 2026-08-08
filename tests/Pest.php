@@ -2,7 +2,8 @@
 
 declare( strict_types=1 );
 
-use ArtisanPackUI\Bookings\Contracts\SiteResolver;
+use ArtisanPackUI\Core\Contracts\SiteResolver;
+use ArtisanPackUI\Core\MultiTenancy\SiteContext;
 use Tests\Fixtures\FixedSiteResolver;
 
 /*
@@ -47,14 +48,24 @@ expect()->extend( 'toBeOne', function () {
 */
 
 /**
- * Enables multi-tenancy and puts the given site in context.
+ * Enables site scoping and puts the given site in context.
  *
- * @param  int|null  $siteId  The site to resolve, or null for none.
+ * Rebuilds core's shared site context around a fixed resolver rather than
+ * stubbing the context itself, so the tests still run through the real
+ * `SiteContext` — including its `enabled` check, which is the thing that
+ * decides whether a resolver is consulted at all.
+ *
+ * @param  int|string|null  $siteId  The site to resolve, or null for none.
  *
  * @return void
  */
-function scopeToSite( ?int $siteId ): void
+function scopeToSite( int|string|null $siteId ): void
 {
-    config()->set( 'artisanpack.bookings.multi_tenant.enabled', true );
+    config()->set( 'artisanpack.core.multi_tenant.enabled', true );
+
     app()->instance( SiteResolver::class, new FixedSiteResolver( $siteId ) );
+    app()->instance( SiteContext::class, new SiteContext(
+        app( SiteResolver::class ),
+        app( 'config' ),
+    ) );
 }

@@ -21,12 +21,7 @@ declare( strict_types=1 );
 namespace ArtisanPackUI\Bookings\Providers;
 
 use ArtisanPackUI\Bookings\Bookings;
-use ArtisanPackUI\Bookings\Contracts\SiteResolver;
-use ArtisanPackUI\Bookings\MultiTenancy\HookSiteResolver;
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
-
-use function is_string;
 
 /**
  * Service provider for the Bookings package.
@@ -55,8 +50,6 @@ class BookingsServiceProvider extends ServiceProvider
         $this->app->singleton( 'bookings', function (): Bookings {
             return new Bookings();
         } );
-
-        $this->registerSiteResolver();
     }
 
     /**
@@ -89,31 +82,5 @@ class BookingsServiceProvider extends ServiceProvider
         // Migrations, models, routes, views, Livewire components, calendar
         // drivers, and the CMS-framework integration are registered here as
         // each is built.
-    }
-
-    /**
-     * Binds the resolver that decides which site a query belongs to.
-     *
-     * An application overrides the resolver by pointing
-     * `artisanpack.bookings.multi_tenant.site_resolver` at its own
-     * implementation. Left null — the default — the package uses the
-     * hook-backed resolver, which answers null on a standalone install and
-     * defers to artisanpack-ui/cms-framework when that package is present.
-     *
-     * @since 1.0.0
-     *
-     * @return void
-     */
-    protected function registerSiteResolver(): void
-    {
-        $this->app->singleton( SiteResolver::class, function ( Application $app ): SiteResolver {
-            $configured = $app[ 'config' ]->get( 'artisanpack.bookings.multi_tenant.site_resolver' );
-
-            if ( is_string( $configured ) && '' !== $configured ) {
-                return $app->make( $configured );
-            }
-
-            return $app->make( HookSiteResolver::class );
-        } );
     }
 }

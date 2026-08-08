@@ -220,15 +220,16 @@ return [
     | Multi-Tenancy
     |--------------------------------------------------------------------------
     |
-    | Every owned table carries a nullable site_id. When multi-tenancy is
-    | enabled, queries are scoped to the site resolved by "site_resolver" — a
-    | FQCN implementing Contracts\SiteResolver. Leave it null to resolve the
-    | site through the "ap.cmsFramework.currentSite.resolve" filter instead,
-    | which yields null — and so scopes nothing — unless a package such as
-    | artisanpack-ui/cms-framework answers it.
+    | Site scoping is configured in "artisanpack.core.multi_tenant", not here.
+    | Every owned table carries a nullable site_id, and queries are scoped to
+    | whatever artisanpack-ui/core's SiteContext reports — so set
+    | "artisanpack.core.multi_tenant.enabled" (or ARTISANPACK_MULTI_TENANT_ENABLED)
+    | to switch scoping on, and "artisanpack.core.multi_tenant.resolvers" to say
+    | how the site is resolved. One setting, one answer: an application cannot
+    | be site 2 for analytics while being site 1 for bookings.
     |
-    | While this is disabled, the site scope is inert and every row is visible,
-    | so a single-tenant application never has to configure a resolver.
+    | While scoping is disabled the site scope is inert and every row is
+    | visible, so a single-tenant application never has to configure anything.
     |
     | Turning it on later is not free. Rows written while it was off carry a
     | null site_id, and the scope matches on equality — so the moment a site
@@ -237,9 +238,5 @@ return [
     | bookings in it.
     |
     */
-    'multi_tenant' => [
-        'enabled'       => env( 'BOOKING_MULTI_TENANT', false ),
-        'site_resolver' => null,
-    ],
 
 ];

@@ -33,7 +33,7 @@
   ],
   "require": {
     "php": "^8.2",
-    "artisanpack-ui/core": "^1.0",
+    "artisanpack-ui/core": "^1.3",
     "artisanpack-ui/hooks": "^1.2",
     "artisanpack-ui/icons": "^2.0",
     "artisanpack-ui/security": "^2.0",

@@ -53,12 +53,36 @@ The published file documents every key inline. The ones worth knowing up front:
 | `calendar.drivers` | all disabled | Google / Microsoft / Apple sync, opt-in per driver |
 | `admin.route_prefix` | `bookings-admin` | Prefix for the staff-facing routes |
 | `public.route_prefix` | `bookings` | Prefix for the customer-facing routes |
-| `multi_tenant.enabled` | `false` | Scope every query to a resolved site |
 
 Environment variables cover the settings most likely to differ per environment:
 `BOOKING_DEFAULT_TIMEZONE`, `BOOKING_SLOT_INTERVAL`, `BOOKING_SMS_DRIVER`,
 `BOOKING_GOOGLE_ENABLED`, `BOOKING_MICROSOFT_ENABLED`, `BOOKING_APPLE_ENABLED`,
-`BOOKING_PRUNE_DAYS`, and `BOOKING_MULTI_TENANT`.
+and `BOOKING_PRUNE_DAYS`.
+
+## Multi-site
+
+Site scoping is configured once for the whole ecosystem, in
+`artisanpack.core.multi_tenant` — not in this package's config. Set
+`ARTISANPACK_MULTI_TENANT_ENABLED=true` (or the `enabled` key) to switch it on,
+and list resolvers under `artisanpack.core.multi_tenant.resolvers`. Every owned
+table carries a nullable `site_id`, and models using
+`Models\Concerns\BelongsToSite` filter on whatever
+`ArtisanPackUI\Core\MultiTenancy\SiteContext` reports — so a request cannot be
+site 2 for one ArtisanPack package while being site 1 for this one.
+
+Work that has to target or span a specific site pins one explicitly, which is
+what a console command looping over sites needs:
+
+```php
+use ArtisanPackUI\Core\Facades\ArtisanPackSite;
+
+ArtisanPackSite::forSite( $siteId, fn () => /* every bookings query answers for $siteId */ );
+ArtisanPackSite::withoutSite( fn () => /* unscoped, for maintenance work */ );
+```
+
+Enabling scoping on an installation that already holds bookings needs `site_id`
+backfilled first: rows written while it was off carry a null `site_id`, and the
+scope matches on equality, so they leave every query the moment a site resolves.
 
 ## Usage
 
