@@ -2,6 +2,9 @@
 
 declare( strict_types=1 );
 
+use ArtisanPackUI\Bookings\Contracts\SiteResolver;
+use Tests\Fixtures\FixedSiteResolver;
+
 /*
 |--------------------------------------------------------------------------
 | Test Case
@@ -43,7 +46,15 @@ expect()->extend( 'toBeOne', function () {
 |
 */
 
-function something(): void
+/**
+ * Enables multi-tenancy and puts the given site in context.
+ *
+ * @param  int|null  $siteId  The site to resolve, or null for none.
+ *
+ * @return void
+ */
+function scopeToSite( ?int $siteId ): void
 {
-    // ..
+    config()->set( 'artisanpack.bookings.multi_tenant.enabled', true );
+    app()->instance( SiteResolver::class, new FixedSiteResolver( $siteId ) );
 }
