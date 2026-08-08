@@ -4,8 +4,9 @@ Appointment scheduling and booking management for Laravel — services, provider
 availability, bookings, calendar sync, and a public booking widget.
 
 > **Status: pre-release.** This is the package foundation. The service provider,
-> configuration, and code-style/test toolchain are in place; the domain layer,
-> HTTP surface, and frontend land in the `v1.0.0-alpha.*` series.
+> configuration, database schema, and code-style/test toolchain are in place;
+> the domain layer, HTTP surface, and frontend land in the `v1.0.0-alpha.*`
+> series.
 
 ## Requirements
 
@@ -38,6 +39,15 @@ from. Individual settings are reached with dot notation:
 config( 'artisanpack.bookings.slot_interval' );        // 15
 config( 'artisanpack.bookings.admin.gate' );           // 'bookings.manage'
 config( 'artisanpack.bookings' );                      // the whole array
+```
+
+Migrations are loaded by the package, so `php artisan migrate` creates the
+sixteen booking tables with nothing else to do. Publish them only if you need to
+edit the schema — a published copy stops tracking the package's, so a later
+release that adds a table will not reach an application holding one:
+
+```bash
+php artisan vendor:publish --tag=bookings-migrations
 ```
 
 ## Configuration
