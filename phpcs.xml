@@ -1,12 +1,13 @@
 <?xml version="1.0"?>
-<ruleset name="ArtisanPackUI Package Blueprint">
-    <description>ArtisanPack UI coding standard for the Package Blueprint</description>
+<ruleset name="ArtisanPackUI Bookings">
+    <description>ArtisanPack UI coding standard for the Bookings package</description>
 
     <!-- Set arguments -->
     <arg name="colors"/>
     <arg value="sp"/>
 
     <!-- Paths to check -->
+    <file>config</file>
     <file>src</file>
     <file>tests</file>
 

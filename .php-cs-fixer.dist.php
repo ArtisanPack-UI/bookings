@@ -7,6 +7,7 @@ use PhpCsFixer\Finder;
 
 $finder = Finder::create()
     ->in([
+        __DIR__ . '/config',
         __DIR__ . '/src',
         __DIR__ . '/tests',
     ])
@@ -131,9 +132,6 @@ $config
         // WordPress-style spacing (custom fixers)
         'ArtisanPackUI/spaces_inside_parenthesis' => true,
         'ArtisanPackUI/spaces_inside_brackets' => true,
-
-        // NOTE: declare_strict_types is intentionally NOT enabled
-        // to maintain flexibility for packages built from this blueprint
     ])
     ->setFinder($finder);
 
