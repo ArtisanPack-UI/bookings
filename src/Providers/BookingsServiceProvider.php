@@ -79,8 +79,19 @@ class BookingsServiceProvider extends ServiceProvider
             'bookings-config',
         );
 
-        // Migrations, models, routes, views, Livewire components, calendar
-        // drivers, and the CMS-framework integration are registered here as
-        // each is built.
+        // Loaded rather than published by default, so an upgrade that adds a
+        // table takes effect on `migrate` without anybody re-publishing. The
+        // publish tag exists for applications that need to edit the schema.
+        $this->loadMigrationsFrom( __DIR__ . '/../../database/migrations' );
+
+        $this->publishes(
+            [
+                __DIR__ . '/../../database/migrations' => database_path( 'migrations' ),
+            ],
+            'bookings-migrations',
+        );
+
+        // Models, routes, views, Livewire components, calendar drivers, and the
+        // CMS-framework integration are registered here as each is built.
     }
 }
