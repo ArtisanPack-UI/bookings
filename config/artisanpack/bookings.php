@@ -223,7 +223,18 @@ return [
     | Every owned table carries a nullable site_id. When multi-tenancy is
     | enabled, queries are scoped to the site resolved by "site_resolver" — a
     | FQCN implementing Contracts\SiteResolver. Leave it null to resolve the
-    | site through the CMS framework hook instead.
+    | site through the "ap.cmsFramework.currentSite.resolve" filter instead,
+    | which yields null — and so scopes nothing — unless a package such as
+    | artisanpack-ui/cms-framework answers it.
+    |
+    | While this is disabled, the site scope is inert and every row is visible,
+    | so a single-tenant application never has to configure a resolver.
+    |
+    | Turning it on later is not free. Rows written while it was off carry a
+    | null site_id, and the scope matches on equality — so the moment a site
+    | resolves, every one of those rows drops out of every query at once.
+    | Backfill site_id before enabling this on an installation that already has
+    | bookings in it.
     |
     */
     'multi_tenant' => [

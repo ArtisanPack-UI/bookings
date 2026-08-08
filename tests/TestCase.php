@@ -5,6 +5,7 @@ declare( strict_types=1 );
 namespace Tests;
 
 use ArtisanPackUI\Bookings\Providers\BookingsServiceProvider;
+use ArtisanPackUI\Hooks\Providers\HooksServiceProvider;
 use Orchestra\Testbench\TestCase as BaseTestCase;
 
 /**
@@ -35,7 +36,11 @@ abstract class TestCase extends BaseTestCase
      */
     protected function getPackageProviders( $app ): array
     {
+        // Hooks is a hard dependency rather than a suggestion — the default
+        // site resolver reads the current site off a filter — so the test
+        // application registers it the same way a host application would.
         return [
+            HooksServiceProvider::class,
             BookingsServiceProvider::class,
         ];
     }
