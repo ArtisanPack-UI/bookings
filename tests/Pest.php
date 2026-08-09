@@ -18,6 +18,8 @@ use ArtisanPackUI\Bookings\Models\ServiceBlackoutDate;
 use ArtisanPackUI\Bookings\Models\ServiceProvider;
 use ArtisanPackUI\Bookings\Models\Webhook;
 use ArtisanPackUI\Bookings\Models\WebhookDelivery;
+use ArtisanPackUI\Bookings\Services\AvailabilityService;
+use ArtisanPackUI\Bookings\Support\Slot;
 use ArtisanPackUI\Bookings\Support\TimeRange;
 use ArtisanPackUI\Core\Contracts\SiteResolver;
 use ArtisanPackUI\Core\MultiTenancy\SiteContext;
@@ -486,4 +488,158 @@ function utcRange( string $start, string $end ): TimeRange
 function contractWindow(): TimeRange
 {
     return utcRange( '09:00', '17:00' );
+}
+
+/**
+ * Gets the availability service out of the container.
+ *
+ * @since 1.0.0
+ *
+ * @return AvailabilityService The resolver under test.
+ */
+function availability(): AvailabilityService
+{
+    return app( AvailabilityService::class );
+}
+
+/**
+ * Builds a window covering one whole local day, as instants.
+ *
+ * The window a widget asks with is a span of real time, not a date, so the
+ * bounds are the moments the local day opens and closes — which is 23 or 25
+ * hours wide on the two days a year the offset moves.
+ *
+ * @since 1.0.0
+ *
+ * @param  string  $date  The local date, as `Y-m-d`.
+ * @param  string  $timezone  The zone the date belongs to.
+ *
+ * @return TimeRange The window covering that day.
+ */
+function localDayWindow( string $date, string $timezone ): TimeRange
+{
+    $start = CarbonImmutable::parse( $date, $timezone )->startOfDay();
+
+    return new TimeRange( $start, $start->addDay() );
+}
+
+/**
+ * Builds a window between two clock faces on one local date.
+ *
+ * @since 1.0.0
+ *
+ * @param  string  $date  The local date, as `Y-m-d`.
+ * @param  string  $start  The opening clock face, as `H:i`.
+ * @param  string  $end  The closing clock face, as `H:i`.
+ * @param  string  $timezone  The zone the clock faces belong to.
+ *
+ * @return TimeRange The window.
+ */
+function localWindow( string $date, string $start, string $end, string $timezone ): TimeRange
+{
+    return new TimeRange(
+        CarbonImmutable::parse( $date . ' ' . $start, $timezone ),
+        CarbonImmutable::parse( $date . ' ' . $end, $timezone ),
+    );
+}
+
+/**
+ * Renders each slot's start as a local clock face.
+ *
+ * @since 1.0.0
+ *
+ * @param  array<int, Slot>  $slots  The slots to render.
+ * @param  string  $timezone  The zone to read them in.
+ *
+ * @return array<int, string> The starts, as `H:i`.
+ */
+function localStarts( array $slots, string $timezone ): array
+{
+    return array_map(
+        static fn ( Slot $slot ): string => $slot->period->start->setTimezone( $timezone )->format( 'H:i' ),
+        $slots,
+    );
+}
+
+/**
+ * Renders each slot's start as a UTC instant.
+ *
+ * @since 1.0.0
+ *
+ * @param  array<int, Slot>  $slots  The slots to render.
+ *
+ * @return array<int, string> The starts, as `Y-m-d H:i` in UTC.
+ */
+function utcStarts( array $slots ): array
+{
+    return array_map(
+        static fn ( Slot $slot ): string => $slot->period->start->utc()->format( 'Y-m-d H:i' ),
+        $slots,
+    );
+}
+
+/**
+ * Attaches a provider to a service and gives them a weekly window.
+ *
+ * @since 1.0.0
+ *
+ * @param  Service  $service  The service to attach to.
+ * @param  ServiceProvider  $provider  The provider being attached.
+ * @param  array<int, int>  $daysOfWeek  The Sunday-indexed weekdays to work.
+ * @param  string  $start  The opening clock face, as `H:i`.
+ * @param  string  $end  The closing clock face, as `H:i`.
+ *
+ * @return ServiceProvider The provider, for chaining.
+ */
+function bookingsSchedule(
+    Service $service,
+    ServiceProvider $provider,
+    array $daysOfWeek = [ 1 ],
+    string $start = '09:00',
+    string $end = '17:00',
+): ServiceProvider {
+    $service->providers()->syncWithoutDetaching( [ $provider->getKey() => [] ] );
+
+    foreach ( $daysOfWeek as $dayOfWeek ) {
+        AvailabilitySchedule::factory()
+            ->for( $provider, 'provider' )
+            ->onDayOfWeek( $dayOfWeek )
+            ->between( $start, $end )
+            ->create();
+    }
+
+    return $provider;
+}
+
+/**
+ * Builds a service and a provider who works one window every day of the week.
+ *
+ * The shape the timezone cases want: no weekday to reason about, so the only
+ * thing separating one assertion from another is the date and the zone.
+ *
+ * @since 1.0.0
+ *
+ * @param  string  $timezone  The provider's zone.
+ * @param  string  $start  The opening clock face, as `H:i`.
+ * @param  string  $end  The closing clock face, as `H:i`.
+ *
+ * @return array{0: Service, 1: ServiceProvider} The service and its provider.
+ */
+function serviceWorkedEveryDayIn( string $timezone, string $start = '09:00', string $end = '17:00' ): array
+{
+    $service = Service::factory()->create( [
+        'duration'      => 60,
+        'buffer_before' => 0,
+        'buffer_after'  => 0,
+    ] );
+
+    $provider = bookingsSchedule(
+        $service,
+        ServiceProvider::factory()->inTimezone( $timezone )->create(),
+        [ 0, 1, 2, 3, 4, 5, 6 ],
+        $start,
+        $end,
+    );
+
+    return [ $service, $provider ];
 }
