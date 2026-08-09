@@ -45,4 +45,20 @@ trait TestsWithSqlite
             'foreign_key_constraints' => true,
         ] );
     }
+
+    /**
+     * Gets the name of the connection this test runs against.
+     *
+     * Kept in step with `defineDatabaseConnection()` above: the base TestCase
+     * uses it to notice when the engine changes between tests and let
+     * RefreshDatabase migrate again.
+     *
+     * @since 1.0.0
+     *
+     * @return string The in-memory SQLite connection name.
+     */
+    protected function databaseConnectionName(): string
+    {
+        return 'testbench';
+    }
 }

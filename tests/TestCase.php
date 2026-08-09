@@ -8,11 +8,13 @@ use ArtisanPackUI\Bookings\Providers\BookingsServiceProvider;
 use ArtisanPackUI\Core\CoreServiceProvider;
 use ArtisanPackUI\Hooks\Providers\HooksServiceProvider;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Foundation\Testing\RefreshDatabaseState;
 use Illuminate\Support\Facades\DB;
 use Orchestra\Testbench\TestCase as BaseTestCase;
 use Throwable;
 
 use function class_basename;
+use function config;
 use function env;
 use function filter_var;
 use function sprintf;
@@ -29,10 +31,22 @@ use const FILTER_VALIDATE_BOOLEAN;
 abstract class TestCase extends BaseTestCase
 {
     /**
+     * The database connection the previous test ran against.
+     *
+     * @since 1.0.0
+     *
+     * @var string|null
+     */
+    private static ?string $lastDatabaseConnection = null;
+
+    /**
      * Setup the test environment.
      */
     protected function setUp(): void
     {
+        // Before parent::setUp(), because that is what triggers RefreshDatabase.
+        $this->forgetMigrationStateOnEngineChange();
+
         parent::setUp();
 
         // Package models resolve their factories out of the package namespace
@@ -41,6 +55,17 @@ abstract class TestCase extends BaseTestCase
         Factory::guessFactoryNamesUsing( static function ( string $modelName ): string {
             return 'ArtisanPackUI\\Bookings\\Database\\Factories\\' . class_basename( $modelName ) . 'Factory';
         } );
+
+        // The two have to agree, and nothing else makes them. A connection
+        // renamed in `defineDatabaseConnection()` but not here would put the
+        // engine-change check permanently to sleep and bring back the
+        // unmigrated-database failure it exists to prevent — which surfaces
+        // several tests away from the rename, as "no such table".
+        self::assertSame(
+            $this->databaseConnectionName(),
+            config( 'database.default' ),
+            'databaseConnectionName() has drifted from defineDatabaseConnection().',
+        );
 
         if ( $this->usesExternalDatabase() ) {
             $this->skipUnlessExternalDatabaseIsReachable();
@@ -111,6 +136,22 @@ abstract class TestCase extends BaseTestCase
     }
 
     /**
+     * Gets the name of the connection this test runs against.
+     *
+     * Overridden by the TestsWith* concerns alongside `defineDatabaseConnection()`,
+     * and kept in step with it. Only used to notice when one test's engine is not
+     * the previous one's — see `forgetMigrationStateOnEngineChange()`.
+     *
+     * @since 1.0.0
+     *
+     * @return string The database connection name.
+     */
+    protected function databaseConnectionName(): string
+    {
+        return 'testbench';
+    }
+
+    /**
      * Determines whether the test needs a database server outside the process.
      *
      * @since 1.0.0
@@ -154,5 +195,38 @@ abstract class TestCase extends BaseTestCase
 
             self::markTestSkipped( $message );
         }
+    }
+
+    /**
+     * Makes RefreshDatabase migrate again when the engine changes under it.
+     *
+     * `RefreshDatabaseState::$migrated` is one global flag for the whole run,
+     * not one per connection. The first test to migrate sets it, and every test
+     * after that skips migrating — which is exactly right while the suite stays
+     * on one engine, and silently wrong the moment it does not. A MySQL file
+     * running before a sqlite one leaves the flag set, so the sqlite test gets a
+     * fresh in-memory database that nothing ever migrated into, and fails with
+     * "no such table" somewhere far from the cause.
+     *
+     * The suite only escapes this today because the files happen to sort into a
+     * lucky order. Rather than depend on that, the flag is cleared whenever the
+     * engine differs from the previous test's, so each engine migrates once —
+     * and MySQL is not re-migrated between every test of its own.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    private function forgetMigrationStateOnEngineChange(): void
+    {
+        $connection = $this->databaseConnectionName();
+
+        if ( self::$lastDatabaseConnection === $connection ) {
+            return;
+        }
+
+        self::$lastDatabaseConnection              = $connection;
+        RefreshDatabaseState::$migrated            = false;
+        RefreshDatabaseState::$inMemoryConnections = [];
     }
 }

@@ -117,7 +117,8 @@
         "phpdoc_no_package": false,
         "no_superfluous_phpdoc_tags": false,
         "declare_parentheses": false,
-        "new_with_parentheses": true
+        "new_with_parentheses": true,
+        "single_line_empty_body": false
     },
     "exclude": [
         "node_modules",
