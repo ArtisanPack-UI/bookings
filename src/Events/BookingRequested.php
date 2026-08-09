@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Calendar connection disabled event.
+ * Booking requested event.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
@@ -15,17 +15,21 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Events;
 
-use ArtisanPackUI\Bookings\Models\CalendarConnection;
+use ArtisanPackUI\Bookings\Models\Booking;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * Fired when a calendar connection stops being synced.
+ * Fired once a booking row exists, before anybody has confirmed it.
  *
- * A disabled connection is a silent failure for whoever owns the calendar —
- * their bookings quietly stop appearing in it — so the event exists to give an
- * application somewhere to hang a notification.
+ * The slot is already held at this point — `requested` occupies a slot exactly
+ * as `confirmed` does — so this is not "somebody asked", it is "the appointment
+ * is on the books and is waiting on approval". A service that confirms
+ * automatically fires this and {@see BookingConfirmed} in the same request.
+ *
+ * Carries the booking as saved. Anything a listener changes on it needs saving
+ * itself; the dispatcher does not save again afterwards.
  *
  * The payload is readonly and dispatched after commit. Plan §5.8 writes
  * bookings inside a transaction and behind an advisory lock, and
@@ -40,7 +44,7 @@ use Illuminate\Queue\SerializesModels;
  *
  * @since      1.0.0
  */
-class CalendarConnectionDisabled implements ShouldDispatchAfterCommit
+class BookingRequested implements ShouldDispatchAfterCommit
 {
     use Dispatchable;
     use SerializesModels;
@@ -50,12 +54,10 @@ class CalendarConnectionDisabled implements ShouldDispatchAfterCommit
      *
      * @since 1.0.0
      *
-     * @param  CalendarConnection  $connection  The connection that was disabled.
-     * @param  string  $reason  Why it was disabled.
+     * @param  Booking  $booking  The booking that was created.
      */
     public function __construct(
-        public readonly CalendarConnection $connection,
-        public readonly string $reason,
+        public readonly Booking $booking,
     ) {
     }
 }

@@ -21,6 +21,8 @@ declare( strict_types=1 );
 namespace ArtisanPackUI\Bookings\Providers;
 
 use ArtisanPackUI\Bookings\Bookings;
+use ArtisanPackUI\Bookings\Contracts\MeetingTypeRegistry as MeetingTypeRegistryContract;
+use ArtisanPackUI\Bookings\MeetingTypes\MeetingTypeRegistry;
 use Illuminate\Support\ServiceProvider;
 
 /**
@@ -50,6 +52,21 @@ class BookingsServiceProvider extends ServiceProvider
         $this->app->singleton( 'bookings', function (): Bookings {
             return new Bookings();
         } );
+
+        // A singleton so that a type registered in PHP — rather than through the
+        // `ap.bookings.registeredMeetingTypes` filter — is still there when the
+        // next caller resolves the registry. The filter itself runs on every
+        // read, so late registration through hooks works either way.
+        $this->app->singleton( MeetingTypeRegistryContract::class, function (): MeetingTypeRegistry {
+            return new MeetingTypeRegistry();
+        } );
+
+        // Without the alias the concrete class stays unbound, and because its
+        // constructor takes no arguments the container happily auto-builds a
+        // second, empty registry for anyone who type-hints it — losing every
+        // PHP-side registration, silently, at the call site most likely to be
+        // written by someone reaching for the shipped implementation.
+        $this->app->alias( MeetingTypeRegistryContract::class, MeetingTypeRegistry::class );
     }
 
     /**

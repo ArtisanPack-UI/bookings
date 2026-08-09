@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Calendar connection disabled event.
+ * Series created event.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
@@ -15,17 +15,23 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Events;
 
-use ArtisanPackUI\Bookings\Models\CalendarConnection;
+use ArtisanPackUI\Bookings\Models\BookingSeries;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * Fired when a calendar connection stops being synced.
+ * Fired when a recurrence rule has been saved and expanded into occurrences.
  *
- * A disabled connection is a silent failure for whoever owns the calendar —
- * their bookings quietly stop appearing in it — so the event exists to give an
- * application somewhere to hang a notification.
+ * Fires once for the series, after the occurrences exist. Each occurrence also
+ * fires its own {@see BookingRequested}, so a listener interested in individual
+ * appointments does not need this one — this is for anything that cares about
+ * the arrangement rather than the appointments, such as a subscription or an
+ * invoice covering the whole run.
+ *
+ * The occurrence count is carried separately because the series row does not
+ * hold one: an RRULE bounded by `UNTIL` rather than `COUNT` only reveals how
+ * many occurrences it produced by being expanded.
  *
  * The payload is readonly and dispatched after commit. Plan §5.8 writes
  * bookings inside a transaction and behind an advisory lock, and
@@ -40,7 +46,7 @@ use Illuminate\Queue\SerializesModels;
  *
  * @since      1.0.0
  */
-class CalendarConnectionDisabled implements ShouldDispatchAfterCommit
+class SeriesCreated implements ShouldDispatchAfterCommit
 {
     use Dispatchable;
     use SerializesModels;
@@ -50,12 +56,12 @@ class CalendarConnectionDisabled implements ShouldDispatchAfterCommit
      *
      * @since 1.0.0
      *
-     * @param  CalendarConnection  $connection  The connection that was disabled.
-     * @param  string  $reason  Why it was disabled.
+     * @param  BookingSeries  $series  The series that was created.
+     * @param  int  $occurrenceCount  How many bookings the rule produced.
      */
     public function __construct(
-        public readonly CalendarConnection $connection,
-        public readonly string $reason,
+        public readonly BookingSeries $series,
+        public readonly int $occurrenceCount,
     ) {
     }
 }

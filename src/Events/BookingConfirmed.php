@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Calendar connection disabled event.
+ * Booking confirmed event.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
@@ -15,17 +15,21 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Events;
 
-use ArtisanPackUI\Bookings\Models\CalendarConnection;
+use ArtisanPackUI\Bookings\Enums\BookingActor;
+use ArtisanPackUI\Bookings\Models\Booking;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * Fired when a calendar connection stops being synced.
+ * Fired when a booking's status becomes `confirmed`.
  *
- * A disabled connection is a silent failure for whoever owns the calendar —
- * their bookings quietly stop appearing in it — so the event exists to give an
- * application somewhere to hang a notification.
+ * This is the event that means the appointment is really happening, which makes
+ * it the one to hang confirmation emails, calendar pushes, and CRM records off
+ * rather than {@see BookingRequested}.
+ *
+ * It fires once per booking. A booking confirmed, cancelled, and rebooked is a
+ * different booking row and gets its own event.
  *
  * The payload is readonly and dispatched after commit. Plan §5.8 writes
  * bookings inside a transaction and behind an advisory lock, and
@@ -40,7 +44,7 @@ use Illuminate\Queue\SerializesModels;
  *
  * @since      1.0.0
  */
-class CalendarConnectionDisabled implements ShouldDispatchAfterCommit
+class BookingConfirmed implements ShouldDispatchAfterCommit
 {
     use Dispatchable;
     use SerializesModels;
@@ -50,12 +54,13 @@ class CalendarConnectionDisabled implements ShouldDispatchAfterCommit
      *
      * @since 1.0.0
      *
-     * @param  CalendarConnection  $connection  The connection that was disabled.
-     * @param  string  $reason  Why it was disabled.
+     * @param  Booking  $booking  The booking that was confirmed.
+     * @param  BookingActor  $actor  Who confirmed it. `System` when the service
+     *                               confirms automatically.
      */
     public function __construct(
-        public readonly CalendarConnection $connection,
-        public readonly string $reason,
+        public readonly Booking $booking,
+        public readonly BookingActor $actor = BookingActor::System,
     ) {
     }
 }

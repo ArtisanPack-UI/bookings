@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Calendar connection disabled event.
+ * Calendar synced event.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
@@ -15,17 +15,18 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Events;
 
+use ArtisanPackUI\Bookings\Models\Booking;
 use ArtisanPackUI\Bookings\Models\CalendarConnection;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * Fired when a calendar connection stops being synced.
+ * Fired when a booking has been written to an external calendar.
  *
- * A disabled connection is a silent failure for whoever owns the calendar —
- * their bookings quietly stop appearing in it — so the event exists to give an
- * application somewhere to hang a notification.
+ * Fires per booking per connection, so a provider with two connected calendars
+ * produces two of these for one booking. The external identifier is the one the
+ * calendar assigned, and is what a later update or delete is addressed to.
  *
  * The payload is readonly and dispatched after commit. Plan §5.8 writes
  * bookings inside a transaction and behind an advisory lock, and
@@ -40,7 +41,7 @@ use Illuminate\Queue\SerializesModels;
  *
  * @since      1.0.0
  */
-class CalendarConnectionDisabled implements ShouldDispatchAfterCommit
+class CalendarSynced implements ShouldDispatchAfterCommit
 {
     use Dispatchable;
     use SerializesModels;
@@ -50,12 +51,14 @@ class CalendarConnectionDisabled implements ShouldDispatchAfterCommit
      *
      * @since 1.0.0
      *
-     * @param  CalendarConnection  $connection  The connection that was disabled.
-     * @param  string  $reason  Why it was disabled.
+     * @param  CalendarConnection  $connection  The connection written through.
+     * @param  Booking  $booking  The booking that was pushed.
+     * @param  string  $externalEventId  The identifier the calendar assigned.
      */
     public function __construct(
         public readonly CalendarConnection $connection,
-        public readonly string $reason,
+        public readonly Booking $booking,
+        public readonly string $externalEventId,
     ) {
     }
 }

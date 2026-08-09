@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Calendar connection disabled event.
+ * Booking no-show event.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
@@ -15,17 +15,19 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Events;
 
-use ArtisanPackUI\Bookings\Models\CalendarConnection;
+use ArtisanPackUI\Bookings\Enums\BookingActor;
+use ArtisanPackUI\Bookings\Models\Booking;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * Fired when a calendar connection stops being synced.
+ * Fired when a booking is marked as a no-show.
  *
- * A disabled connection is a silent failure for whoever owns the calendar —
- * their bookings quietly stop appearing in it — so the event exists to give an
- * application somewhere to hang a notification.
+ * Deliberately distinct from {@see BookingCancelled}: the slot was held, the
+ * provider's time was spent, and nobody turned up. Anything that counts against
+ * a customer — a strike, a fee, a deposit forfeit — belongs on this event and
+ * not on cancellation.
  *
  * The payload is readonly and dispatched after commit. Plan §5.8 writes
  * bookings inside a transaction and behind an advisory lock, and
@@ -40,7 +42,7 @@ use Illuminate\Queue\SerializesModels;
  *
  * @since      1.0.0
  */
-class CalendarConnectionDisabled implements ShouldDispatchAfterCommit
+class BookingNoShow implements ShouldDispatchAfterCommit
 {
     use Dispatchable;
     use SerializesModels;
@@ -50,12 +52,12 @@ class CalendarConnectionDisabled implements ShouldDispatchAfterCommit
      *
      * @since 1.0.0
      *
-     * @param  CalendarConnection  $connection  The connection that was disabled.
-     * @param  string  $reason  Why it was disabled.
+     * @param  Booking  $booking  The booking nobody attended.
+     * @param  BookingActor  $actor  Who marked it as a no-show.
      */
     public function __construct(
-        public readonly CalendarConnection $connection,
-        public readonly string $reason,
+        public readonly Booking $booking,
+        public readonly BookingActor $actor = BookingActor::System,
     ) {
     }
 }
