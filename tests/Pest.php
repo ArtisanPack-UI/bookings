@@ -2,6 +2,22 @@
 
 declare( strict_types=1 );
 
+use ArtisanPackUI\Bookings\Enums\AvailabilityOverrideType;
+use ArtisanPackUI\Bookings\Enums\BookingStatus;
+use ArtisanPackUI\Bookings\Enums\CalendarSyncMode;
+use ArtisanPackUI\Bookings\Enums\NotificationType;
+use ArtisanPackUI\Bookings\Enums\ServiceAssignmentStrategy;
+use ArtisanPackUI\Bookings\Enums\WebhookDeliveryStatus;
+use ArtisanPackUI\Bookings\Models\AvailabilityOverride;
+use ArtisanPackUI\Bookings\Models\AvailabilitySchedule;
+use ArtisanPackUI\Bookings\Models\Booking;
+use ArtisanPackUI\Bookings\Models\CalendarConnection;
+use ArtisanPackUI\Bookings\Models\NotificationLog;
+use ArtisanPackUI\Bookings\Models\Service;
+use ArtisanPackUI\Bookings\Models\ServiceBlackoutDate;
+use ArtisanPackUI\Bookings\Models\ServiceProvider;
+use ArtisanPackUI\Bookings\Models\Webhook;
+use ArtisanPackUI\Bookings\Models\WebhookDelivery;
 use ArtisanPackUI\Core\Contracts\SiteResolver;
 use ArtisanPackUI\Core\MultiTenancy\SiteContext;
 use Illuminate\Database\QueryException;
@@ -289,5 +305,149 @@ function defineBookingMigrationTests(): void
         // this passes either way; it is here so that if that ever stops being
         // true, one test says so instead of every later test failing at once.
         expect( $this->insertBooking( [ 'service_id' => $this->insertService() ] ) )->toBeGreaterThan( 0 );
+    } );
+}
+
+/**
+ * Registers the engine-sensitive model assertions against the calling engine.
+ *
+ * Most of what the models do is engine-agnostic and is covered once, in
+ * tests/Feature/Models, against sqlite. These are the exceptions: the handful of
+ * places where the answer depends on how a particular server stores or compares
+ * a value, and where a green sqlite suite would therefore prove nothing about
+ * the other two.
+ *
+ * Three things drive the list. Eloquent writes a `date` cast through the
+ * connection's date format, so a stored bound carries a midnight time component
+ * that a native DATE column does not — which is why every date-range scope is
+ * asserted on its own boundary days here. JSON columns are a real type on MySQL
+ * and Postgres and text on sqlite. And the notification log's idempotency rests
+ * on a savepoint, which only means anything on a server that aborts a
+ * transaction after a failed statement — Postgres does, sqlite does not, so the
+ * sqlite run of this file proves the code path and the Postgres run proves the
+ * reason it exists.
+ *
+ * The calling file supplies the engine by using the matching TestsWith*
+ * concern before calling this.
+ *
+ * @return void
+ */
+function defineEngineSensitiveModelTests(): void
+{
+    it( 'applies a schedule on the first and last day it is in force', function (): void {
+        $provider = ServiceProvider::factory()->create();
+
+        AvailabilitySchedule::factory()
+            ->for( $provider, 'provider' )
+            ->nineToFive( 3 )
+            ->effective( '2026-09-01', '2026-09-30' )
+            ->create();
+
+        expect( AvailabilitySchedule::for( $provider, 3, '2026-09-01' )->count() )->toBe( 1 )
+            ->and( AvailabilitySchedule::for( $provider, 3, '2026-09-30' )->count() )->toBe( 1 )
+            ->and( AvailabilitySchedule::for( $provider, 3, '2026-08-31' )->count() )->toBe( 0 )
+            ->and( AvailabilitySchedule::for( $provider, 3, '2026-10-01' )->count() )->toBe( 0 );
+    } );
+
+    it( 'closes a blackout on the first and last day of its range', function (): void {
+        $service = Service::factory()->create();
+
+        ServiceBlackoutDate::factory()->for( $service )->create( [
+            'starts_on' => '2026-12-24',
+            'ends_on'   => '2026-12-26',
+        ] );
+
+        expect( ServiceBlackoutDate::closing( $service, '2026-12-24' )->count() )->toBe( 1 )
+            ->and( ServiceBlackoutDate::closing( $service, '2026-12-26' )->count() )->toBe( 1 )
+            ->and( ServiceBlackoutDate::closing( $service, '2026-12-23' )->count() )->toBe( 0 )
+            ->and( ServiceBlackoutDate::closing( $service, '2026-12-27' )->count() )->toBe( 0 );
+    } );
+
+    it( 'finds an availability override on its own date', function (): void {
+        $provider = ServiceProvider::factory()->create();
+
+        AvailabilityOverride::factory()->for( $provider, 'provider' )->onDate( '2026-07-14' )->create();
+
+        expect( AvailabilityOverride::for( $provider, '2026-07-14' )->count() )->toBe( 1 )
+            ->and( AvailabilityOverride::for( $provider, '2026-07-13' )->count() )->toBe( 0 )
+            ->and( AvailabilityOverride::for( $provider, '2026-07-15' )->count() )->toBe( 0 );
+    } );
+
+    it( 'round-trips a wall-clock time through the engine\'s own time type', function (): void {
+        $schedule = AvailabilitySchedule::factory()->between( '09:05', '17:30' )->create();
+
+        expect( $schedule->fresh()->start_time_local )->toBe( '09:05:00' )
+            ->and( $schedule->fresh()->end_time_local )->toBe( '17:30:00' );
+    } );
+
+    it( 'round-trips nested JSON through the engine\'s own JSON type', function (): void {
+        // Content survives everywhere; the order of an object's keys does not.
+        // MySQL's native JSON type stores objects sorted by key and hands them
+        // back that way, so `{"event": …, "data": …}` returns as `{"data": …,
+        // "event": …}` there and unchanged on sqlite. Hence the canonicalizing
+        // comparison — an exact one would pass on two engines and fail on the
+        // third for a difference nothing in the package cares about.
+        $schema  = [
+            'fields' => [
+                [ 'name' => 'goal', 'type' => 'textarea', 'required' => true ],
+                [ 'name' => 'referrer', 'type' => 'text', 'required' => false ],
+            ],
+        ];
+        $service = Service::factory()->create( [ 'intake_schema' => $schema ] );
+
+        $payload  = [ 'event' => 'booking.created', 'data' => [ 'id' => 7, 'tags' => [ 'vip', 'retainer' ] ] ];
+        $delivery = WebhookDelivery::factory()->create( [ 'payload' => $payload ] );
+
+        expect( $service->fresh()->intake_schema )->toEqualCanonicalizing( $schema )
+            ->and( $delivery->fresh()->payload )->toEqualCanonicalizing( $payload );
+
+        // What the package does depend on: the order of a JSON *list*. Every
+        // engine preserves that, which is why an intake form is a list of
+        // fields rather than an object keyed by field name — the latter would
+        // render its questions in a different order on MySQL.
+        expect( array_column( $service->fresh()->intake_schema['fields'], 'name' ) )
+            ->toBe( [ 'goal', 'referrer' ] )
+            ->and( $delivery->fresh()->payload['data']['tags'] )->toBe( [ 'vip', 'retainer' ] )
+            ->and( Webhook::factory()->subscribedTo( [ 'booking.created', 'booking.cancelled' ] )->create()->fresh()->events )
+            ->toBe( [ 'booking.created', 'booking.cancelled' ] );
+    } );
+
+    it( 'round-trips every enum against the engine\'s own column type', function (): void {
+        // MySQL and Postgres both constrain these columns to a fixed set of
+        // strings, so a PHP enum whose values drifted from the migration would
+        // fail on write here while passing happily against sqlite's text.
+        $booking = Booking::factory()->create( [ 'status' => BookingStatus::NoShow ] );
+
+        expect( $booking->fresh()->status )->toBe( BookingStatus::NoShow )
+            ->and( Service::factory()->roundRobin()->create()->fresh()->assignment_strategy )
+            ->toBe( ServiceAssignmentStrategy::RoundRobin )
+            ->and( CalendarConnection::factory()->twoWay()->create()->fresh()->sync_mode )
+            ->toBe( CalendarSyncMode::TwoWay )
+            ->and( AvailabilityOverride::factory()->customHours()->create()->fresh()->type )
+            ->toBe( AvailabilityOverrideType::CustomHours )
+            ->and( WebhookDelivery::factory()->dead()->create()->fresh()->status )
+            ->toBe( WebhookDeliveryStatus::Dead );
+    } );
+
+    it( 'loses a duplicate notification claim without poisoning the transaction', function (): void {
+        // The reason logSend() wraps its insert in a nested transaction. Postgres
+        // aborts an entire transaction on any failed statement, so without the
+        // savepoint the caught duplicate would take every query after it down
+        // with it — and the caller would find that out several statements later,
+        // somewhere unrelated.
+        $booking = Booking::factory()->create();
+
+        DB::transaction( function () use ( $booking ): void {
+            $first  = NotificationLog::logSend( $booking, NotificationType::Reminder, 'mail', 'sam@example.test', '2026-05-01 15:00:00' );
+            $second = NotificationLog::logSend( $booking, NotificationType::Reminder, 'mail', 'sam@example.test', '2026-05-01 15:00:00' );
+
+            expect( $first )->not->toBeNull()
+                ->and( $second )->toBeNull();
+
+            // The query that proves the point: still usable, same transaction.
+            expect( NotificationLog::query()->count() )->toBe( 1 );
+        } );
+
+        expect( NotificationLog::query()->count() )->toBe( 1 );
     } );
 }

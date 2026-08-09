@@ -30,6 +30,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | User Model
+    |--------------------------------------------------------------------------
+    |
+    | The application's user model, used to resolve the optional account behind
+    | a service provider. Providers do not have to be users at all — the link is
+    | nullable and carries no foreign key — so this is only consulted when a
+    | provider actually has one.
+    |
+    */
+    'user_model' => 'App\\Models\\User',
+
+    /*
+    |--------------------------------------------------------------------------
     | Slot Interval
     |--------------------------------------------------------------------------
     |

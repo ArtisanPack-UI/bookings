@@ -19,11 +19,14 @@ use Illuminate\Database\Eloquent\Model;
 /**
  * A minimal model that opts into site scoping.
  *
- * The package has no models yet, so the scope is exercised against a stand-in
- * with the shape every owned table will have: a nullable, indexed site_id.
+ * The scope's own mechanics are exercised against a stand-in with the shape
+ * every owned table has — a nullable, indexed site_id — so that a failure here
+ * points at the scope rather than at whichever real model happened to be used.
+ * The package's own models are held to the same rules in
+ * tests/Feature/Models/SiteScopingTest.php.
  *
  * `site_id` is deliberately not mass assignable, which is the rule the real
- * models have to follow — an explicitly set site beats the resolved one, so a
+ * models follow too — an explicitly set site beats the resolved one, so a
  * fillable site_id would let request data write into another tenant. Tests that
  * need to place a row under a specific site use forceCreate().
  *
