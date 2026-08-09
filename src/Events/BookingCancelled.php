@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Webhook disabled event.
+ * Booking cancelled event.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
@@ -15,17 +15,20 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Events;
 
-use ArtisanPackUI\Bookings\Models\Webhook;
+use ArtisanPackUI\Bookings\Enums\BookingActor;
+use ArtisanPackUI\Bookings\Models\Booking;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * Fired when an outbound webhook endpoint stops being delivered to.
+ * Fired when a booking is cancelled and stops holding its slot.
  *
- * An endpoint that fails often enough is disabled rather than retried forever,
- * and the consumer on the other end has no way of noticing that on their own.
- * This event is where an application hooks in to tell them.
+ * The actor is the reason this event carries anything beyond the booking. "The
+ * customer cancelled" and "we cancelled on the customer" are the same status
+ * change and completely different things to a listener — the second one owes
+ * somebody an apology, and possibly a refund — and the booking row cannot tell
+ * them apart on its own.
  *
  * Dispatched after commit. Plan §5.8 writes bookings inside a transaction and
  * behind an advisory lock, and {@see SerializesModels} restores a payload by
@@ -39,7 +42,7 @@ use Illuminate\Queue\SerializesModels;
  *
  * @since      1.0.0
  */
-class WebhookDisabled implements ShouldDispatchAfterCommit
+class BookingCancelled implements ShouldDispatchAfterCommit
 {
     use Dispatchable;
     use SerializesModels;
@@ -49,12 +52,16 @@ class WebhookDisabled implements ShouldDispatchAfterCommit
      *
      * @since 1.0.0
      *
-     * @param  Webhook  $webhook  The webhook that was disabled.
-     * @param  string  $reason  Why it was disabled.
+     * @param  Booking  $booking  The booking that was cancelled.
+     * @param  BookingActor  $actor  Who cancelled it.
+     * @param  string|null  $reason  Why, when a reason was given. Free text
+     *                               supplied by whoever cancelled, so treat it as
+     *                               untrusted when displaying it.
      */
     public function __construct(
-        public Webhook $webhook,
-        public string $reason,
+        public Booking $booking,
+        public BookingActor $actor,
+        public ?string $reason = null,
     ) {
     }
 }

@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Webhook disabled event.
+ * Booking confirmed event.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
@@ -15,17 +15,21 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Events;
 
-use ArtisanPackUI\Bookings\Models\Webhook;
+use ArtisanPackUI\Bookings\Enums\BookingActor;
+use ArtisanPackUI\Bookings\Models\Booking;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * Fired when an outbound webhook endpoint stops being delivered to.
+ * Fired when a booking's status becomes `confirmed`.
  *
- * An endpoint that fails often enough is disabled rather than retried forever,
- * and the consumer on the other end has no way of noticing that on their own.
- * This event is where an application hooks in to tell them.
+ * This is the event that means the appointment is really happening, which makes
+ * it the one to hang confirmation emails, calendar pushes, and CRM records off
+ * rather than {@see BookingRequested}.
+ *
+ * It fires once per booking. A booking confirmed, cancelled, and rebooked is a
+ * different booking row and gets its own event.
  *
  * Dispatched after commit. Plan §5.8 writes bookings inside a transaction and
  * behind an advisory lock, and {@see SerializesModels} restores a payload by
@@ -39,7 +43,7 @@ use Illuminate\Queue\SerializesModels;
  *
  * @since      1.0.0
  */
-class WebhookDisabled implements ShouldDispatchAfterCommit
+class BookingConfirmed implements ShouldDispatchAfterCommit
 {
     use Dispatchable;
     use SerializesModels;
@@ -49,12 +53,13 @@ class WebhookDisabled implements ShouldDispatchAfterCommit
      *
      * @since 1.0.0
      *
-     * @param  Webhook  $webhook  The webhook that was disabled.
-     * @param  string  $reason  Why it was disabled.
+     * @param  Booking  $booking  The booking that was confirmed.
+     * @param  BookingActor  $actor  Who confirmed it. `System` when the service
+     *                               confirms automatically.
      */
     public function __construct(
-        public Webhook $webhook,
-        public string $reason,
+        public Booking $booking,
+        public BookingActor $actor = BookingActor::System,
     ) {
     }
 }

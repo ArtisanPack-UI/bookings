@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Webhook disabled event.
+ * Booking completed event.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
@@ -15,17 +15,22 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Events;
 
-use ArtisanPackUI\Bookings\Models\Webhook;
+use ArtisanPackUI\Bookings\Enums\BookingActor;
+use ArtisanPackUI\Bookings\Models\Booking;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * Fired when an outbound webhook endpoint stops being delivered to.
+ * Fired when a booking is marked as delivered.
  *
- * An endpoint that fails often enough is disabled rather than retried forever,
- * and the consumer on the other end has no way of noticing that on their own.
- * This event is where an application hooks in to tell them.
+ * Completion is a claim about the real world, not a consequence of the clock:
+ * a booking whose end time has passed is not complete until somebody — a staff
+ * member, or the sweep that closes out past bookings — says it is. That is why
+ * the actor is here, and why a listener should not assume this fires promptly
+ * after the end time.
+ *
+ * This is the event a follow-up, a review request, or an invoice hangs off.
  *
  * Dispatched after commit. Plan §5.8 writes bookings inside a transaction and
  * behind an advisory lock, and {@see SerializesModels} restores a payload by
@@ -39,7 +44,7 @@ use Illuminate\Queue\SerializesModels;
  *
  * @since      1.0.0
  */
-class WebhookDisabled implements ShouldDispatchAfterCommit
+class BookingCompleted implements ShouldDispatchAfterCommit
 {
     use Dispatchable;
     use SerializesModels;
@@ -49,12 +54,12 @@ class WebhookDisabled implements ShouldDispatchAfterCommit
      *
      * @since 1.0.0
      *
-     * @param  Webhook  $webhook  The webhook that was disabled.
-     * @param  string  $reason  Why it was disabled.
+     * @param  Booking  $booking  The booking that was delivered.
+     * @param  BookingActor  $actor  Who marked it complete.
      */
     public function __construct(
-        public Webhook $webhook,
-        public string $reason,
+        public Booking $booking,
+        public BookingActor $actor = BookingActor::System,
     ) {
     }
 }

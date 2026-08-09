@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Webhook disabled event.
+ * Booking rescheduled event.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
@@ -15,17 +15,23 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Events;
 
-use ArtisanPackUI\Bookings\Models\Webhook;
+use ArtisanPackUI\Bookings\Enums\BookingActor;
+use ArtisanPackUI\Bookings\Models\Booking;
+use ArtisanPackUI\Bookings\Support\TimeRange;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * Fired when an outbound webhook endpoint stops being delivered to.
+ * Fired when a booking moves to a different time.
  *
- * An endpoint that fails often enough is disabled rather than retried forever,
- * and the consumer on the other end has no way of noticing that on their own.
- * This event is where an application hooks in to tell them.
+ * The booking carries the new time; the old one is gone from the row by the
+ * time any listener sees it, which is why it rides along on the event. A
+ * listener that has to update something it already sent — a calendar event, a
+ * reminder job — needs both.
+ *
+ * A change of provider without a change of time does not fire this. Only the
+ * time moving does.
  *
  * Dispatched after commit. Plan §5.8 writes bookings inside a transaction and
  * behind an advisory lock, and {@see SerializesModels} restores a payload by
@@ -39,7 +45,7 @@ use Illuminate\Queue\SerializesModels;
  *
  * @since      1.0.0
  */
-class WebhookDisabled implements ShouldDispatchAfterCommit
+class BookingRescheduled implements ShouldDispatchAfterCommit
 {
     use Dispatchable;
     use SerializesModels;
@@ -49,12 +55,14 @@ class WebhookDisabled implements ShouldDispatchAfterCommit
      *
      * @since 1.0.0
      *
-     * @param  Webhook  $webhook  The webhook that was disabled.
-     * @param  string  $reason  Why it was disabled.
+     * @param  Booking  $booking  The booking at its new time.
+     * @param  TimeRange  $previousPeriod  The time the booking used to occupy.
+     * @param  BookingActor  $actor  Who moved it.
      */
     public function __construct(
-        public Webhook $webhook,
-        public string $reason,
+        public Booking $booking,
+        public TimeRange $previousPeriod,
+        public BookingActor $actor = BookingActor::System,
     ) {
     }
 }

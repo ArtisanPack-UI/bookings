@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Webhook disabled event.
+ * Series created event.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
@@ -15,17 +15,23 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Events;
 
-use ArtisanPackUI\Bookings\Models\Webhook;
+use ArtisanPackUI\Bookings\Models\BookingSeries;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * Fired when an outbound webhook endpoint stops being delivered to.
+ * Fired when a recurrence rule has been saved and expanded into occurrences.
  *
- * An endpoint that fails often enough is disabled rather than retried forever,
- * and the consumer on the other end has no way of noticing that on their own.
- * This event is where an application hooks in to tell them.
+ * Fires once for the series, after the occurrences exist. Each occurrence also
+ * fires its own {@see BookingRequested}, so a listener interested in individual
+ * appointments does not need this one — this is for anything that cares about
+ * the arrangement rather than the appointments, such as a subscription or an
+ * invoice covering the whole run.
+ *
+ * The occurrence count is carried separately because the series row does not
+ * hold one: an RRULE bounded by `UNTIL` rather than `COUNT` only reveals how
+ * many occurrences it produced by being expanded.
  *
  * Dispatched after commit. Plan §5.8 writes bookings inside a transaction and
  * behind an advisory lock, and {@see SerializesModels} restores a payload by
@@ -39,7 +45,7 @@ use Illuminate\Queue\SerializesModels;
  *
  * @since      1.0.0
  */
-class WebhookDisabled implements ShouldDispatchAfterCommit
+class SeriesCreated implements ShouldDispatchAfterCommit
 {
     use Dispatchable;
     use SerializesModels;
@@ -49,12 +55,12 @@ class WebhookDisabled implements ShouldDispatchAfterCommit
      *
      * @since 1.0.0
      *
-     * @param  Webhook  $webhook  The webhook that was disabled.
-     * @param  string  $reason  Why it was disabled.
+     * @param  BookingSeries  $series  The series that was created.
+     * @param  int  $occurrenceCount  How many bookings the rule produced.
      */
     public function __construct(
-        public Webhook $webhook,
-        public string $reason,
+        public BookingSeries $series,
+        public int $occurrenceCount,
     ) {
     }
 }

@@ -122,6 +122,78 @@ bookings();
 The booking, availability, and calendar APIs are added on top of this entry point
 in the alpha releases.
 
+## Extending
+
+### Contracts
+
+Five seams are interfaces under `ArtisanPackUI\Bookings\Contracts`. Bind your own
+implementation and the package uses it instead of the default:
+
+| Contract | Replaces |
+| --- | --- |
+| `SlotResolver` | how availability rules become bookable slots |
+| `RoundRobinStrategy` | which provider is assigned to a slot |
+| `CalendarSyncDriver` | how one external calendar system is talked to |
+| `NotificationChannel` | how one lifecycle message is delivered |
+| `MeetingTypeRegistry` | which shapes a service can be booked in |
+
+Site resolution is deliberately not on this list. It is
+`ArtisanPackUI\Core\Contracts\SiteResolver`, bound once for the whole ecosystem —
+see [Multi-site](#multi-site).
+
+### Events
+
+Every lifecycle change dispatches a typed event under
+`ArtisanPackUI\Bookings\Events`. Payloads are serializable, so a listener may be
+queued:
+
+`BookingRequested`, `BookingConfirmed`, `BookingRescheduled`, `BookingCancelled`,
+`BookingCompleted`, `BookingNoShow`, `SeriesCreated`, `SeriesCancelled`,
+`SeriesEdited`, `CalendarSynced`, `CalendarSyncFailed`,
+`CalendarConnectionDisabled`, and `WebhookDisabled`.
+
+`BookingCancelled` carries a `BookingActor` because "the customer cancelled" and
+"we cancelled on the customer" are the same status change and completely
+different events downstream. `SeriesEdited` carries a `SeriesEditScope` for the
+same reason.
+
+These names are public API. They are what `artisanpack-ui/crm` will subscribe to,
+and they will not be renamed without a deprecation cycle.
+
+### Hooks
+
+Actions and filters are registered through `artisanpack-ui/hooks`. Names take an
+`ap.` prefix, `.`-separated segments, and camelCase within each segment — so both
+`ap.bookings.registeredMeetingTypes` and grouped names like
+`ap.bookings.calendarSync.providers` are well formed. Never snake_case.
+
+Meeting types are contributed through a filter rather than being hard-coded:
+
+```php
+use ArtisanPackUI\Bookings\MeetingTypes\RegisteredMeetingType;
+
+addFilter( 'ap.bookings.registeredMeetingTypes', function ( array $types ): array {
+    $types[] = new RegisteredMeetingType(
+        'webinar',
+        'Webinar',
+        'Broadcast to many attendees at once.',
+        allowsMultipleAttendees: true,
+    );
+
+    return $types;
+} );
+```
+
+Pass the label and description untranslated — they are used as translation keys
+and run through `__()` when read, so they follow the current locale rather than
+freezing at whichever one was active when the registry was first resolved.
+
+The filter runs on every read, so registering from a service provider that boots
+after this one still works. Entries are keyed by the type's own `key()`, so
+appending and assigning behave identically. The four built-ins — `one_to_one`,
+`group`, `recurring`, and `round_robin` — are ordinary entries: register a type
+under an existing key to replace it.
+
 ## Optional integrations
 
 The package runs standalone in any Laravel application. When these are installed

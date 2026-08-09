@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Webhook disabled event.
+ * Booking requested event.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
@@ -15,17 +15,21 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Events;
 
-use ArtisanPackUI\Bookings\Models\Webhook;
+use ArtisanPackUI\Bookings\Models\Booking;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * Fired when an outbound webhook endpoint stops being delivered to.
+ * Fired once a booking row exists, before anybody has confirmed it.
  *
- * An endpoint that fails often enough is disabled rather than retried forever,
- * and the consumer on the other end has no way of noticing that on their own.
- * This event is where an application hooks in to tell them.
+ * The slot is already held at this point — `requested` occupies a slot exactly
+ * as `confirmed` does — so this is not "somebody asked", it is "the appointment
+ * is on the books and is waiting on approval". A service that confirms
+ * automatically fires this and {@see BookingConfirmed} in the same request.
+ *
+ * Carries the booking as saved. Anything a listener changes on it needs saving
+ * itself; the dispatcher does not save again afterwards.
  *
  * Dispatched after commit. Plan §5.8 writes bookings inside a transaction and
  * behind an advisory lock, and {@see SerializesModels} restores a payload by
@@ -39,7 +43,7 @@ use Illuminate\Queue\SerializesModels;
  *
  * @since      1.0.0
  */
-class WebhookDisabled implements ShouldDispatchAfterCommit
+class BookingRequested implements ShouldDispatchAfterCommit
 {
     use Dispatchable;
     use SerializesModels;
@@ -49,12 +53,10 @@ class WebhookDisabled implements ShouldDispatchAfterCommit
      *
      * @since 1.0.0
      *
-     * @param  Webhook  $webhook  The webhook that was disabled.
-     * @param  string  $reason  Why it was disabled.
+     * @param  Booking  $booking  The booking that was created.
      */
     public function __construct(
-        public Webhook $webhook,
-        public string $reason,
+        public Booking $booking,
     ) {
     }
 }

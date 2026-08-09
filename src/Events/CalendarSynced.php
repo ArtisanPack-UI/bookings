@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Webhook disabled event.
+ * Calendar synced event.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
@@ -15,17 +15,18 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Events;
 
-use ArtisanPackUI\Bookings\Models\Webhook;
+use ArtisanPackUI\Bookings\Models\Booking;
+use ArtisanPackUI\Bookings\Models\CalendarConnection;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * Fired when an outbound webhook endpoint stops being delivered to.
+ * Fired when a booking has been written to an external calendar.
  *
- * An endpoint that fails often enough is disabled rather than retried forever,
- * and the consumer on the other end has no way of noticing that on their own.
- * This event is where an application hooks in to tell them.
+ * Fires per booking per connection, so a provider with two connected calendars
+ * produces two of these for one booking. The external identifier is the one the
+ * calendar assigned, and is what a later update or delete is addressed to.
  *
  * Dispatched after commit. Plan §5.8 writes bookings inside a transaction and
  * behind an advisory lock, and {@see SerializesModels} restores a payload by
@@ -39,7 +40,7 @@ use Illuminate\Queue\SerializesModels;
  *
  * @since      1.0.0
  */
-class WebhookDisabled implements ShouldDispatchAfterCommit
+class CalendarSynced implements ShouldDispatchAfterCommit
 {
     use Dispatchable;
     use SerializesModels;
@@ -49,12 +50,14 @@ class WebhookDisabled implements ShouldDispatchAfterCommit
      *
      * @since 1.0.0
      *
-     * @param  Webhook  $webhook  The webhook that was disabled.
-     * @param  string  $reason  Why it was disabled.
+     * @param  CalendarConnection  $connection  The connection written through.
+     * @param  Booking  $booking  The booking that was pushed.
+     * @param  string  $externalEventId  The identifier the calendar assigned.
      */
     public function __construct(
-        public Webhook $webhook,
-        public string $reason,
+        public CalendarConnection $connection,
+        public Booking $booking,
+        public string $externalEventId,
     ) {
     }
 }
