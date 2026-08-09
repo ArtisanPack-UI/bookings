@@ -92,6 +92,11 @@ class WebhookDeliveryFactory extends Factory
             'attempted_at'    => null,
             'succeeded_at'    => null,
             'response_status' => null,
+            // Cleared, so that `->failed()->pending()` describes a queued
+            // delivery rather than one carrying a retry time from the state it
+            // was chained onto — which the due sweep would then skip until that
+            // stale moment passed.
+            'next_attempt_at' => null,
         ] );
     }
 

@@ -78,6 +78,25 @@ class ServiceProviderService extends Pivot
     ];
 
     /**
+     * The attributes that should be cast.
+     *
+     * Declared as a property rather than through the `casts()` method Laravel 11
+     * introduced. The method does not exist on Laravel 10, where it is not
+     * overriding anything and is simply never called — so every cast on every
+     * model would quietly do nothing, and a JSON column would come back as a
+     * string with no error to notice. The property is read by every version the
+     * package's constraints allow.
+     *
+     * @since 1.0.0
+     *
+     * @var array<string, string>
+     */
+    protected $casts = [
+        'custom_price'    => 'decimal:2',
+        'custom_duration' => 'integer',
+    ];
+
+    /**
      * Gets the effective price of the service for this provider.
      *
      * The service is passed in rather than loaded, because every caller already
@@ -115,21 +134,6 @@ class ServiceProviderService extends Pivot
         $this->assertPairedWith( $service );
 
         return $this->custom_duration ?? $service->duration;
-    }
-
-    /**
-     * Gets the attributes that should be cast.
-     *
-     * @since 1.0.0
-     *
-     * @return array<string, string> The cast definitions.
-     */
-    protected function casts(): array
-    {
-        return [
-            'custom_price'    => 'decimal:2',
-            'custom_duration' => 'integer',
-        ];
     }
 
     /**

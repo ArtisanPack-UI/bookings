@@ -86,6 +86,28 @@ class Webhook extends Model
     ];
 
     /**
+     * The attributes that should be cast.
+     *
+     * Declared as a property rather than through the `casts()` method Laravel 11
+     * introduced. The method does not exist on Laravel 10, where it is not
+     * overriding anything and is simply never called — so every cast on every
+     * model would quietly do nothing, and a JSON column would come back as a
+     * string with no error to notice. The property is read by every version the
+     * package's constraints allow.
+     *
+     * @since 1.0.0
+     *
+     * @var array<string, string>
+     */
+    protected $casts = [
+        'events'                    => 'array',
+        'is_active'                 => 'boolean',
+        'consecutive_failure_count' => 'integer',
+        'disabled_at'               => 'datetime',
+        'last_success_at'           => 'datetime',
+    ];
+
+    /**
      * The attributes hidden from array and JSON output.
      *
      * The signing secret is the one thing on this row a consumer must not be
@@ -113,45 +135,37 @@ class Webhook extends Model
     /**
      * Stops delivering to this endpoint.
      *
-     * Idempotent against a row that already reads disabled: it is left alone and
-     * no second event is fired, so a failure sweep that runs twice does not tell
-     * the consumer about the same outage twice. See
-     * {@see CalendarConnection::disable()} for the limit of that guard — it
-     * settles a repeat, not two processes racing on one row.
+     * The write is the guard. A conditional update — this row, and only while it
+     * is not already disabled — lets the database decide which caller wins, so
+     * two sweeps running at once produce one write and one event between them
+     * rather than one each. Reading `disabled_at` first and writing second has a
+     * window in it, and both callers fit through.
+     *
+     * Scopes are dropped deliberately: the target is one known primary key, and
+     * a maintenance sweep walking every tenant must not find nothing here just
+     * because no site is in context.
      *
      * @since 1.0.0
      *
      * @param  string  $reason  Why the endpoint is being disabled.
      *
-     * @return bool True when this call disabled the endpoint.
+     * @return bool True when this call is the one that disabled it.
      */
     public function disable( string $reason ): bool
     {
-        if ( $this->isDisabled() ) {
+        $claimed = $this->newQueryWithoutScopes()
+            ->whereKey( $this->getKey() )
+            ->whereNull( 'disabled_at' )
+            ->update( [
+                'disabled_at' => $this->freshTimestamp(),
+                'is_active'   => false,
+            ] );
+
+        if ( 1 !== $claimed ) {
             return false;
         }
 
-        // Kept so the instance can be put back exactly as it was found if the
-        // write does not happen. forceFill() mutates in memory first, and a
-        // caller retrying on the same object would otherwise hit the
-        // already-disabled guard and read "nothing to do" from what was really
-        // a failed write, with the row still active in the database.
-        $unchanged = $this->getAttributes();
-
-        $this->forceFill( [
-            'disabled_at' => $this->freshTimestamp(),
-            'is_active'   => false,
-        ] );
-
-        // The event only follows a write that actually happened. A `saving`
-        // listener returning false leaves the row reading active, and
-        // announcing an outage that did not get recorded would have the next
-        // sweep disable and announce the very same one again.
-        if ( ! $this->save() ) {
-            $this->setRawAttributes( $unchanged );
-
-            return false;
-        }
+        $this->refresh();
 
         WebhookDisabled::dispatch( $this, $reason );
 
@@ -215,23 +229,5 @@ class Webhook extends Model
     protected static function newFactory(): WebhookFactory
     {
         return WebhookFactory::new();
-    }
-
-    /**
-     * Gets the attributes that should be cast.
-     *
-     * @since 1.0.0
-     *
-     * @return array<string, string> The cast definitions.
-     */
-    protected function casts(): array
-    {
-        return [
-            'events'                    => 'array',
-            'is_active'                 => 'boolean',
-            'consecutive_failure_count' => 'integer',
-            'disabled_at'               => 'datetime',
-            'last_success_at'           => 'datetime',
-        ];
     }
 }

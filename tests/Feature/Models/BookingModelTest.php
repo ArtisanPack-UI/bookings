@@ -10,6 +10,7 @@ use ArtisanPackUI\Bookings\Models\IntakeSchemaVersion;
 use ArtisanPackUI\Bookings\Models\Service;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Tests\Concerns\TestsWithSqlite;
 
 uses( TestsWithSqlite::class, RefreshDatabase::class );
@@ -132,8 +133,17 @@ describe( 'the booking casts', function (): void {
     it( 'reads the times back as Carbon instances in UTC', function (): void {
         $booking = Booking::factory()->startingAt( '2026-06-01 14:00:00', 60 )->create();
 
-        expect( $booking->fresh()->start_time->format( 'Y-m-d H:i' ) )->toBe( '2026-06-01 14:00' )
-            ->and( $booking->fresh()->end_time->format( 'Y-m-d H:i' ) )->toBe( '2026-06-01 15:00' );
+        $fresh = $booking->fresh();
+
+        // The zone is asserted, not just the clock face. Without it this passes
+        // under any application timezone and says nothing about the UTC contract
+        // the column is documented to hold.
+        expect( config( 'app.timezone' ) )->toBe( 'UTC' )
+            ->and( $fresh->start_time )->toBeInstanceOf( Carbon::class )
+            ->and( $fresh->start_time->getTimezone()->getName() )->toBe( 'UTC' )
+            ->and( $fresh->start_time->format( 'Y-m-d H:i' ) )->toBe( '2026-06-01 14:00' )
+            ->and( $fresh->end_time->getTimezone()->getName() )->toBe( 'UTC' )
+            ->and( $fresh->end_time->format( 'Y-m-d H:i' ) )->toBe( '2026-06-01 15:00' );
     } );
 
     it( 'renders the start time back in the customer timezone', function (): void {
@@ -264,9 +274,18 @@ describe( 'series occurrences', function (): void {
         // so a duplicate would go in without complaint.
         $series = BookingSeries::factory()->withOccurrences( 3 )->create();
 
-        $series->occurrences()->orderByDesc( 'series_index' )->first()->delete();
+        // reorder() first. occurrences() already orders by series_index ascending,
+        // and orderByDesc() would append a second column rather than replace the
+        // first — leaving occurrence 1 deleted, the highest index still visible,
+        // and this test green whether or not withTrashed() is there at all.
+        $last = $series->occurrences()->reorder()->orderByDesc( 'series_index' )->first();
+
+        expect( $last->series_index )->toBe( 3 );
+
+        $last->delete();
 
         expect( $series->occurrences()->count() )->toBe( 2 )
+            ->and( $series->occurrences()->max( 'series_index' ) )->toBe( 2 )
             ->and( $series->nextSeriesIndex() )->toBe( 4 );
     } );
 

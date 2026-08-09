@@ -116,6 +116,35 @@ class Service extends Model
     ];
 
     /**
+     * The attributes that should be cast.
+     *
+     * Declared as a property rather than through the `casts()` method Laravel 11
+     * introduced. The method does not exist on Laravel 10, where it is not
+     * overriding anything and is simply never called — so every cast on every
+     * model would quietly do nothing, and a JSON column would come back as a
+     * string with no error to notice. The property is read by every version the
+     * package's constraints allow.
+     *
+     * @since 1.0.0
+     *
+     * @var array<string, string>
+     */
+    protected $casts = [
+        'duration'              => 'integer',
+        'buffer_before'         => 'integer',
+        'buffer_after'          => 'integer',
+        'price'                 => 'decimal:2',
+        'is_free'               => 'boolean',
+        'max_bookings_per_slot' => 'integer',
+        'is_active'             => 'boolean',
+        'intake_schema'         => 'array',
+        'intake_schema_version' => 'integer',
+        'assignment_strategy'   => ServiceAssignmentStrategy::class,
+        'metadata'              => 'array',
+        'pii_erased_at'         => 'datetime',
+    ];
+
+    /**
      * Gets the providers who offer this service.
      *
      * The pivot table is named explicitly. Laravel would derive
@@ -268,30 +297,5 @@ class Service extends Model
     protected static function newFactory(): ServiceFactory
     {
         return ServiceFactory::new();
-    }
-
-    /**
-     * Gets the attributes that should be cast.
-     *
-     * @since 1.0.0
-     *
-     * @return array<string, string> The cast definitions.
-     */
-    protected function casts(): array
-    {
-        return [
-            'duration'              => 'integer',
-            'buffer_before'         => 'integer',
-            'buffer_after'          => 'integer',
-            'price'                 => 'decimal:2',
-            'is_free'               => 'boolean',
-            'max_bookings_per_slot' => 'integer',
-            'is_active'             => 'boolean',
-            'intake_schema'         => 'array',
-            'intake_schema_version' => 'integer',
-            'assignment_strategy'   => ServiceAssignmentStrategy::class,
-            'metadata'              => 'array',
-            'pii_erased_at'         => 'datetime',
-        ];
     }
 }

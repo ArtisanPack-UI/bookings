@@ -81,9 +81,12 @@ class CalendarBusyBlockFactory extends Factory
      */
     public function spanning( DateTimeInterface|string $start, DateTimeInterface|string $end ): static
     {
+        // Read as UTC, matching the columns. A bare string would otherwise be
+        // interpreted in the application's timezone and the fixture would
+        // describe a different window from the one the test names.
         return $this->state( fn (): array => [
-            'starts_at_utc' => Carbon::parse( $start ),
-            'ends_at_utc'   => Carbon::parse( $end ),
+            'starts_at_utc' => Carbon::parse( $start, 'UTC' ),
+            'ends_at_utc'   => Carbon::parse( $end, 'UTC' ),
         ] );
     }
 
@@ -98,7 +101,7 @@ class CalendarBusyBlockFactory extends Factory
      */
     public function allDay( DateTimeInterface|string $date ): static
     {
-        $day = Carbon::parse( $date )->startOfDay();
+        $day = Carbon::parse( $date, 'UTC' )->startOfDay();
 
         return $this->state( fn (): array => [
             'starts_at_utc' => $day,

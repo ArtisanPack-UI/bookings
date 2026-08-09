@@ -101,6 +101,29 @@ class ServiceProvider extends Model
     ];
 
     /**
+     * The attributes that should be cast.
+     *
+     * Declared as a property rather than through the `casts()` method Laravel 11
+     * introduced. The method does not exist on Laravel 10, where it is not
+     * overriding anything and is simply never called — so every cast on every
+     * model would quietly do nothing, and a JSON column would come back as a
+     * string with no error to notice. The property is read by every version the
+     * package's constraints allow.
+     *
+     * @since 1.0.0
+     *
+     * @var array<string, string>
+     */
+    protected $casts = [
+        'round_robin_weight'           => 'integer',
+        'round_robin_last_assigned_at' => 'datetime',
+        'sort_order'                   => 'integer',
+        'is_active'                    => 'boolean',
+        'metadata'                     => 'array',
+        'pii_erased_at'                => 'datetime',
+    ];
+
+    /**
      * Gets the services this provider offers.
      *
      * @since 1.0.0
@@ -244,24 +267,5 @@ class ServiceProvider extends Model
     protected static function newFactory(): ServiceProviderFactory
     {
         return ServiceProviderFactory::new();
-    }
-
-    /**
-     * Gets the attributes that should be cast.
-     *
-     * @since 1.0.0
-     *
-     * @return array<string, string> The cast definitions.
-     */
-    protected function casts(): array
-    {
-        return [
-            'round_robin_weight'           => 'integer',
-            'round_robin_last_assigned_at' => 'datetime',
-            'sort_order'                   => 'integer',
-            'is_active'                    => 'boolean',
-            'metadata'                     => 'array',
-            'pii_erased_at'                => 'datetime',
-        ];
     }
 }

@@ -86,28 +86,27 @@ describe( 'disabling a webhook', function (): void {
         expect( Webhook::active()->count() )->toBe( 2 );
     } );
 
-    it( 'announces nothing when the write it announces does not happen', function (): void {
-        // Telling the consumer about an outage that was never recorded leaves the
-        // row reading active, so the next sweep disables and announces the very
-        // same outage again.
+    it( 'announces once even when two workers hold the same row', function (): void {
+        // The case a read-then-write guard cannot survive: both instances were
+        // loaded while the endpoint was still active, so both pass any check made
+        // against their own cached attributes. Only the conditional update can
+        // separate them, and the consumer hears about the outage once.
         Event::fake( [ WebhookDisabled::class ] );
 
         $webhook = Webhook::factory()->create();
 
-        // Registered after the row exists, so it refuses the disabling write
-        // rather than the one that created the endpoint in the first place.
-        Webhook::saving( fn (): bool => false );
+        $workerOne = Webhook::query()->findOrFail( $webhook->id );
+        $workerTwo = Webhook::query()->findOrFail( $webhook->id );
 
-        expect( $webhook->disable( 'Ten consecutive failures.' ) )->toBeFalse()
-            ->and( $webhook->fresh()->disabled_at )->toBeNull();
+        expect( $workerOne->isDisabled() )->toBeFalse()
+            ->and( $workerTwo->isDisabled() )->toBeFalse();
 
-        Event::assertNotDispatched( WebhookDisabled::class );
+        $first  = $workerOne->disable( 'Ten consecutive failures.' );
+        $second = $workerTwo->disable( 'Ten consecutive failures.' );
 
-        // And the instance is left as it was found, so a caller retrying on the
-        // same object gets another attempt at the write rather than the
-        // already-disabled early return standing in for a success.
-        expect( $webhook->isDisabled() )->toBeFalse()
-            ->and( $webhook->is_active )->toBeTrue();
+        expect( [ $first, $second ] )->toBe( [ true, false ] );
+
+        Event::assertDispatchedTimes( WebhookDisabled::class, 1 );
     } );
 } );
 

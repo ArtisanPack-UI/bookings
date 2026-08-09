@@ -124,6 +124,21 @@ describe( 'wall-clock times', function (): void {
             ->and( $schedule->endsAtOn( '2026-03-30' )->utcOffset() )->toBe( 60 );
     } );
 
+    it( 'refuses a local time the clocks skip over', function (): void {
+        // 02:30 does not happen in Chicago on 8 March 2026. Carbon does not say
+        // so — it hands back 03:30 — which would move the window an hour on the
+        // one day of the year this design exists to get right.
+        $provider = ServiceProvider::factory()->inTimezone( 'America/Chicago' )->create();
+        $schedule = AvailabilitySchedule::factory()
+            ->for( $provider, 'provider' )
+            ->between( '02:30', '06:00' )
+            ->create();
+
+        expect( fn () => $schedule->startsAtOn( '2026-03-08' ) )->toThrow( RuntimeException::class )
+            ->and( $schedule->startsAtOn( '2026-03-07' )->format( 'H:i' ) )->toBe( '02:30' )
+            ->and( $schedule->startsAtOn( '2026-03-09' )->format( 'H:i' ) )->toBe( '02:30' );
+    } );
+
     it( 'reads the clock face in a zone the caller names instead', function (): void {
         $provider = ServiceProvider::factory()->inTimezone( 'America/Chicago' )->create();
         $schedule = AvailabilitySchedule::factory()->for( $provider, 'provider' )->create();

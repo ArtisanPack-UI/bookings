@@ -87,6 +87,30 @@ class WebhookDelivery extends Model
     ];
 
     /**
+     * The attributes that should be cast.
+     *
+     * Declared as a property rather than through the `casts()` method Laravel 11
+     * introduced. The method does not exist on Laravel 10, where it is not
+     * overriding anything and is simply never called — so every cast on every
+     * model would quietly do nothing, and a JSON column would come back as a
+     * string with no error to notice. The property is read by every version the
+     * package's constraints allow.
+     *
+     * @since 1.0.0
+     *
+     * @var array<string, string>
+     */
+    protected $casts = [
+        'payload'         => 'array',
+        'attempt_number'  => 'integer',
+        'status'          => WebhookDeliveryStatus::class,
+        'response_status' => 'integer',
+        'next_attempt_at' => 'datetime',
+        'attempted_at'    => 'datetime',
+        'succeeded_at'    => 'datetime',
+    ];
+
+    /**
      * Gets the endpoint this delivery was addressed to.
      *
      * @since 1.0.0
@@ -172,25 +196,5 @@ class WebhookDelivery extends Model
     protected static function newFactory(): WebhookDeliveryFactory
     {
         return WebhookDeliveryFactory::new();
-    }
-
-    /**
-     * Gets the attributes that should be cast.
-     *
-     * @since 1.0.0
-     *
-     * @return array<string, string> The cast definitions.
-     */
-    protected function casts(): array
-    {
-        return [
-            'payload'         => 'array',
-            'attempt_number'  => 'integer',
-            'status'          => WebhookDeliveryStatus::class,
-            'response_status' => 'integer',
-            'next_attempt_at' => 'datetime',
-            'attempted_at'    => 'datetime',
-            'succeeded_at'    => 'datetime',
-        ];
     }
 }

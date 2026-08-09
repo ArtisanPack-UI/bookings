@@ -76,6 +76,25 @@ class CalendarBusyBlock extends Model
     ];
 
     /**
+     * The attributes that should be cast.
+     *
+     * Declared as a property rather than through the `casts()` method Laravel 11
+     * introduced. The method does not exist on Laravel 10, where it is not
+     * overriding anything and is simply never called — so every cast on every
+     * model would quietly do nothing, and a JSON column would come back as a
+     * string with no error to notice. The property is read by every version the
+     * package's constraints allow.
+     *
+     * @since 1.0.0
+     *
+     * @var array<string, string>
+     */
+    protected $casts = [
+        'starts_at_utc' => 'datetime',
+        'ends_at_utc'   => 'datetime',
+    ];
+
+    /**
      * Gets the calendar this block came from.
      *
      * @since 1.0.0
@@ -118,8 +137,8 @@ class CalendarBusyBlock extends Model
     ): Builder {
         return $query
             ->whereIn( $this->qualifyColumn( 'connection_id' ), (array) $connectionIds )
-            ->where( $this->qualifyColumn( 'starts_at_utc' ), '<', Carbon::parse( $end ) )
-            ->where( $this->qualifyColumn( 'ends_at_utc' ), '>', Carbon::parse( $start ) );
+            ->where( $this->qualifyColumn( 'starts_at_utc' ), '<', self::asUtc( $end ) )
+            ->where( $this->qualifyColumn( 'ends_at_utc' ), '>', self::asUtc( $start ) );
     }
 
     /**
@@ -134,8 +153,31 @@ class CalendarBusyBlock extends Model
      */
     public function overlaps( DateTimeInterface|string $start, DateTimeInterface|string $end ): bool
     {
-        return $this->starts_at_utc->lt( Carbon::parse( $end ) )
-            && $this->ends_at_utc->gt( Carbon::parse( $start ) );
+        return $this->starts_at_utc->lt( self::asUtc( $end ) )
+            && $this->ends_at_utc->gt( self::asUtc( $start ) );
+    }
+
+    /**
+     * Reads a window bound as the UTC instant the columns are stored in.
+     *
+     * The bare string `2026-06-01 09:00:00` is the shape a caller naturally
+     * reaches for, and `Carbon::parse()` would read it in the application's
+     * timezone — which is not what these columns hold. On an application
+     * configured to anything but UTC that shifts the whole window, and an
+     * availability lookup quietly answers about the wrong hours. A value that
+     * already carries a zone is converted rather than reinterpreted.
+     *
+     * @since 1.0.0
+     *
+     * @param  DateTimeInterface|string  $value  The bound to read.
+     *
+     * @return Carbon The same moment, in UTC.
+     */
+    protected static function asUtc( DateTimeInterface|string $value ): Carbon
+    {
+        return $value instanceof DateTimeInterface
+            ? Carbon::instance( $value )->utc()
+            : Carbon::parse( $value, 'UTC' );
     }
 
     /**
@@ -148,20 +190,5 @@ class CalendarBusyBlock extends Model
     protected static function newFactory(): CalendarBusyBlockFactory
     {
         return CalendarBusyBlockFactory::new();
-    }
-
-    /**
-     * Gets the attributes that should be cast.
-     *
-     * @since 1.0.0
-     *
-     * @return array<string, string> The cast definitions.
-     */
-    protected function casts(): array
-    {
-        return [
-            'starts_at_utc' => 'datetime',
-            'ends_at_utc'   => 'datetime',
-        ];
     }
 }

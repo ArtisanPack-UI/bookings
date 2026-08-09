@@ -151,6 +151,17 @@ class ServiceProviderFactory extends Factory
      */
     public function erased(): static
     {
-        return $this->state( fn (): array => [ 'pii_erased_at' => now() ] );
+        return $this->state( fn (): array => [
+            // `name` is NOT NULL, so it takes a placeholder rather than a null,
+            // the same contract the booking and series states follow. The
+            // nullable columns are cleared outright. A state that set only the
+            // marker would let a test assert erasure while the provider's email
+            // and phone number were still sitting there in readable form.
+            'name'          => '[erased]',
+            'email'         => null,
+            'phone'         => null,
+            'bio'           => null,
+            'pii_erased_at' => now(),
+        ] );
     }
 }

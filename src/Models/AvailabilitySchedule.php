@@ -77,6 +77,29 @@ class AvailabilitySchedule extends Model
     ];
 
     /**
+     * The attributes that should be cast.
+     *
+     * Declared as a property rather than through the `casts()` method Laravel 11
+     * introduced. The method does not exist on Laravel 10, where it is not
+     * overriding anything and is simply never called — so every cast on every
+     * model would quietly do nothing, and a JSON column would come back as a
+     * string with no error to notice. The property is read by every version the
+     * package's constraints allow.
+     *
+     * @since 1.0.0
+     *
+     * @var array<string, string>
+     */
+    protected $casts = [
+        'day_of_week'      => 'integer',
+        'start_time_local' => WallClockTime::class,
+        'end_time_local'   => WallClockTime::class,
+        'effective_from'   => 'date',
+        'effective_until'  => 'date',
+        'is_available'     => 'boolean',
+    ];
+
+    /**
      * Gets the provider these hours belong to.
      *
      * @since 1.0.0
@@ -121,7 +144,15 @@ class AvailabilitySchedule extends Model
         int $dayOfWeek,
         DateTimeInterface|string|null $on = null,
     ): Builder {
-        $day      = Carbon::parse( $on ?? Carbon::now() );
+        // "Today" belongs to the provider, not to the server. At 00:30 UTC a
+        // provider in Los Angeles is still on yesterday, and answering with the
+        // application's date would consult the wrong day's effective window.
+        // Only a model can say which zone that is; given a bare id there is
+        // nothing to ask, so the application default stands and the caller who
+        // cares passes `$on` explicitly.
+        $day = null !== $on
+            ? Carbon::parse( $on )
+            : Carbon::now( $provider instanceof ServiceProvider ? $provider->timezone : null );
         $dayStart = $day->copy()->startOfDay();
         $dayEnd   = $day->copy()->endOfDay();
 
@@ -266,29 +297,28 @@ class AvailabilitySchedule extends Model
             ) );
         }
 
-        return Carbon::createFromFormat(
+        $instant = Carbon::createFromFormat(
             'Y-m-d H:i:s',
             Carbon::parse( $date )->toDateString() . ' ' . $wallClock,
             $timezone,
         );
-    }
 
-    /**
-     * Gets the attributes that should be cast.
-     *
-     * @since 1.0.0
-     *
-     * @return array<string, string> The cast definitions.
-     */
-    protected function casts(): array
-    {
-        return [
-            'day_of_week'      => 'integer',
-            'start_time_local' => WallClockTime::class,
-            'end_time_local'   => WallClockTime::class,
-            'effective_from'   => 'date',
-            'effective_until'  => 'date',
-            'is_available'     => 'boolean',
-        ];
+        // Carbon does not object to a local time that never happened. On the
+        // morning the clocks go forward, 02:30 does not exist in Chicago, and
+        // createFromFormat() quietly hands back 03:30 — a window an hour from
+        // where the row says it is, on the one day of the year this whole
+        // wall-clock design exists to get right. Reading the clock face back is
+        // how that stops being silent.
+        if ( $instant->format( 'H:i:s' ) !== $wallClock ) {
+            throw new RuntimeException( sprintf(
+                'Availability schedule %s names %s on %s, a local time that does not exist in %s: the clocks go forward over it.',
+                (string) $this->getKey(),
+                $wallClock,
+                $instant->toDateString(),
+                $timezone,
+            ) );
+        }
+
+        return $instant;
     }
 }

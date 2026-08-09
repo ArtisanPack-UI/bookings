@@ -127,6 +127,33 @@ class Booking extends Model
     ];
 
     /**
+     * The attributes that should be cast.
+     *
+     * Declared as a property rather than through the `casts()` method Laravel 11
+     * introduced. The method does not exist on Laravel 10, where it is not
+     * overriding anything and is simply never called — so every cast on every
+     * model would quietly do nothing, and a JSON column would come back as a
+     * string with no error to notice. The property is read by every version the
+     * package's constraints allow.
+     *
+     * @since 1.0.0
+     *
+     * @var array<string, string>
+     */
+    protected $casts = [
+        'series_index'            => 'integer',
+        'detached_from_series_at' => 'datetime',
+        'customer_timezone'       => 'string',
+        'start_time'              => 'datetime',
+        'end_time'                => 'datetime',
+        'status'                  => BookingStatus::class,
+        'assignment_strategy'     => BookingAssignmentStrategy::class,
+        'intake_schema_version'   => 'integer',
+        'intake_data'             => 'array',
+        'pii_erased_at'           => 'datetime',
+    ];
+
+    /**
      * The attributes hidden from array and JSON output.
      *
      * The hash is not the plain token, but it is still the only secret the row
@@ -451,28 +478,5 @@ class Booking extends Model
     protected static function generateBookingNumber(): string
     {
         return 'BK-' . strtoupper( Str::random( 12 ) );
-    }
-
-    /**
-     * Gets the attributes that should be cast.
-     *
-     * @since 1.0.0
-     *
-     * @return array<string, string> The cast definitions.
-     */
-    protected function casts(): array
-    {
-        return [
-            'series_index'            => 'integer',
-            'detached_from_series_at' => 'datetime',
-            'customer_timezone'       => 'string',
-            'start_time'              => 'datetime',
-            'end_time'                => 'datetime',
-            'status'                  => BookingStatus::class,
-            'assignment_strategy'     => BookingAssignmentStrategy::class,
-            'intake_schema_version'   => 'integer',
-            'intake_data'             => 'array',
-            'pii_erased_at'           => 'datetime',
-        ];
     }
 }

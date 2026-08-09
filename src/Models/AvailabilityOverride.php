@@ -74,6 +74,27 @@ class AvailabilityOverride extends Model
     ];
 
     /**
+     * The attributes that should be cast.
+     *
+     * Declared as a property rather than through the `casts()` method Laravel 11
+     * introduced. The method does not exist on Laravel 10, where it is not
+     * overriding anything and is simply never called — so every cast on every
+     * model would quietly do nothing, and a JSON column would come back as a
+     * string with no error to notice. The property is read by every version the
+     * package's constraints allow.
+     *
+     * @since 1.0.0
+     *
+     * @var array<string, string>
+     */
+    protected $casts = [
+        'date'             => 'date',
+        'type'             => AvailabilityOverrideType::class,
+        'start_time_local' => WallClockTime::class,
+        'end_time_local'   => WallClockTime::class,
+    ];
+
+    /**
      * Gets the provider this exception applies to.
      *
      * @since 1.0.0
@@ -106,7 +127,7 @@ class AvailabilityOverride extends Model
     {
         $day = Carbon::parse( $date );
 
-        return $query
+        $query
             ->where(
                 $this->qualifyColumn( 'provider_id' ),
                 $provider instanceof ServiceProvider ? $provider->getKey() : $provider,
@@ -115,6 +136,8 @@ class AvailabilityOverride extends Model
                 $day->copy()->startOfDay(),
                 $day->copy()->endOfDay(),
             ] );
+
+        return $query;
     }
 
     /**
@@ -225,27 +248,28 @@ class AvailabilityOverride extends Model
             ) );
         }
 
-        return Carbon::createFromFormat(
+        $instant = Carbon::createFromFormat(
             'Y-m-d H:i:s',
             $this->date->toDateString() . ' ' . $wallClock,
             $timezone,
         );
-    }
 
-    /**
-     * Gets the attributes that should be cast.
-     *
-     * @since 1.0.0
-     *
-     * @return array<string, string> The cast definitions.
-     */
-    protected function casts(): array
-    {
-        return [
-            'date'             => 'date',
-            'type'             => AvailabilityOverrideType::class,
-            'start_time_local' => WallClockTime::class,
-            'end_time_local'   => WallClockTime::class,
-        ];
+        // Carbon does not object to a local time that never happened. On the
+        // morning the clocks go forward, 02:30 does not exist in Chicago, and
+        // createFromFormat() quietly hands back 03:30 — a window an hour from
+        // where the row says it is, on the one day of the year this whole
+        // wall-clock design exists to get right. Reading the clock face back is
+        // how that stops being silent.
+        if ( $instant->format( 'H:i:s' ) !== $wallClock ) {
+            throw new RuntimeException( sprintf(
+                'Availability override %s names %s on %s, a local time that does not exist in %s: the clocks go forward over it.',
+                (string) $this->getKey(),
+                $wallClock,
+                $instant->toDateString(),
+                $timezone,
+            ) );
+        }
+
+        return $instant;
     }
 }
