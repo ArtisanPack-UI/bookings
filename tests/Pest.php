@@ -457,6 +457,80 @@ function defineEngineSensitiveModelTests(): void
 }
 
 /**
+ * Registers the availability assertions that only a real server can settle.
+ *
+ * Availability is computed almost entirely in PHP, so one engine proves the
+ * arithmetic and there is no reason to pay for three. What does not carry over
+ * is the SQL the computation issues on its way: sqlite takes identifiers every
+ * other engine reserves, so a query it accepts can still be a syntax error on
+ * MySQL — `before` is one such word, and an aggregate aliased to it fails only
+ * there. These cases exist to run the real queries against a real server.
+ *
+ * The calling file supplies the engine by using the matching TestsWith* concern
+ * before calling this.
+ *
+ * @return void
+ */
+function defineEngineSensitiveAvailabilityTests(): void
+{
+    it( 'resolves a day against the engine\'s own SQL', function (): void {
+        config()->set( 'artisanpack.bookings.slot_interval', 60 );
+
+        $service  = Service::factory()->create( [
+            'duration'      => 60,
+            'buffer_before' => 0,
+            'buffer_after'  => 15,
+        ] );
+        $provider = bookingsSchedule(
+            $service,
+            ServiceProvider::factory()->inTimezone( 'America/Chicago' )->create(),
+        );
+
+        $slots = availability()->resolve(
+            $service,
+            $provider,
+            localDayWindow( '2026-06-01', 'America/Chicago' ),
+        );
+
+        expect( localStarts( $slots, 'America/Chicago' ) )
+            ->toBe( [ '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00' ] );
+    } );
+
+    it( 'takes a booked slot out against the engine\'s own SQL', function (): void {
+        // Reaches the aggregate that bounds the booking fetch, the buffer
+        // comparison, and the UTC bounds on the bookings query — the three
+        // places this computation actually talks to the server.
+        config()->set( 'artisanpack.bookings.slot_interval', 60 );
+
+        $service  = Service::factory()->create( [
+            'duration'      => 60,
+            'buffer_before' => 0,
+            'buffer_after'  => 15,
+        ] );
+        $provider = bookingsSchedule(
+            $service,
+            ServiceProvider::factory()->inTimezone( 'America/Chicago' )->create(),
+        );
+
+        Booking::factory()
+            ->for( $service )
+            ->for( $provider, 'provider' )
+            ->confirmed()
+            ->startingAt( CarbonImmutable::parse( '2026-06-01 11:00', 'America/Chicago' )->utc(), 60 )
+            ->create();
+
+        $starts = localStarts(
+            availability()->resolve( $service, $provider, localDayWindow( '2026-06-01', 'America/Chicago' ) ),
+            'America/Chicago',
+        );
+
+        expect( $starts )->not->toContain( '11:00' )
+            ->and( $starts )->not->toContain( '12:00' )
+            ->and( $starts )->toContain( '13:00' );
+    } );
+}
+
+/**
  * Builds a UTC time range from two `H:i` clock faces on one fixed day.
  *
  * Lives here rather than in a test file because Pest loads every test file into
@@ -627,6 +701,7 @@ function bookingsSchedule(
  */
 function serviceWorkedEveryDayIn( string $timezone, string $start = '09:00', string $end = '17:00' ): array
 {
+    /** @var Service $service */
     $service = Service::factory()->create( [
         'duration'      => 60,
         'buffer_before' => 0,

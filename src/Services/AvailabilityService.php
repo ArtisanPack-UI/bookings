@@ -267,8 +267,14 @@ class AvailabilityService implements SlotResolver
         $providerId = (int) $provider->getKey();
         $slots      = [];
 
+        // Read once for the whole window rather than once per day. The stamps
+        // answer "has anything changed", and nothing this call does can change
+        // them — so a sixty-day window was issuing a hundred and eighty cache
+        // reads to learn the same three numbers before reading a single day.
+        $stamps = $this->stampSuffix( $service, $provider );
+
         foreach ( $this->localDatesSpanning( $window, $provider->timezone ) as $date ) {
-            foreach ( $this->cachedDay( $service, $provider, $date ) as $period ) {
+            foreach ( $this->cachedDay( $service, $provider, $date, $stamps ) as $period ) {
                 $range = new TimeRange(
                     CarbonImmutable::parse( $period['start'] ),
                     CarbonImmutable::parse( $period['end'] ),
@@ -338,7 +344,7 @@ class AvailabilityService implements SlotResolver
      *
      * @return array<int, array{start: string, end: string}> The day's slots.
      */
-    protected function cachedDay( Service $service, ServiceProvider $provider, string $date ): array
+    protected function cachedDay( Service $service, ServiceProvider $provider, string $date, string $stamps ): array
     {
         if ( true !== $this->config->get( 'artisanpack.bookings.availability_cache.enabled', true ) ) {
             return $this->computeDay( $service, $provider, $date );
@@ -347,7 +353,7 @@ class AvailabilityService implements SlotResolver
         $ttl = (int) $this->config->get( 'artisanpack.bookings.availability_cache.ttl_seconds', self::MAX_TTL_SECONDS );
 
         return $this->cache->remember(
-            $this->cacheKey( $service, $provider, $date ),
+            $this->cacheKey( $service, $provider, $date, $stamps ),
             max( 1, min( $ttl, self::MAX_TTL_SECONDS ) ),
             fn (): array => $this->computeDay( $service, $provider, $date ),
         );
@@ -607,12 +613,16 @@ class AvailabilityService implements SlotResolver
      */
     protected function widestBuffer(): int
     {
-        /** @var object{before: int|null, after: int|null}|null $widest */
+        // Aliased to names no engine has claimed. `before` is a reserved word on
+        // MySQL, where an unquoted alias of it is a syntax error rather than a
+        // column with an awkward name — and sqlite takes it happily, so the
+        // failure would only ever appear on a real server.
+        /** @var object{widest_before: int|null, widest_after: int|null}|null $widest */
         $widest = Service::query()
-            ->selectRaw( 'max(buffer_before) as before, max(buffer_after) as after' )
+            ->selectRaw( 'max(buffer_before) as widest_before, max(buffer_after) as widest_after' )
             ->first();
 
-        return max( 0, (int) ( $widest->before ?? 0 ), (int) ( $widest->after ?? 0 ) );
+        return max( 0, (int) ( $widest->widest_before ?? 0 ), (int) ( $widest->widest_after ?? 0 ) );
     }
 
     /**
@@ -979,15 +989,16 @@ class AvailabilityService implements SlotResolver
      * @param  Service  $service  The service being booked.
      * @param  ServiceProvider  $provider  The provider being resolved.
      * @param  string  $date  The provider-local date, as `Y-m-d`.
+     * @param  string  $stamps  The stamp suffix from {@see self::stampSuffix()}.
      *
      * @return string The cache key.
      */
-    protected function cacheKey( Service $service, ServiceProvider $provider, string $date ): string
+    protected function cacheKey( Service $service, ServiceProvider $provider, string $date, string $stamps ): string
     {
         $site = BelongsToSiteScope::currentSiteId();
 
         return sprintf(
-            '%s.day.%s.%d.%d.%s.g%d.s%d.p%d',
+            '%s.day.%s.%d.%d.%s.%s',
             self::CACHE_PREFIX,
             // Hashed rather than interpolated. A site identifier is only typed
             // as int|string, so it is the one component of this key whose shape
@@ -1006,6 +1017,28 @@ class AvailabilityService implements SlotResolver
             (int) $service->getKey(),
             (int) $provider->getKey(),
             $date,
+            $stamps,
+        );
+    }
+
+    /**
+     * Gets the stamp component every key for a service and provider carries.
+     *
+     * Read as a unit, and once per window rather than once per day: the three
+     * stamps are how a key stops being reachable, and none of them can move
+     * while a single resolve call is in flight.
+     *
+     * @since 1.0.0
+     *
+     * @param  Service  $service  The service being booked.
+     * @param  ServiceProvider  $provider  The provider being resolved.
+     *
+     * @return string The stamp suffix.
+     */
+    protected function stampSuffix( Service $service, ServiceProvider $provider ): string
+    {
+        return sprintf(
+            'g%d.s%d.p%d',
             $this->stamp( self::CACHE_PREFIX . '.stamp.global' ),
             $this->stamp( self::CACHE_PREFIX . '.stamp.service.' . $service->getKey() ),
             $this->stamp( self::CACHE_PREFIX . '.stamp.provider.' . $provider->getKey() ),

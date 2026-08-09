@@ -12,3 +12,5 @@ uses( TestsWithSqlite::class, RefreshDatabase::class );
 // comparison written against a real DATE column — and the one every other test
 // in tests/Feature/Models already runs on.
 defineEngineSensitiveModelTests();
+
+defineEngineSensitiveAvailabilityTests();

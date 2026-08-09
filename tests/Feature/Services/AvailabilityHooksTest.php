@@ -77,8 +77,10 @@ describe( 'ap.bookings.availabilityQuery', function (): void {
             static fn ( Builder $query ): Builder => $query->orWhere( 'provider_id', '>', 0 ),
         );
 
-        // The stamp has not moved, so this also proves the filter runs inside
-        // the computation rather than on the way back out of the cache.
+        // The day above was cached before the filter existed, so it has to be
+        // dropped for the filter to be reachable at all — and that dropping it
+        // then changes the answer is what proves the filter runs inside the
+        // computation rather than on the way back out of the cache.
         availability()->invalidateProvider( $this->provider->id );
 
         expect( localStarts( availability()->resolve( $this->service, $this->provider, $this->window ), $this->timezone ) )
