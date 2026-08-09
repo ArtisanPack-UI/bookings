@@ -11,3 +11,5 @@ uses( TestsWithPostgres::class, RefreshDatabase::class )->group( 'postgres' );
 // one that aborts a whole transaction after a failed statement — which is the
 // behaviour NotificationLog::logSend()'s savepoint exists to survive.
 defineEngineSensitiveModelTests();
+
+defineEngineSensitiveAvailabilityTests();

@@ -18,6 +18,8 @@ use ArtisanPackUI\Bookings\Models\ServiceBlackoutDate;
 use ArtisanPackUI\Bookings\Models\ServiceProvider;
 use ArtisanPackUI\Bookings\Models\Webhook;
 use ArtisanPackUI\Bookings\Models\WebhookDelivery;
+use ArtisanPackUI\Bookings\Services\AvailabilityService;
+use ArtisanPackUI\Bookings\Support\Slot;
 use ArtisanPackUI\Bookings\Support\TimeRange;
 use ArtisanPackUI\Core\Contracts\SiteResolver;
 use ArtisanPackUI\Core\MultiTenancy\SiteContext;
@@ -455,6 +457,80 @@ function defineEngineSensitiveModelTests(): void
 }
 
 /**
+ * Registers the availability assertions that only a real server can settle.
+ *
+ * Availability is computed almost entirely in PHP, so one engine proves the
+ * arithmetic and there is no reason to pay for three. What does not carry over
+ * is the SQL the computation issues on its way: sqlite takes identifiers every
+ * other engine reserves, so a query it accepts can still be a syntax error on
+ * MySQL — `before` is one such word, and an aggregate aliased to it fails only
+ * there. These cases exist to run the real queries against a real server.
+ *
+ * The calling file supplies the engine by using the matching TestsWith* concern
+ * before calling this.
+ *
+ * @return void
+ */
+function defineEngineSensitiveAvailabilityTests(): void
+{
+    it( 'resolves a day against the engine\'s own SQL', function (): void {
+        config()->set( 'artisanpack.bookings.slot_interval', 60 );
+
+        $service  = Service::factory()->create( [
+            'duration'      => 60,
+            'buffer_before' => 0,
+            'buffer_after'  => 15,
+        ] );
+        $provider = bookingsSchedule(
+            $service,
+            ServiceProvider::factory()->inTimezone( 'America/Chicago' )->create(),
+        );
+
+        $slots = availability()->resolve(
+            $service,
+            $provider,
+            localDayWindow( '2026-06-01', 'America/Chicago' ),
+        );
+
+        expect( localStarts( $slots, 'America/Chicago' ) )
+            ->toBe( [ '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00' ] );
+    } );
+
+    it( 'takes a booked slot out against the engine\'s own SQL', function (): void {
+        // Reaches the aggregate that bounds the booking fetch, the buffer
+        // comparison, and the UTC bounds on the bookings query — the three
+        // places this computation actually talks to the server.
+        config()->set( 'artisanpack.bookings.slot_interval', 60 );
+
+        $service  = Service::factory()->create( [
+            'duration'      => 60,
+            'buffer_before' => 0,
+            'buffer_after'  => 15,
+        ] );
+        $provider = bookingsSchedule(
+            $service,
+            ServiceProvider::factory()->inTimezone( 'America/Chicago' )->create(),
+        );
+
+        Booking::factory()
+            ->for( $service )
+            ->for( $provider, 'provider' )
+            ->confirmed()
+            ->startingAt( CarbonImmutable::parse( '2026-06-01 11:00', 'America/Chicago' )->utc(), 60 )
+            ->create();
+
+        $starts = localStarts(
+            availability()->resolve( $service, $provider, localDayWindow( '2026-06-01', 'America/Chicago' ) ),
+            'America/Chicago',
+        );
+
+        expect( $starts )->not->toContain( '11:00' )
+            ->and( $starts )->not->toContain( '12:00' )
+            ->and( $starts )->toContain( '13:00' );
+    } );
+}
+
+/**
  * Builds a UTC time range from two `H:i` clock faces on one fixed day.
  *
  * Lives here rather than in a test file because Pest loads every test file into
@@ -486,4 +562,159 @@ function utcRange( string $start, string $end ): TimeRange
 function contractWindow(): TimeRange
 {
     return utcRange( '09:00', '17:00' );
+}
+
+/**
+ * Gets the availability service out of the container.
+ *
+ * @since 1.0.0
+ *
+ * @return AvailabilityService The resolver under test.
+ */
+function availability(): AvailabilityService
+{
+    return app( AvailabilityService::class );
+}
+
+/**
+ * Builds a window covering one whole local day, as instants.
+ *
+ * The window a widget asks with is a span of real time, not a date, so the
+ * bounds are the moments the local day opens and closes — which is 23 or 25
+ * hours wide on the two days a year the offset moves.
+ *
+ * @since 1.0.0
+ *
+ * @param  string  $date  The local date, as `Y-m-d`.
+ * @param  string  $timezone  The zone the date belongs to.
+ *
+ * @return TimeRange The window covering that day.
+ */
+function localDayWindow( string $date, string $timezone ): TimeRange
+{
+    $start = CarbonImmutable::parse( $date, $timezone )->startOfDay();
+
+    return new TimeRange( $start, $start->addDay() );
+}
+
+/**
+ * Builds a window between two clock faces on one local date.
+ *
+ * @since 1.0.0
+ *
+ * @param  string  $date  The local date, as `Y-m-d`.
+ * @param  string  $start  The opening clock face, as `H:i`.
+ * @param  string  $end  The closing clock face, as `H:i`.
+ * @param  string  $timezone  The zone the clock faces belong to.
+ *
+ * @return TimeRange The window.
+ */
+function localWindow( string $date, string $start, string $end, string $timezone ): TimeRange
+{
+    return new TimeRange(
+        CarbonImmutable::parse( $date . ' ' . $start, $timezone ),
+        CarbonImmutable::parse( $date . ' ' . $end, $timezone ),
+    );
+}
+
+/**
+ * Renders each slot's start as a local clock face.
+ *
+ * @since 1.0.0
+ *
+ * @param  array<int, Slot>  $slots  The slots to render.
+ * @param  string  $timezone  The zone to read them in.
+ *
+ * @return array<int, string> The starts, as `H:i`.
+ */
+function localStarts( array $slots, string $timezone ): array
+{
+    return array_map(
+        static fn ( Slot $slot ): string => $slot->period->start->setTimezone( $timezone )->format( 'H:i' ),
+        $slots,
+    );
+}
+
+/**
+ * Renders each slot's start as a UTC instant.
+ *
+ * @since 1.0.0
+ *
+ * @param  array<int, Slot>  $slots  The slots to render.
+ *
+ * @return array<int, string> The starts, as `Y-m-d H:i` in UTC.
+ */
+function utcStarts( array $slots ): array
+{
+    return array_map(
+        static fn ( Slot $slot ): string => $slot->period->start->utc()->format( 'Y-m-d H:i' ),
+        $slots,
+    );
+}
+
+/**
+ * Attaches a provider to a service and gives them a weekly window.
+ *
+ * @since 1.0.0
+ *
+ * @param  Service  $service  The service to attach to.
+ * @param  ServiceProvider  $provider  The provider being attached.
+ * @param  array<int, int>  $daysOfWeek  The Sunday-indexed weekdays to work.
+ * @param  string  $start  The opening clock face, as `H:i`.
+ * @param  string  $end  The closing clock face, as `H:i`.
+ *
+ * @return ServiceProvider The provider, for chaining.
+ */
+function bookingsSchedule(
+    Service $service,
+    ServiceProvider $provider,
+    array $daysOfWeek = [ 1 ],
+    string $start = '09:00',
+    string $end = '17:00',
+): ServiceProvider {
+    $service->providers()->syncWithoutDetaching( [ $provider->getKey() => [] ] );
+
+    foreach ( $daysOfWeek as $dayOfWeek ) {
+        AvailabilitySchedule::factory()
+            ->for( $provider, 'provider' )
+            ->onDayOfWeek( $dayOfWeek )
+            ->between( $start, $end )
+            ->create();
+    }
+
+    return $provider;
+}
+
+/**
+ * Builds a service and a provider who works one window every day of the week.
+ *
+ * The shape the timezone cases want: no weekday to reason about, so the only
+ * thing separating one assertion from another is the date and the zone.
+ *
+ * @since 1.0.0
+ *
+ * @param  string  $timezone  The provider's zone.
+ * @param  string  $start  The opening clock face, as `H:i`.
+ * @param  string  $end  The closing clock face, as `H:i`.
+ *
+ * @return array{0: Service, 1: ServiceProvider} The service and its provider.
+ */
+function serviceWorkedEveryDayIn( string $timezone, string $start = '09:00', string $end = '17:00' ): array
+{
+    /** @var Service $service */
+    $service = Service::factory()->create( [
+        'duration'      => 60,
+        'buffer_before' => 0,
+        'buffer_after'  => 0,
+    ] );
+
+    $provider = bookingsSchedule(
+        $service,
+        ServiceProvider::factory()->inTimezone( $timezone )->create(),
+        [ 0, 1, 2, 3, 4, 5, 6 ],
+        $start,
+        $end,
+    );
+
+    return [ $service, $provider ];
 }
