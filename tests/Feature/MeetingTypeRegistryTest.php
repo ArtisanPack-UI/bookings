@@ -75,6 +75,16 @@ it( 'passes an untranslated string straight through when no translation exists',
     expect( app( MeetingTypeRegistryContract::class )->get( 'group' )->label() )->toBe( 'Group' );
 } );
 
+it( 'falls back to the source string when a translation is not a string', function (): void {
+    // __() is typed string|array|null; an application is free to map a key to an
+    // array of lines, and returning that from a method declared `: string` would
+    // be a TypeError raised inside the package for a mistake made outside it.
+    app( 'translator' )->addLines( [ '*.Group' => [ 'one', 'two' ] ], 'fr' );
+    app()->setLocale( 'fr' );
+
+    expect( app( MeetingTypeRegistryContract::class )->get( 'group' )->label() )->toBe( 'Group' );
+} );
+
 it( 'answers for a key that is not registered', function (): void {
     $registry = app( MeetingTypeRegistryContract::class );
 

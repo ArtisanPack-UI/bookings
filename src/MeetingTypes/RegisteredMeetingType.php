@@ -18,6 +18,7 @@ namespace ArtisanPackUI\Bookings\MeetingTypes;
 use ArtisanPackUI\Bookings\Contracts\MeetingType;
 
 use function __;
+use function is_string;
 
 /**
  * A meeting type described entirely by its data.
@@ -87,7 +88,7 @@ final readonly class RegisteredMeetingType implements MeetingType
      */
     public function label(): string
     {
-        return __( $this->label );
+        return self::translate( $this->label );
     }
 
     /**
@@ -99,7 +100,7 @@ final readonly class RegisteredMeetingType implements MeetingType
      */
     public function description(): string
     {
-        return __( $this->description );
+        return self::translate( $this->description );
     }
 
     /**
@@ -136,5 +137,28 @@ final readonly class RegisteredMeetingType implements MeetingType
     public function assignsProviderAutomatically(): bool
     {
         return $this->assignsProviderAutomatically;
+    }
+
+    /**
+     * Translates a source string, falling back when the result is not one.
+     *
+     * `__()` is typed `string|array|null` — a language file is free to map a
+     * key to an array of lines, and a caller has no way to stop an application
+     * doing that to one of these keys. Returning it straight out of a method
+     * declared `: string` would be a TypeError raised inside the package for a
+     * mistake made outside it, so an unusable translation falls back to the
+     * source string instead.
+     *
+     * @since 1.0.0
+     *
+     * @param  string  $source  The untranslated string, used as the key.
+     *
+     * @return string The translation, or the source when there is no usable one.
+     */
+    private static function translate( string $source ): string
+    {
+        $translated = __( $source );
+
+        return is_string( $translated ) ? $translated : $source;
     }
 }

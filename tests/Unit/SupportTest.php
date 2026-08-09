@@ -6,17 +6,6 @@ use ArtisanPackUI\Bookings\Support\Slot;
 use ArtisanPackUI\Bookings\Support\TimeRange;
 use Carbon\CarbonImmutable;
 
-/**
- * Builds a range from two `H:i` clock faces on a fixed day, in UTC.
- */
-function utcRange( string $start, string $end ): TimeRange
-{
-    return new TimeRange(
-        CarbonImmutable::parse( '2026-04-06 ' . $start, 'UTC' ),
-        CarbonImmutable::parse( '2026-04-06 ' . $end, 'UTC' ),
-    );
-}
-
 describe( 'TimeRange', function (): void {
     it( 'normalises its endpoints to immutable instants', function (): void {
         $start = Carbon\Carbon::parse( '2026-04-06 09:00:00', 'UTC' );
@@ -80,6 +69,19 @@ describe( 'TimeRange', function (): void {
             'start' => '2026-04-06T09:00:00+00:00',
             'end'   => '2026-04-06T10:00:00+00:00',
         ] );
+    } );
+
+    it( 'serialises in UTC whatever zone it was built from', function (): void {
+        // Two ranges naming the identical span must serialise identically, or a
+        // stored or transmitted payload varies by the incidental zone of
+        // whichever call site built it.
+        $chicago = new TimeRange(
+            CarbonImmutable::parse( '2026-04-06 09:00:00', 'America/Chicago' ),
+            CarbonImmutable::parse( '2026-04-06 10:00:00', 'America/Chicago' ),
+        );
+
+        expect( $chicago->toArray() )->toBe( utcRange( '14:00', '15:00' )->toArray() )
+            ->and( $chicago->toArray()['start'] )->toBe( '2026-04-06T14:00:00+00:00' );
     } );
 } );
 

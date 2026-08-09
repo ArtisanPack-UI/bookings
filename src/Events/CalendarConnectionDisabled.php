@@ -27,12 +27,13 @@ use Illuminate\Queue\SerializesModels;
  * their bookings quietly stop appearing in it — so the event exists to give an
  * application somewhere to hang a notification.
  *
- * Dispatched after commit. Plan §5.8 writes bookings inside a transaction and
- * behind an advisory lock, and {@see SerializesModels} restores a payload by
- * re-reading it from the database — so an event dispatched mid-transaction can
- * reach a queue worker on another connection before the commit lands, and the
- * listener dies with a ModelNotFoundException on a row that does exist. Outside
- * a transaction the interface changes nothing.
+ * The payload is readonly and dispatched after commit. Plan §5.8 writes
+ * bookings inside a transaction and behind an advisory lock, and
+ * {@see SerializesModels} restores a payload by re-reading it from the
+ * database — so an event dispatched mid-transaction can reach a queue worker on
+ * another connection before the commit lands, and the listener dies with a
+ * ModelNotFoundException on a row that does exist. Outside a transaction the
+ * interface changes nothing.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
@@ -53,8 +54,8 @@ class CalendarConnectionDisabled implements ShouldDispatchAfterCommit
      * @param  string  $reason  Why it was disabled.
      */
     public function __construct(
-        public CalendarConnection $connection,
-        public string $reason,
+        public readonly CalendarConnection $connection,
+        public readonly string $reason,
     ) {
     }
 }

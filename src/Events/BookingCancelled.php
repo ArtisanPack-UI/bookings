@@ -30,12 +30,13 @@ use Illuminate\Queue\SerializesModels;
  * somebody an apology, and possibly a refund — and the booking row cannot tell
  * them apart on its own.
  *
- * Dispatched after commit. Plan §5.8 writes bookings inside a transaction and
- * behind an advisory lock, and {@see SerializesModels} restores a payload by
- * re-reading it from the database — so an event dispatched mid-transaction can
- * reach a queue worker on another connection before the commit lands, and the
- * listener dies with a ModelNotFoundException on a row that does exist. Outside
- * a transaction the interface changes nothing.
+ * The payload is readonly and dispatched after commit. Plan §5.8 writes
+ * bookings inside a transaction and behind an advisory lock, and
+ * {@see SerializesModels} restores a payload by re-reading it from the
+ * database — so an event dispatched mid-transaction can reach a queue worker on
+ * another connection before the commit lands, and the listener dies with a
+ * ModelNotFoundException on a row that does exist. Outside a transaction the
+ * interface changes nothing.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
@@ -59,9 +60,9 @@ class BookingCancelled implements ShouldDispatchAfterCommit
      *                               untrusted when displaying it.
      */
     public function __construct(
-        public Booking $booking,
-        public BookingActor $actor,
-        public ?string $reason = null,
+        public readonly Booking $booking,
+        public readonly BookingActor $actor,
+        public readonly ?string $reason = null,
     ) {
     }
 }

@@ -34,12 +34,13 @@ use Illuminate\Queue\SerializesModels;
  * series the edit was applied to; when a split produced a second series, it is
  * carried alongside so a listener can follow the arrangement across the break.
  *
- * Dispatched after commit. Plan §5.8 writes bookings inside a transaction and
- * behind an advisory lock, and {@see SerializesModels} restores a payload by
- * re-reading it from the database — so an event dispatched mid-transaction can
- * reach a queue worker on another connection before the commit lands, and the
- * listener dies with a ModelNotFoundException on a row that does exist. Outside
- * a transaction the interface changes nothing.
+ * The payload is readonly and dispatched after commit. Plan §5.8 writes
+ * bookings inside a transaction and behind an advisory lock, and
+ * {@see SerializesModels} restores a payload by re-reading it from the
+ * database — so an event dispatched mid-transaction can reach a queue worker on
+ * another connection before the commit lands, and the listener dies with a
+ * ModelNotFoundException on a row that does exist. Outside a transaction the
+ * interface changes nothing.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
@@ -64,10 +65,10 @@ class SeriesEdited implements ShouldDispatchAfterCommit
      *                                           original in two.
      */
     public function __construct(
-        public BookingSeries $series,
-        public SeriesEditScope $scope,
-        public BookingActor $actor = BookingActor::System,
-        public ?BookingSeries $splitSeries = null,
+        public readonly BookingSeries $series,
+        public readonly SeriesEditScope $scope,
+        public readonly BookingActor $actor = BookingActor::System,
+        public readonly ?BookingSeries $splitSeries = null,
     ) {
     }
 }

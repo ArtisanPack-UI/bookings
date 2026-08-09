@@ -18,7 +18,8 @@ use ArtisanPackUI\Bookings\Models\Service;
 use ArtisanPackUI\Bookings\Models\ServiceProvider;
 use ArtisanPackUI\Bookings\Support\Slot;
 
-use function usort;
+use function array_key_first;
+use function asort;
 
 /**
  * A strategy that hands the slot to whoever has the fewest bookings.
@@ -44,10 +45,24 @@ class LeastBusyRoundRobinStrategy implements RoundRobinStrategy
      */
     public function select( array $candidates, Service $service, Slot $slot ): ?ServiceProvider
     {
-        usort( $candidates, static function ( ServiceProvider $a, ServiceProvider $b ): int {
-            return $a->bookings()->count() <=> $b->bookings()->count();
-        } );
+        // Counted once per candidate rather than inside the comparator: usort
+        // makes O(n log n) comparisons, so counting there issues the same query
+        // for the same provider several times over. This fixture is documented
+        // as an example of application-defined assignment, and the pattern is
+        // worth copying correctly.
+        $counts = [];
 
-        return $candidates[ 0 ] ?? null;
+        foreach ( $candidates as $index => $candidate ) {
+            $counts[ $index ] = $candidate->bookings()->count();
+        }
+
+        // Sorts the counts while keeping their keys, so the winner is looked up
+        // by index rather than by searching the candidate list again. PHP's
+        // sorts are stable, so equal counts keep the order they arrived in.
+        asort( $counts );
+
+        $leastBusy = array_key_first( $counts );
+
+        return null === $leastBusy ? null : $candidates[ $leastBusy ];
     }
 }

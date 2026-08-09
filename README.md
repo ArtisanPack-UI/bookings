@@ -137,6 +137,12 @@ implementation and the package uses it instead of the default:
 | `NotificationChannel` | how one lifecycle message is delivered |
 | `MeetingTypeRegistry` | which shapes a service can be booked in |
 
+`MeetingTypeRegistry` is the odd one out: bind it only to replace the registry
+itself. To add a meeting type — the common case — implement
+`ArtisanPackUI\Bookings\Contracts\MeetingType` (or construct a
+`RegisteredMeetingType`) and contribute it through the filter described under
+[Hooks](#hooks). No binding required.
+
 Site resolution is deliberately not on this list. It is
 `ArtisanPackUI\Core\Contracts\SiteResolver`, bound once for the whole ecosystem —
 see [Multi-site](#multi-site).

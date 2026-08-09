@@ -24,17 +24,6 @@ use Tests\Fixtures\RecordingNotificationChannel;
 
 uses( TestsWithSqlite::class, RefreshDatabase::class );
 
-/**
- * Builds a window a whole working day wide.
- */
-function contractWindow(): TimeRange
-{
-    return new TimeRange(
-        Carbon::parse( '2026-04-06 09:00:00', 'UTC' ),
-        Carbon::parse( '2026-04-06 17:00:00', 'UTC' ),
-    );
-}
-
 describe( 'SlotResolver', function (): void {
     it( 'is satisfied by an application implementation', function (): void {
         $resolver = new FixedSlotResolver( 45 );

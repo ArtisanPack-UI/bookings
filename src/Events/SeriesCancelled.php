@@ -20,6 +20,9 @@ use ArtisanPackUI\Bookings\Models\BookingSeries;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
+use InvalidArgumentException;
+
+use function sprintf;
 
 /**
  * Fired when a whole recurring series is called off.
@@ -31,12 +34,13 @@ use Illuminate\Queue\SerializesModels;
  * event exists for anything that should fire once for the arrangement rather
  * than once per remaining appointment.
  *
- * Dispatched after commit. Plan §5.8 writes bookings inside a transaction and
- * behind an advisory lock, and {@see SerializesModels} restores a payload by
- * re-reading it from the database — so an event dispatched mid-transaction can
- * reach a queue worker on another connection before the commit lands, and the
- * listener dies with a ModelNotFoundException on a row that does exist. Outside
- * a transaction the interface changes nothing.
+ * The payload is readonly and dispatched after commit. Plan §5.8 writes
+ * bookings inside a transaction and behind an advisory lock, and
+ * {@see SerializesModels} restores a payload by re-reading it from the
+ * database — so an event dispatched mid-transaction can reach a queue worker on
+ * another connection before the commit lands, and the listener dies with a
+ * ModelNotFoundException on a row that does exist. Outside a transaction the
+ * interface changes nothing.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
@@ -68,12 +72,23 @@ class SeriesCancelled implements ShouldDispatchAfterCommit
      * @param  string|null  $reason  Why, when a reason was given. Free text
      *                               supplied by whoever cancelled, so treat it as
      *                               untrusted when displaying it.
+     *
+     * @throws InvalidArgumentException When the occurrence count is negative.
      */
     public function __construct(
-        public BookingSeries $series,
-        public BookingActor $actor,
-        public int $cancelledOccurrenceCount,
-        public ?string $reason = null,
+        public readonly BookingSeries $series,
+        public readonly BookingActor $actor,
+        public readonly int $cancelledOccurrenceCount,
+        public readonly ?string $reason = null,
     ) {
+        // Zero is legitimate — a series whose remaining occurrences had all
+        // been cancelled individually already. A negative count is not, and a
+        // refund listener multiplying by it would move money the wrong way.
+        if ( $this->cancelledOccurrenceCount < 0 ) {
+            throw new InvalidArgumentException( sprintf(
+                'A cancelled occurrence count cannot be negative; got %d.',
+                $this->cancelledOccurrenceCount,
+            ) );
+        }
     }
 }

@@ -25,6 +25,7 @@ use ArtisanPackUI\Bookings\Support\TimeRange;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Tests\Concerns\TestsWithSqlite;
 
@@ -33,14 +34,15 @@ uses( TestsWithSqlite::class, RefreshDatabase::class );
 /**
  * Builds one of every event, each with a payload worth asserting on.
  *
- * Kept as a closure rather than a dataset so the models are created inside the
- * test's database transaction. A dataset is resolved while Pest is collecting
- * tests, long before any migration has run.
+ * A file-local closure rather than a global function: Pest loads every test
+ * file into one process, so a global would be a redeclaration fatal the day
+ * another file picks the same name. It is also not a dataset — datasets resolve
+ * while Pest is collecting tests, long before any migration has run, and these
+ * need rows.
  *
- * @return array<string, array{0: object, 1: callable(object): void}>
+ * @var callable(): array<string, array{0: object, 1: callable(object): void}>
  */
-function bookingEventCases(): array
-{
+$bookingEventCases = function (): array {
     $booking    = Booking::factory()->create();
     $series     = BookingSeries::factory()->create();
     $connection = CalendarConnection::factory()->create();
@@ -151,24 +153,85 @@ function bookingEventCases(): array
             },
         ],
     ];
-}
+};
 
-it( 'defers every event until the surrounding transaction commits', function (): void {
+it( 'defers every event until the surrounding transaction commits', function () use ( $bookingEventCases ): void {
     // A queue worker on another connection cannot see an uncommitted row, and
     // SerializesModels restores a payload by re-reading it — so an event that
     // escaped mid-transaction would hand the listener a ModelNotFoundException
     // for a booking that does exist.
-    foreach ( bookingEventCases() as $name => [ $event ] ) {
+    foreach ( $bookingEventCases() as $name => [ $event ] ) {
         expect( $event )->toBeInstanceOf( ShouldDispatchAfterCommit::class, $name );
     }
 } );
 
-describe( 'the public event surface', function (): void {
-    it( 'dispatches every event with the payload it was built with', function (): void {
+it( 'holds an event back until the transaction commits', function (): void {
+    // The marker interface says what we asked for; this says it happened. A
+    // listener that ran mid-transaction would be reading rows that may still be
+    // rolled back — and on a queue worker, rows another connection cannot see.
+    $booking = Booking::factory()->create();
+    $heard   = [];
+
+    Event::listen( BookingConfirmed::class, function () use ( &$heard ): void {
+        $heard[] = 'confirmed';
+    } );
+
+    DB::transaction( function () use ( $booking, &$heard ): void {
+        BookingConfirmed::dispatch( $booking );
+
+        expect( $heard )->toBeEmpty();
+    } );
+
+    expect( $heard )->toBe( [ 'confirmed' ] );
+} );
+
+it( 'drops an event whose transaction rolled back', function (): void {
+    $booking = Booking::factory()->create();
+    $heard   = [];
+
+    Event::listen( BookingCancelled::class, function () use ( &$heard ): void {
+        $heard[] = 'cancelled';
+    } );
+
+    try {
+        DB::transaction( function () use ( $booking ): void {
+            BookingCancelled::dispatch( $booking, BookingActor::Customer );
+
+            throw new RuntimeException( 'rolling back' );
+        } );
+    } catch ( RuntimeException ) {
+        // Expected — the point is what did not happen next.
+    }
+
+    expect( $heard )->toBeEmpty();
+} );
+
+it( 'refuses a negative cancelled-occurrence count', function (): void {
+    new SeriesCancelled( BookingSeries::factory()->create(), BookingActor::Customer, -1 );
+} )->throws( InvalidArgumentException::class, 'cannot be negative' );
+
+it( 'accepts a zero cancelled-occurrence count', function (): void {
+    // Legitimate: every remaining occurrence had already been cancelled one by one.
+    $event = new SeriesCancelled( BookingSeries::factory()->create(), BookingActor::Admin, 0 );
+
+    expect( $event->cancelledOccurrenceCount )->toBe( 0 );
+} );
+
+it( 'refuses to let a listener mutate a payload', function (): void {
+    // The immutability the CRM package will rely on is enforced by the engine,
+    // not by convention — a listener cannot rewrite what the next listener sees.
+    $booking = Booking::factory()->create();
+    $event   = new BookingCancelled( $booking, BookingActor::Customer, 'Changed my mind.' );
+
+    expect( fn (): string => $event->reason = 'something else' )->toThrow( Error::class );
+} );
+
+describe( 'the public event surface', function () use ( $bookingEventCases ): void {
+    it( 'dispatches every event with the payload it was built with', function () use ( $bookingEventCases ): void {
         // Built before the fake, because faking the dispatcher also silences the
         // model events the factories rely on — a booking created under
         // `Event::fake()` never mints its booking number.
-        $cases = bookingEventCases();
+        $cases = $bookingEventCases();
 
         Event::fake();
 
@@ -188,13 +251,13 @@ describe( 'the public event surface', function (): void {
         expect( $cases )->not->toBeEmpty();
     } );
 
-    it( 'survives the queue', function (): void {
+    it( 'survives the queue', function () use ( $bookingEventCases ): void {
         // Every one of these is a plausible queued-listener payload, and
         // SerializesModels rebuilds the models by identifier rather than
         // restoring the rows it was handed. A payload that cannot make the
         // round trip fails only in production, on a queue worker, so it is
         // asserted here instead.
-        foreach ( bookingEventCases() as $name => [ $event, $assert ] ) {
+        foreach ( $bookingEventCases() as $name => [ $event, $assert ] ) {
             $restored = unserialize( serialize( $event ) );
 
             expect( $restored )->toBeInstanceOf( $event::class, $name );
@@ -203,8 +266,8 @@ describe( 'the public event surface', function (): void {
         }
     } );
 
-    it( 'reaches a listener registered for it', function (): void {
-        $cases = bookingEventCases();
+    it( 'reaches a listener registered for it', function () use ( $bookingEventCases ): void {
+        $cases = $bookingEventCases();
         $heard = [];
 
         foreach ( $cases as [ $event, $assert ] ) {

@@ -132,17 +132,25 @@ final readonly class TimeRange implements JsonSerializable
     }
 
     /**
-     * Gets the range as an array.
+     * Gets the range as an array, in UTC.
+     *
+     * Normalised rather than rendered in whatever zone the range was built
+     * from. The endpoints are instants, so the zone carries no information the
+     * range is entitled to keep — but leaving it in would make the serialized
+     * text differ between two call sites that mean the identical span, which
+     * matters the moment one of these is stored, sent to an external calendar,
+     * or compared as a string. The zone a customer chose lives on the booking,
+     * in `customer_timezone`, which is where it belongs.
      *
      * @since 1.0.0
      *
-     * @return array{start: string, end: string} The range in ISO 8601.
+     * @return array{start: string, end: string} The range in ISO 8601, in UTC.
      */
     public function toArray(): array
     {
         return [
-            'start' => $this->start->toIso8601String(),
-            'end'   => $this->end->toIso8601String(),
+            'start' => $this->start->utc()->toIso8601String(),
+            'end'   => $this->end->utc()->toIso8601String(),
         ];
     }
 

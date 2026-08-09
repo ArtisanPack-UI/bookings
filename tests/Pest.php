@@ -18,8 +18,10 @@ use ArtisanPackUI\Bookings\Models\ServiceBlackoutDate;
 use ArtisanPackUI\Bookings\Models\ServiceProvider;
 use ArtisanPackUI\Bookings\Models\Webhook;
 use ArtisanPackUI\Bookings\Models\WebhookDelivery;
+use ArtisanPackUI\Bookings\Support\TimeRange;
 use ArtisanPackUI\Core\Contracts\SiteResolver;
 use ArtisanPackUI\Core\MultiTenancy\SiteContext;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Tests\Fixtures\FixedSiteResolver;
@@ -450,4 +452,38 @@ function defineEngineSensitiveModelTests(): void
 
         expect( NotificationLog::query()->count() )->toBe( 1 );
     } );
+}
+
+/**
+ * Builds a UTC time range from two `H:i` clock faces on one fixed day.
+ *
+ * Lives here rather than in a test file because Pest loads every test file into
+ * a single process, so a helper declared in one is a redeclaration fatal
+ * waiting for the second file to want the same name.
+ *
+ * @since 1.0.0
+ *
+ * @param  string  $start  The start clock face, as `H:i`.
+ * @param  string  $end  The end clock face, as `H:i`.
+ *
+ * @return TimeRange The range, on 2026-04-06 in UTC.
+ */
+function utcRange( string $start, string $end ): TimeRange
+{
+    return new TimeRange(
+        CarbonImmutable::parse( '2026-04-06 ' . $start, 'UTC' ),
+        CarbonImmutable::parse( '2026-04-06 ' . $end, 'UTC' ),
+    );
+}
+
+/**
+ * Builds a window a whole working day wide.
+ *
+ * @since 1.0.0
+ *
+ * @return TimeRange 09:00 to 17:00 UTC on 2026-04-06.
+ */
+function contractWindow(): TimeRange
+{
+    return utcRange( '09:00', '17:00' );
 }

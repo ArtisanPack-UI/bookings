@@ -34,12 +34,13 @@ use Illuminate\Queue\SerializesModels;
  * one whose class no longer exists, or one holding a database connection — and
  * this event has to survive the queue.
  *
- * Dispatched after commit. Plan §5.8 writes bookings inside a transaction and
- * behind an advisory lock, and {@see SerializesModels} restores a payload by
- * re-reading it from the database — so an event dispatched mid-transaction can
- * reach a queue worker on another connection before the commit lands, and the
- * listener dies with a ModelNotFoundException on a row that does exist. Outside
- * a transaction the interface changes nothing.
+ * The payload is readonly and dispatched after commit. Plan §5.8 writes
+ * bookings inside a transaction and behind an advisory lock, and
+ * {@see SerializesModels} restores a payload by re-reading it from the
+ * database — so an event dispatched mid-transaction can reach a queue worker on
+ * another connection before the commit lands, and the listener dies with a
+ * ModelNotFoundException on a row that does exist. Outside a transaction the
+ * interface changes nothing.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
@@ -63,9 +64,9 @@ class CalendarSyncFailed implements ShouldDispatchAfterCommit
      *                                 reading busy periods back.
      */
     public function __construct(
-        public CalendarConnection $connection,
-        public string $reason,
-        public ?Booking $booking = null,
+        public readonly CalendarConnection $connection,
+        public readonly string $reason,
+        public readonly ?Booking $booking = null,
     ) {
     }
 }
