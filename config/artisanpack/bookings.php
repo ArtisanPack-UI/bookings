@@ -163,9 +163,61 @@ return [
     'notifications' => [
         'channels'     => [ 'mail', 'database', 'webhook' ],
         'confirmation' => [ 'enabled' => true ],
-        'reminder'     => [ 'enabled' => true, 'hours_before' => [ 24 ] ],
+        'reminder'     => [
+            'enabled'      => true,
+            'hours_before' => [ 24 ],
+
+            /*
+            | How far ahead "bookings:send-reminders" looks for bookings that
+            | might have a reminder due. Defaults to the longest window in
+            | "hours_before". Raise it when an "ap.bookings.reminderScheduling"
+            | subscriber adds a window longer than anything configured here: the
+            | filter takes a booking, so it cannot be consulted before there is
+            | one to look for, and a reminder outside this range never comes due.
+            */
+            'max_lookahead_hours' => 0,
+        ],
         'cancellation' => [ 'enabled' => true ],
-        'sms_driver'   => env( 'BOOKING_SMS_DRIVER', 'null' ),
+
+        /*
+        | Who receives the staff-facing copy on the "database" channel, and how
+        | it is delivered. Two implementations answer to this channel and the
+        | package picks between them automatically:
+        |
+        | - With artisanpack-ui/cms-framework installed, the notice goes to its
+        |   notification centre, so it lands in the same inbox as everything else
+        |   the CMS raises and honours each user's notification preferences.
+        |   Set "role" to the role that should receive booking notices.
+        |
+        | - Without it, the notice is written as an ordinary Laravel database
+        |   notification. Set "notifiable" to the model class and "ids" to its
+        |   primary keys.
+        |
+        | "role" wins where both are set and cms-framework is installed, because
+        | a role stays right as staff join and leave while a list of ids goes
+        | stale the moment somebody does. "ids" is the fallback on both paths.
+        |
+        | Left entirely unset, the channel reports itself unsupported and only
+        | the customer is notified — silence being the better default over
+        | notifying the wrong people.
+        |
+        | "driver" decides which of the two answers: "auto" (the default) picks
+        | the CMS centre when cms-framework is installed, while "cms" and
+        | "laravel" force one regardless — for an installation that runs the CMS
+        | admin shell but wants booking notices kept in Laravel's own table.
+        |
+        | An application needing something more dynamic should rebind
+        | Contracts\NotificationChannel, which is the seam the two implementations
+        | are chosen behind.
+        */
+        'database' => [
+            'driver'     => 'auto',
+            'role'       => null,
+            'notifiable' => null,
+            'ids'        => [],
+        ],
+
+        'sms_driver' => env( 'BOOKING_SMS_DRIVER', 'null' ),
     ],
 
     /*

@@ -1,55 +1,50 @@
 <?php
 
 /**
- * Notification channel fixture.
+ * Mail notification channel.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
+ *
+ * @author     Jacob Martella <me@jacobmartella.com>
  *
  * @since      1.0.0
  */
 
 declare( strict_types=1 );
 
-namespace Tests\Fixtures;
+namespace ArtisanPackUI\Bookings\Notifications\Channels;
 
 use ArtisanPackUI\Bookings\Contracts\NotificationChannel;
 use ArtisanPackUI\Bookings\Enums\NotificationType;
 use ArtisanPackUI\Bookings\Models\Booking;
 use Illuminate\Notifications\Notification;
-use RuntimeException;
+use Illuminate\Support\Facades\Notification as Notifier;
+
+use function filter_var;
+
+use const FILTER_VALIDATE_EMAIL;
 
 /**
- * A channel that remembers what it was asked to send instead of sending it.
+ * Delivers a lifecycle message to the customer by email.
  *
- * Refuses bookings with no phone number, which is the shape of the real SMS
- * channel's `supports()` and what the contract's "is there anywhere to send it"
- * reading is meant to cover.
+ * The customer has no account, so there is nothing to notify in the Laravel
+ * sense — {@see Notifier::route()} builds an on-demand notifiable from the
+ * address on the booking instead.
  *
- * @since 1.0.0
+ * A booking whose personal data has been erased is refused. `customer_email`
+ * holds a redaction placeholder rather than a null after erasure, so a
+ * reminder cron reaching an erased booking would otherwise try to mail the
+ * placeholder — and either bounce, or, if the placeholder ever became a
+ * deliverable address, mail a stranger somebody else's appointment.
+ *
+ * @package    ArtisanPack_UI
+ * @subpackage Bookings
+ *
+ * @since      1.0.0
  */
-class RecordingNotificationChannel implements NotificationChannel
+class MailChannel implements NotificationChannel
 {
-    /**
-     * What the channel has been asked to send.
-     *
-     * @since 1.0.0
-     *
-     * @var array<int, array{type: NotificationType, booking_id: int, notification: Notification}>
-     */
-    public array $sent = [];
-
-    /**
-     * Constructs the channel.
-     *
-     * @since 1.0.0
-     *
-     * @param  bool  $fails  Whether sending should throw.
-     */
-    public function __construct( protected bool $fails = false )
-    {
-    }
-
     /**
      * Gets the identifier this channel is configured and logged under.
      *
@@ -59,7 +54,7 @@ class RecordingNotificationChannel implements NotificationChannel
      */
     public function key(): string
     {
-        return 'recording';
+        return 'mail';
     }
 
     /**
@@ -70,11 +65,15 @@ class RecordingNotificationChannel implements NotificationChannel
      * @param  NotificationType  $type  The lifecycle message being sent.
      * @param  Booking  $booking  The booking the message concerns.
      *
-     * @return bool True when the customer left a phone number.
+     * @return bool True when there is a deliverable address to send to.
      */
     public function supports( NotificationType $type, Booking $booking ): bool
     {
-        return null !== $booking->customer_phone;
+        if ( $booking->isPiiErased() ) {
+            return false;
+        }
+
+        return false !== filter_var( (string) $booking->customer_email, FILTER_VALIDATE_EMAIL );
     }
 
     /**
@@ -85,11 +84,11 @@ class RecordingNotificationChannel implements NotificationChannel
      * @param  NotificationType  $type  The lifecycle message being sent.
      * @param  Booking  $booking  The booking the message concerns.
      *
-     * @return string The customer's phone number.
+     * @return string The customer's email address.
      */
     public function recipient( NotificationType $type, Booking $booking ): string
     {
-        return (string) $booking->customer_phone;
+        return (string) $booking->customer_email;
     }
 
     /**
@@ -101,20 +100,12 @@ class RecordingNotificationChannel implements NotificationChannel
      * @param  Booking  $booking  The booking the message concerns.
      * @param  Notification  $notification  The filtered notification to deliver.
      *
-     * @throws RuntimeException When the channel is configured to fail.
-     *
      * @return void
      */
     public function send( NotificationType $type, Booking $booking, Notification $notification ): void
     {
-        if ( $this->fails ) {
-            throw new RuntimeException( 'The recording channel was told to fail.' );
-        }
-
-        $this->sent[] = [
-            'type'         => $type,
-            'booking_id'   => $booking->id,
-            'notification' => $notification,
-        ];
+        Notifier::route( 'mail', [
+            $this->recipient( $type, $booking ) => $booking->customer_name,
+        ] )->notify( $notification );
     }
 }

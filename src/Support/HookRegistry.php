@@ -200,34 +200,36 @@ final class HookRegistry
         ],
 
         /*
-        | Notifications — #19, #21, #22, #28, #34. Pending: no notification
-        | dispatcher yet.
+        | Notifications — #19, #21, #22, #28, #34.
         |
-        | notification.sending  ( bool $send, NotificationType $type, Booking $booking ): bool
-        | notification.channels ( string[] $channels, NotificationType $type, Booking $booking ): string[]
-        | notification.subject  ( string $subject, NotificationType $type, Booking $booking ): string
-        | reminderScheduling    ( CarbonInterface[] $sendAt, Booking $booking ): CarbonInterface[]
+        | notification.sending  ( BookingNotification $notification, Booking $booking ): ?Notification
+        |                       Return null to suppress the send entirely. Returning
+        |                       anything that is not a Notification throws — a
+        |                       subscriber meaning to veto says so with null.
+        |                       Runs per channel, before the log row is claimed, so a
+        |                       suppressed send leaves nothing behind to block a later one.
+        | notification.channels ( string[] $channels, string $event, Booking $booking ): string[]
+        |                       $event is a NotificationType value: 'confirmation',
+        |                       'reminder', 'cancellation', 'reschedule', 'no_show'.
+        |                       A channel key nothing is registered for is skipped.
+        | notification.subject  ( string $subject, BookingNotification $notification, Booking $booking ): string
+        |                       Covers every notification type; discriminate on
+        |                       $notification->type(). Applied by the notification
+        |                       itself, so it holds even when an application dispatches
+        |                       one through Laravel's own Notification facade.
+        | reminderScheduling    ( int[] $hoursBefore, Booking $booking ): int[]
+        |                       The cadence, in whole hours before the start. Runs
+        |                       before the log row is claimed, so the unique key covers
+        |                       filtered cadences too; duplicates are also collapsed,
+        |                       so an added window that config already has cannot
+        |                       produce a duplicate send. A window longer than anything
+        |                       in config needs reminder.max_lookahead_hours raised to
+        |                       match, or the booking is never looked at.
         */
-        'ap.bookings.notification.sending' => [
-            'type'    => 'filter',
-            'issues'  => '#19',
-            'pending' => true,
-        ],
-        'ap.bookings.notification.channels' => [
-            'type'    => 'filter',
-            'issues'  => '#19, #21, #34',
-            'pending' => true,
-        ],
-        'ap.bookings.notification.subject' => [
-            'type'    => 'filter',
-            'issues'  => '#19, #28',
-            'pending' => true,
-        ],
-        'ap.bookings.reminderScheduling' => [
-            'type'    => 'filter',
-            'issues'  => '#19, #22',
-            'pending' => true,
-        ],
+        'ap.bookings.notification.sending'  => [ 'type' => 'filter', 'issues' => '#19' ],
+        'ap.bookings.notification.channels' => [ 'type' => 'filter', 'issues' => '#19, #21, #34' ],
+        'ap.bookings.notification.subject'  => [ 'type' => 'filter', 'issues' => '#19, #28' ],
+        'ap.bookings.reminderScheduling'    => [ 'type' => 'filter', 'issues' => '#19, #22' ],
     ];
 
     /**
@@ -250,11 +252,11 @@ final class HookRegistry
         'bookings.slot.calculating',
         'bookings.available.providers',
         'bookings.intake.schema',
+        'bookings.customer.confirmation.subject',
         'bookings.booking.creating',
         'bookings.booking.created',
         'bookings.booking.cancelled',
         'bookings.meeting.types',
-        'bookings.notification.sending',
         'bookings.calendar.sync',
     ];
 

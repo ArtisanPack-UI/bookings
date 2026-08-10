@@ -388,6 +388,10 @@ Actions fire; filters transform a value and must return one.
 | `ap.bookings.slotBookable` | filter | `(bool $bookable, Slot $slot, ?Authenticatable $customer)` |
 | `ap.bookings.slotDuration` | filter | `(int $minutes, Service $service, ServiceProvider $provider)` |
 | `ap.bookings.registeredMeetingTypes` | filter | `(array $types)` |
+| `ap.bookings.notification.sending` | filter | `(BookingNotification $notification, Booking $booking)` |
+| `ap.bookings.notification.channels` | filter | `(array $channels, string $event, Booking $booking)` |
+| `ap.bookings.notification.subject` | filter | `(string $subject, BookingNotification $notification, Booking $booking)` |
+| `ap.bookings.reminderScheduling` | filter | `(array $hoursBefore, Booking $booking)` |
 
 Four of these have rules worth stating outright.
 
@@ -419,6 +423,20 @@ anywhere the hash was kept out of.
 rather than the service's current form, and its output is never written back. A
 subscriber is describing how a form should be read, not editing the record of
 what was asked.
+
+The four notification filters all run *before* the log row is claimed, which is
+what keeps them inside the idempotency guarantee rather than outside it.
+`ap.bookings.notification.sending` returns the notification to send, a
+replacement for it, or `null` to suppress the send entirely; returning anything
+else throws, because a subscriber meaning to veto says so with `null` and
+anything else is a mistake worth surfacing. It runs once per channel, so
+suppressing the customer's email still leaves the admin's database copy.
+`ap.bookings.reminderScheduling` filters the cadence in whole hours before the
+start, and duplicate windows are collapsed — a subscriber appending `24` to a
+config that already has it changes nothing rather than fighting the unique index
+on every cron run. A window *longer* than anything in config also needs
+`notifications.reminder.max_lookahead_hours` raised to match, since the sweep has
+to decide how far ahead to look before it has a booking to hand the filter.
 
 Meeting types are contributed through a filter rather than being hard-coded:
 
@@ -479,6 +497,14 @@ it uses them, and degrades cleanly when they are not:
 - `artisanpack-ui/media-library` — service and provider images
 - `artisanpack-ui/google`, `artisanpack-ui/microsoft`, `artisanpack-ui/apple` — calendar sync drivers
 - `artisanpack-ui/accessibility` — accessible admin and widget theming
+
+The `database` notification channel writes through Laravel's own notification
+storage, so the notifiable's table has to be the shape Laravel expects — a UUID
+key and a JSON `data` column. `artisanpack-ui/cms-framework` ships its own
+`notifications` table with an incompatible schema, so an application running both
+has to point its notifiable at storage of its own. A failed write is recorded
+against the notification log rather than thrown, so the customer's email goes out
+either way; the admin row is what goes missing.
 
 Where one of these is subscribed to rather than merely used, the binding goes
 through `Support\HookSubscriptions`, which is the single place that answers "is
