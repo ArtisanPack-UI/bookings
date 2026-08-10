@@ -21,6 +21,7 @@ use ArtisanPackUI\Bookings\Models\WebhookDelivery;
 use ArtisanPackUI\Bookings\Services\AvailabilityService;
 use ArtisanPackUI\Bookings\Services\BookingService;
 use ArtisanPackUI\Bookings\Services\ProviderSlotLock;
+use ArtisanPackUI\Bookings\Services\SeriesService;
 use ArtisanPackUI\Bookings\Support\Slot;
 use ArtisanPackUI\Bookings\Support\TimeRange;
 use ArtisanPackUI\Core\Contracts\SiteResolver;
@@ -545,6 +546,18 @@ function bookingService(): BookingService
 }
 
 /**
+ * Gets the series service out of the container.
+ *
+ * @since 1.0.0
+ *
+ * @return SeriesService The service under test.
+ */
+function seriesService(): SeriesService
+{
+    return app( SeriesService::class );
+}
+
+/**
  * Builds a service and however many providers who can all take the same slot.
  *
  * Every provider works the same hours in the same zone, which is the shape the
@@ -616,6 +629,39 @@ function bookingCustomer( array $overrides = [] ): array
         'customer_name'     => 'Sam Rivera',
         'customer_email'    => 'sam@example.test',
         'customer_timezone' => 'America/Chicago',
+    ];
+}
+
+/**
+ * Builds the attributes a recurring series needs beyond the service.
+ *
+ * Defaults to three consecutive Mondays at the local hour {@see bookingStart()}
+ * names, inside the window {@see bookableService()} opens — so the interesting
+ * part of a series case is the rule and the edit scope rather than the diary.
+ *
+ * `start` is a convenience the service itself does not take: it sets the local
+ * clock face on `dtstart_local`, so a second series in the same test can be put
+ * an hour along without restating the date.
+ *
+ * @since 1.0.0
+ *
+ * @param  array<string, mixed>  $overrides  Anything to change.
+ *
+ * @return array<string, mixed> The series attributes.
+ */
+function recurringCustomer( array $overrides = [] ): array
+{
+    $start = $overrides['start'] ?? '10:00';
+
+    unset( $overrides['start'] );
+
+    return $overrides + [
+        'rrule'            => 'FREQ=WEEKLY;COUNT=3',
+        'dtstart_local'    => '2026-06-01 ' . $start . ':00',
+        'dtstart_timezone' => 'America/Chicago',
+        'customer_name'    => 'Sam Rivera',
+        'customer_email'   => 'sam@example.test',
+        'intake_data'      => [],
     ];
 }
 

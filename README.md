@@ -182,6 +182,95 @@ Flipping a status directly would skip the action and the event that transition
 fires, so anything downstream — a calendar push, a confirmation email, a CRM
 record — would either never hear about it or hear about it twice.
 
+### Recurring bookings
+
+`Services\SeriesService` books a repeating arrangement. It takes the booking
+attributes above plus an RFC 5545 recurrence rule and a **floating** start — a
+clock face and the zone to read it in, not an instant:
+
+```php
+use ArtisanPackUI\Bookings\Services\SeriesService;
+
+$series = app( SeriesService::class )->create( [
+    'service'          => $service,
+    'rrule'            => 'FREQ=WEEKLY;COUNT=12',
+    'dtstart_local'    => '2026-06-01 15:00:00',
+    'dtstart_timezone' => 'America/Chicago',
+    'customer_name'    => 'Sam Rivera',
+    'customer_email'   => 'sam@example.test',
+] );
+
+$series->occurrences;   // twelve ordinary bookings, linked by series_id
+```
+
+The rule is the source of truth and the occurrences are materialised from it —
+ordinary bookings written one at a time through `BookingService`, so each takes
+the slot lock, validates its intake answers, and fires the usual lifecycle hooks.
+Storing the start as a clock face rather than an instant is what makes a weekly
+15:00 call stay at 15:00 across a daylight-saving change instead of drifting to
+14:00 or 16:00.
+
+An occurrence whose slot has gone is skipped rather than fatal — a rule expanded
+over months will cross somebody's holiday sooner or later — so compare
+`SeriesCreated::$occurrenceCount` against `expand()` if you need to tell the
+customer which weeks did not land. A rule where *nothing* could be booked throws
+`SlotUnavailableException` and leaves no series behind. Expansion is capped by
+`artisanpack.bookings.series.max_occurrences`, which is what stops an unbounded
+`FREQ=DAILY` from asking for an unbounded number of rows. A series is pinned to
+one provider: recurring means the same person, so the first occurrence's
+assignment is written back onto the series and the rest follow it.
+
+Edits take a scope, which is the choice every calendar application offers:
+
+```php
+use ArtisanPackUI\Bookings\Enums\SeriesEditScope;
+
+$recurring = app( SeriesService::class );
+
+// One week moves; the rule is untouched and that occurrence stops following it.
+$recurring->edit( $series, SeriesEditScope::This, [ 'start_time' => $newStart ], $occurrence );
+
+// The rule is bounded here, and the new series it returns carries the change forward.
+$tail = $recurring->edit( $series, SeriesEditScope::ThisAndFollowing, [ 'rrule' => '…' ], $occurrence );
+
+// The rule is rewritten and everything still to come is re-derived from it.
+$recurring->edit( $series, SeriesEditScope::All, [ 'rrule' => '…' ] );
+
+$recurring->cancel( $series, BookingActor::Customer, 'Moving away.' );
+```
+
+Occurrences that have already started are never rewritten — they happened — and
+neither are detached ones, since detaching is the record that somebody edited that
+week by hand. `cancel()` is the exception: it calls off every future occurrence
+including the detached, because moving one week to a different afternoon does not
+make it less part of the arrangement being cancelled.
+
+Both rewriting scopes free the old slots before taking the new ones, which is the
+only order that lets a rule keep times it already holds. A rule that cannot be
+*read* is refused before anything is cancelled, so a typo in the RRULE leaves the
+arrangement standing; a rule that reads fine but books nothing throws
+`SlotUnavailableException` after the fact, because the alternative is returning
+an empty arrangement the caller would take for a working one. Individual weeks
+that cannot be booked are still skipped rather than fatal — it is only losing
+*all* of them that is treated as failure.
+
+A `this_and_following` split divides a `COUNT` between the two halves rather than
+giving it to both: splitting `FREQ=WEEKLY;COUNT=12` at week five leaves the head
+with four and the tail with eight, not twelve. Supply your own `rrule` in the
+changes to override that — a caller writing a new rule is redefining the
+arrangement, not continuing it. Splitting at the very first occurrence cancels
+the head instead of bounding it, since there is nothing before the split to keep.
+
+Editing a cancelled series throws: an admin with the form open when the customer
+cancels would otherwise resurrect it, and the provider would get appointments for
+an arrangement every screen reports as off.
+
+Edits run pinned to the series' own site, not to whichever site happens to be in
+context. That matters for the two ways the package supports crossing sites — a
+console command using `SiteContext::forSite()` and a maintenance query using
+`acrossAllSites()` — where the ambient site otherwise disagrees with the series
+being edited.
+
 ## Extending
 
 ### Contracts
@@ -246,6 +335,7 @@ Actions fire; filters transform a value and must return one.
 | `ap.bookings.cancelled` | action | `(Booking $booking)` |
 | `ap.bookings.completed` | action | `(Booking $booking)` |
 | `ap.bookings.noShow` | action | `(Booking $booking)` |
+| `ap.bookings.series.editApplying` | action | `(BookingSeries $series, string $scope, array $changes)` |
 | `ap.bookings.availableProviders` | filter | `(array $providers, Service $service, CarbonImmutable $start)` |
 | `ap.bookings.roundRobin.selectProvider` | filter | `(?ServiceProvider $selected, array $candidates, Booking $draft)` |
 | `ap.bookings.intakeSchema` | filter | `(array $schema, Service $service, int $version)` |
@@ -255,7 +345,7 @@ Actions fire; filters transform a value and must return one.
 | `ap.bookings.slotDuration` | filter | `(int $minutes, Service $service, ServiceProvider $provider)` |
 | `ap.bookings.registeredMeetingTypes` | filter | `(array $types)` |
 
-Three of these have rules worth stating outright.
+Four of these have rules worth stating outright.
 
 `ap.bookings.creating` fires inside the slot lock, and can fire more than once
 for a single `create()` call — once per provider tried, when a lost race falls
@@ -268,6 +358,13 @@ a held lock.
 leaves the default rota's answer standing. Returning somebody who is not in
 `$candidates` throws — they were not free for the slot. It does not fire at all
 when the customer named their provider by hand.
+
+`ap.bookings.series.editApplying` fires once per scoped series edit, before any
+of it lands, so a subscriber reading the series back still sees the rule it is
+about to replace. `$scope` is the string `this`, `this_and_following`, or `all` —
+the same value the `SeriesEdited` event carries. The occurrences a series edit
+writes and discards go through `BookingService` like any other booking, so they
+fire `ap.bookings.created` and `ap.bookings.cancelled` once each, per occurrence.
 
 `ap.bookings.intakeSchema` runs against the version a booking was captured with
 rather than the service's current form, and its output is never written back. A
