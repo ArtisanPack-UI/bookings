@@ -217,6 +217,27 @@ return [
             'ids'        => [],
         ],
 
+        /*
+        | The gateway the "sms" channel sends through.
+        |
+        | "null" — the default — logs the message at info level and sends
+        | nothing, so an installation that switches "sms" on before it has a
+        | gateway can see what would have gone out without paying for it. That
+        | log line holds the customer's number and their appointment details,
+        | in a file erasing a booking does not reach, so leaving it on in
+        | production is a disclosure you have to be willing to make. Any
+        | other value is a class name implementing Contracts\SmsDriver, so an
+        | application can point this at its own gateway from .env; a name that
+        | does not resolve throws rather than quietly falling back to "null",
+        | which would leave every customer unreachable and nothing looking
+        | wrong. Twilio and Vonage drivers ship in v1.1.
+        |
+        | Note that "sms" is not in "channels" above and is not added by
+        | installing a driver. Texts cost money and reach a real phone, so the
+        | channel is opted into — by listing it here, or from a subscriber to
+        | "ap.bookings.notification.channels", which is how an installation
+        | texts cancellations only, or only customers who asked to be texted.
+        */
         'sms_driver' => env( 'BOOKING_SMS_DRIVER', 'null' ),
     ],
 

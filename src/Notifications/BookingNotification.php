@@ -26,6 +26,7 @@ use UnexpectedValueException;
 use function __;
 use function applyFilters;
 use function get_debug_type;
+use function implode;
 use function is_string;
 use function sprintf;
 
@@ -121,6 +122,30 @@ abstract class BookingNotification extends Notification
         }
 
         return $message;
+    }
+
+    /**
+     * Builds the text of a message.
+     *
+     * The same opening line and appointment details the email carries, without
+     * the greeting and without the subject: a text arrives already addressed to
+     * one phone, and a subject repeated as a first line is a wasted segment.
+     * Written from the same two methods the mail body uses rather than as a
+     * second copy of the wording, so a correction to a lifecycle message reaches
+     * both.
+     *
+     * Takes no notifiable, unlike Laravel's `toMail()` and `toArray()`. There is
+     * none to take — the customer has no account, the channel already has the
+     * number from the booking, and a parameter that could only ever be null is
+     * one a subscriber's own `toSms()` would have to declare and ignore.
+     *
+     * @since 1.0.0
+     *
+     * @return string The message body.
+     */
+    public function toSms(): string
+    {
+        return implode( "\n", [ $this->openingLine(), ...$this->detailLines() ] );
     }
 
     /**

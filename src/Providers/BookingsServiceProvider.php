@@ -27,6 +27,7 @@ use ArtisanPackUI\Bookings\Contracts\MeetingTypeRegistry as MeetingTypeRegistryC
 use ArtisanPackUI\Bookings\Contracts\NotificationChannel;
 use ArtisanPackUI\Bookings\Contracts\RoundRobinStrategy;
 use ArtisanPackUI\Bookings\Contracts\SlotResolver;
+use ArtisanPackUI\Bookings\Contracts\SmsDriver;
 use ArtisanPackUI\Bookings\Enums\NotificationType;
 use ArtisanPackUI\Bookings\Listeners\DispatchBookingWebhooks;
 use ArtisanPackUI\Bookings\Listeners\SendBookingNotifications;
@@ -43,6 +44,8 @@ use ArtisanPackUI\Bookings\Models\ServiceProviderService;
 use ArtisanPackUI\Bookings\Notifications\Channels\CmsFrameworkChannel;
 use ArtisanPackUI\Bookings\Notifications\Channels\DatabaseChannel;
 use ArtisanPackUI\Bookings\Notifications\Channels\MailChannel;
+use ArtisanPackUI\Bookings\Notifications\Channels\SmsChannel;
+use ArtisanPackUI\Bookings\Notifications\Sms\NullSmsDriver;
 use ArtisanPackUI\Bookings\Services\AvailabilityService;
 use ArtisanPackUI\Bookings\Services\BookingService;
 use ArtisanPackUI\Bookings\Services\IntakeFieldValidator;
@@ -58,12 +61,19 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
+use InvalidArgumentException;
 
 use function __;
 use function apRegisterNotification;
 use function array_key_exists;
 use function array_values;
+use function class_exists;
+use function config;
 use function function_exists;
+use function is_a;
+use function is_string;
+use function sprintf;
+use function trim;
 
 /**
  * Service provider for the Bookings package.
@@ -150,6 +160,27 @@ class BookingsServiceProvider extends ServiceProvider
         $this->app->singleton( MailChannel::class );
         $this->app->singleton( DatabaseChannel::class );
         $this->app->singleton( CmsFrameworkChannel::class );
+        // Constructed explicitly rather than autowired: the driver argument is
+        // nullable so the channel can resolve it when it first sends, and the
+        // container would helpfully fill it in at construction instead — which
+        // would resolve the gateway for every application that merely boots the
+        // package, and read the setting long before anything wanted to text
+        // anybody.
+        $this->app->singleton( SmsChannel::class, static function (): SmsChannel {
+            return new SmsChannel();
+        } );
+
+        // Text messages cost money and reach a real phone, so the shipped
+        // driver sends nothing and says so in the log. Real gateways land in
+        // v1.1; until then an application names its own class in
+        // `notifications.sms_driver`, or binds this interface directly — which
+        // is also how a gateway the package will never ship gets used after
+        // v1.1. Resolved through a closure rather than a plain alias so the
+        // setting is read the first time a text is actually sent, rather than
+        // by every application that merely loads this provider.
+        $this->app->singleton( SmsDriver::class, function ( $app ): SmsDriver {
+            return $app->make( self::smsDriverClass() );
+        } );
 
         // Two implementations answer to the `database` key, and which one an
         // installation gets is decided here rather than by configuration.
@@ -176,10 +207,17 @@ class BookingsServiceProvider extends ServiceProvider
         // `webhook` is deliberately absent: it is in the default config ahead of
         // the ticket that implements it, and the service skips a configured
         // channel nothing is registered for.
+        //
+        // `sms` is registered but not in the default channel list. Registering
+        // it is what makes it available; opting in — through configuration or
+        // through `ap.bookings.notification.channels` — is what makes it send,
+        // and that is the installation's decision to make rather than a default
+        // that texts customers because nobody changed a setting.
         $this->app->singleton( NotificationService::class, function ( $app ): NotificationService {
             return new NotificationService( [
                 $app->make( MailChannel::class ),
                 $app->make( NotificationChannel::class ),
+                $app->make( SmsChannel::class ),
             ] );
         } );
 
@@ -282,6 +320,51 @@ class BookingsServiceProvider extends ServiceProvider
         }
 
         return HookSubscriptions::isInstalled( 'cms-framework' );
+    }
+
+    /**
+     * Gets the class the configured SMS driver names.
+     *
+     * `null` — the default, and what an installation that has never thought
+     * about SMS has — is the driver that logs and sends nothing. Anything else
+     * is taken as a class name, so an application can point the setting at its
+     * own gateway from `.env` without touching the container. That is the whole
+     * reason the setting holds a name rather than a key out of a driver map: the
+     * package ships one driver, and a map of one entry is a list of the gateways
+     * an application is *not* allowed to use.
+     *
+     * A name that does not resolve throws rather than falling back to the null
+     * driver. An installation that configured Twilio and is silently getting log
+     * lines instead has the worst version of this failure — every customer
+     * unreachable, nothing obviously wrong — and a typo in a class name is
+     * exactly how that happens.
+     *
+     * @since 1.0.0
+     *
+     * @throws InvalidArgumentException When the setting names no usable driver.
+     *
+     * @return class-string<SmsDriver> The driver class to resolve.
+     */
+    protected static function smsDriverClass(): string
+    {
+        $driver = config( 'artisanpack.bookings.notifications.sms_driver', 'null' );
+
+        if ( ! is_string( $driver ) || '' === trim( $driver ) || 'null' === $driver ) {
+            return NullSmsDriver::class;
+        }
+
+        $driver = trim( $driver );
+
+        if ( ! class_exists( $driver ) || ! is_a( $driver, SmsDriver::class, true ) ) {
+            throw new InvalidArgumentException( sprintf(
+                'artisanpack.bookings.notifications.sms_driver must name a class implementing %s, got "%s".',
+                SmsDriver::class,
+                $driver,
+            ) );
+        }
+
+        /** @var class-string<SmsDriver> $driver */
+        return $driver;
     }
 
     /**
