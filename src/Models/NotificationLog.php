@@ -31,18 +31,28 @@ use function date_default_timezone_get;
 /**
  * A record of a notification sent about a booking.
  *
- * The unique key on `(booking_id, type, scheduled_for)` is doing real work: it
- * makes "send the 24-hour reminder for this booking" a claim on a row rather
- * than a decision made by reading. A cron that overlaps itself, a queue that
- * delivers a job twice, a retry after a timeout — all of them race to insert the
- * same key, exactly one wins, and the losers fail cleanly instead of sending a
- * customer the same reminder twice. {@see self::logSend()} is the front door to
- * that claim.
+ * The unique key on `(booking_id, type, channel, scheduled_for)` is doing real
+ * work: it makes "send the 24-hour reminder for this booking, by mail" a claim
+ * on a row rather than a decision made by reading. A cron that overlaps itself,
+ * a queue that delivers a job twice, a retry after a timeout — all of them race
+ * to insert the same key, exactly one wins, and the losers fail cleanly instead
+ * of sending a customer the same reminder twice. {@see self::logSend()} is the
+ * front door to that claim.
  *
- * **Erasure.** `recipient` is an email address or a phone number, so this table
- * holds customer PII without an erasure marker of its own. It does not need one:
- * every row is keyed to a booking, so erasing a booking means redacting
- * `recipient` on `booking_id = ?` in the same routine that redacts the booking.
+ * **Erasure.** `recipient` holds an email address or a phone number for
+ * customer-facing channels, so this table carries customer PII without an
+ * erasure marker of its own. It does not need one: every row is keyed to a
+ * booking, so erasing a booking means redacting `recipient` on `booking_id = ?`
+ * in the same routine that redacts the booking. Staff-facing channels record an
+ * internal notifiable reference instead, so that sweep leaves them intact.
+ *
+ * **`error` holds whatever the channel threw**, and a transport's failure
+ * message routinely quotes the address it could not reach — an SMTP rejection
+ * reads `550 5.1.1 <sam@example.test>: Recipient address rejected`. So this
+ * column is a second place customer contact details land, arriving only on the
+ * paths nobody tests. The erasure routine has to redact `error` alongside
+ * `recipient` for the booking; redacting `recipient` alone leaves the address
+ * sitting in the column next to it.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
@@ -125,16 +135,12 @@ class NotificationLog extends Model
      * behaviour rather than an accident of the schema: two reschedules genuinely
      * warrant two emails.
      *
-     * **The claim is per booking, type, and schedule — not per channel.** That is
-     * the unique key the schema has, so claiming the 24-hour reminder for a
-     * booking claims it once, and a second call for the same moment on a
-     * different channel loses and returns null. A caller meaning to send the same
-     * reminder by mail *and* SMS cannot express that through this method; doing
-     * so needs `channel` in the unique key. Sending one reminder twice is the
-     * failure this exists to prevent, so dropping the second channel is the safe
-     * side to err on — but it is a real limit rather than a subtlety, and the
-     * notifications work has to decide whether multi-channel sends are in scope
-     * before anything depends on it.
+     * **The claim is per booking, type, channel, and schedule.** Claiming the
+     * 24-hour reminder for a booking claims it for one channel, so the same
+     * reminder going out by mail and as a database notification is two claims and
+     * both succeed — while a cron that fires twice still loses the second claim
+     * on each channel and sends nothing. That is what makes multi-channel sends
+     * expressible without giving up the idempotency the index exists for.
      *
      * `$scheduledFor` is normalised to the application's own timezone before it
      * is written. Eloquent formats a date-time in whatever zone the Carbon it is

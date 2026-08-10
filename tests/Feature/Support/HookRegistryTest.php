@@ -161,11 +161,25 @@ describe( 'the retired plan §5.5 names', function (): void {
         unset( $sources[ 'tests/Feature/Support/HookRegistryTest.php' ] );
         unset( $sources[ 'src/Support/HookRegistry.php' ] );
 
+        // The changelog is the one document whose job is to record what things
+        // used to be called. A rename is not documented by refusing to write
+        // down the old name, and nobody subscribes to a hook they read about in
+        // an entry saying it was retired. Everything else — the README, docs/ —
+        // stays enforced, because those are read as instructions.
+        unset( $sources['CHANGELOG.md'] );
+
         $offences = [];
 
         foreach ( $sources as $path => $contents ) {
             foreach ( HookRegistry::retired() as $retired ) {
-                if ( str_contains( $contents, $retired ) ) {
+                // Anchored on the left rather than matched as a bare substring,
+                // because a retired name is the tail of the live one it was
+                // renamed to: `bookings.notification.sending` sits inside
+                // `ap.bookings.notification.sending`, and a plain
+                // str_contains() reports the current name as a violation of
+                // itself. The lookbehind requires the name to start a token, so
+                // an `ap.`-prefixed hook is not its own retired ancestor.
+                if ( 1 === preg_match( '/(?<![\w.])' . preg_quote( $retired, '/' ) . '/', $contents ) ) {
                     $offences[] = $path . ': ' . $retired;
                 }
             }

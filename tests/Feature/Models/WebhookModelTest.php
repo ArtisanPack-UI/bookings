@@ -258,18 +258,32 @@ describe( 'the notification log', function (): void {
             ->and( NotificationLog::query()->count() )->toBe( 1 );
     } );
 
-    it( 'claims per booking, type, and schedule rather than per channel', function (): void {
-        // The unique key the schema actually has. Sending one reminder twice is
-        // the failure this prevents, so losing a second channel is the safe side
-        // to err on — but it is a real limit, and this pins it so that a change
-        // of mind about multi-channel sends has to be deliberate.
+    it( 'claims per channel, so one message can go out on several', function (): void {
+        // `channel` is in the unique key precisely so this works: the package
+        // sends the same message to the customer by mail and to staff as a
+        // database notification, and a key without the channel would let the
+        // first claim lock the second out of a send meant for both.
         $booking = Booking::factory()->create();
 
         $mail = NotificationLog::logSend( $booking, NotificationType::Reminder, 'mail', 'sam@example.test', '2026-05-01 15:00:00' );
         $sms  = NotificationLog::logSend( $booking, NotificationType::Reminder, 'sms', '+15555550123', '2026-05-01 15:00:00' );
 
         expect( $mail )->not->toBeNull()
-            ->and( $sms )->toBeNull();
+            ->and( $sms )->not->toBeNull()
+            ->and( NotificationLog::query()->count() )->toBe( 2 );
+    } );
+
+    it( 'still refuses a second claim on the same channel', function (): void {
+        // The half that has to survive the channel going into the key: a cron
+        // that overlaps itself must still send one reminder, not two.
+        $booking = Booking::factory()->create();
+
+        $first  = NotificationLog::logSend( $booking, NotificationType::Reminder, 'mail', 'sam@example.test', '2026-05-01 15:00:00' );
+        $second = NotificationLog::logSend( $booking, NotificationType::Reminder, 'mail', 'sam@example.test', '2026-05-01 15:00:00' );
+
+        expect( $first )->not->toBeNull()
+            ->and( $second )->toBeNull()
+            ->and( NotificationLog::query()->count() )->toBe( 1 );
     } );
 
     it( 'still logs unscheduled sends more than once', function (): void {

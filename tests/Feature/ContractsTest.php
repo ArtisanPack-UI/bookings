@@ -12,6 +12,8 @@ use ArtisanPackUI\Bookings\Models\Booking;
 use ArtisanPackUI\Bookings\Models\CalendarConnection;
 use ArtisanPackUI\Bookings\Models\Service;
 use ArtisanPackUI\Bookings\Models\ServiceProvider;
+use ArtisanPackUI\Bookings\Notifications\BookingConfirmation;
+use ArtisanPackUI\Bookings\Notifications\BookingReminder;
 use ArtisanPackUI\Bookings\Support\Slot;
 use ArtisanPackUI\Bookings\Support\TimeRange;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -79,12 +81,16 @@ describe( 'NotificationChannel', function (): void {
 
         expect( $channel )->toBeInstanceOf( NotificationChannel::class )
             ->and( $channel->key() )->toBe( 'recording' )
-            ->and( $channel->supports( NotificationType::Confirmation, $booking ) )->toBeTrue();
+            ->and( $channel->supports( NotificationType::Confirmation, $booking ) )->toBeTrue()
+            ->and( $channel->recipient( NotificationType::Confirmation, $booking ) )->toBe( '+15555550123' );
 
-        $channel->send( NotificationType::Confirmation, $booking );
+        $notification = new BookingConfirmation( $booking );
+
+        $channel->send( NotificationType::Confirmation, $booking, $notification );
 
         expect( $channel->sent )->toHaveCount( 1 )
-            ->and( $channel->sent[ 0 ]['booking_id'] )->toBe( $booking->id );
+            ->and( $channel->sent[ 0 ]['booking_id'] )->toBe( $booking->id )
+            ->and( $channel->sent[ 0 ]['notification'] )->toBe( $notification );
     } );
 
     it( 'declines a booking it has nowhere to send to', function (): void {
@@ -96,7 +102,9 @@ describe( 'NotificationChannel', function (): void {
     it( 'throws rather than failing quietly', function (): void {
         $channel = new RecordingNotificationChannel( fails: true );
 
-        $channel->send( NotificationType::Reminder, Booking::factory()->create() );
+        $booking = Booking::factory()->create();
+
+        $channel->send( NotificationType::Reminder, $booking, new BookingReminder( $booking ) );
     } )->throws( RuntimeException::class );
 } );
 

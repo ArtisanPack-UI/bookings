@@ -22,9 +22,13 @@ namespace ArtisanPackUI\Bookings\Providers;
 
 use ArtisanPackUI\Bookings\Bookings;
 use ArtisanPackUI\Bookings\Console\Commands\ReissueDetachedManageTokensCommand;
+use ArtisanPackUI\Bookings\Console\Commands\SendBookingRemindersCommand;
 use ArtisanPackUI\Bookings\Contracts\MeetingTypeRegistry as MeetingTypeRegistryContract;
+use ArtisanPackUI\Bookings\Contracts\NotificationChannel;
 use ArtisanPackUI\Bookings\Contracts\RoundRobinStrategy;
 use ArtisanPackUI\Bookings\Contracts\SlotResolver;
+use ArtisanPackUI\Bookings\Enums\NotificationType;
+use ArtisanPackUI\Bookings\Listeners\SendBookingNotifications;
 use ArtisanPackUI\Bookings\MeetingTypes\MeetingTypeRegistry;
 use ArtisanPackUI\Bookings\Models\AvailabilityOverride;
 use ArtisanPackUI\Bookings\Models\AvailabilitySchedule;
@@ -35,18 +39,29 @@ use ArtisanPackUI\Bookings\Models\Service;
 use ArtisanPackUI\Bookings\Models\ServiceBlackoutDate;
 use ArtisanPackUI\Bookings\Models\ServiceProvider as ServiceProviderModel;
 use ArtisanPackUI\Bookings\Models\ServiceProviderService;
+use ArtisanPackUI\Bookings\Notifications\Channels\CmsFrameworkChannel;
+use ArtisanPackUI\Bookings\Notifications\Channels\DatabaseChannel;
+use ArtisanPackUI\Bookings\Notifications\Channels\MailChannel;
 use ArtisanPackUI\Bookings\Services\AvailabilityService;
 use ArtisanPackUI\Bookings\Services\BookingService;
 use ArtisanPackUI\Bookings\Services\IntakeFieldValidator;
 use ArtisanPackUI\Bookings\Services\ManageTokenService;
+use ArtisanPackUI\Bookings\Services\NotificationService;
 use ArtisanPackUI\Bookings\Services\ProviderSlotLock;
+use ArtisanPackUI\Bookings\Services\ReminderScheduler;
 use ArtisanPackUI\Bookings\Services\SeriesService;
 use ArtisanPackUI\Bookings\Strategies\LeastRecentlyAssignedStrategy;
+use ArtisanPackUI\Bookings\Support\HookSubscriptions;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 
+use function __;
+use function apRegisterNotification;
 use function array_key_exists;
 use function array_values;
+use function function_exists;
 
 /**
  * Service provider for the Bookings package.
@@ -126,6 +141,47 @@ class BookingsServiceProvider extends ServiceProvider
         // BookingService, so the two resolve the same instance and a rebinding
         // of the booking service reaches recurring bookings too.
         $this->app->singleton( SeriesService::class );
+
+        // Bound individually as well as into the service, so that an application
+        // replacing just the mail channel — a different transport, a themed
+        // message — rebinds one class rather than reassembling the list.
+        $this->app->singleton( MailChannel::class );
+        $this->app->singleton( DatabaseChannel::class );
+        $this->app->singleton( CmsFrameworkChannel::class );
+
+        // Two implementations answer to the `database` key, and which one an
+        // installation gets is decided here rather than by configuration.
+        // Laravel's database notifications and cms-framework's notification
+        // centre both want a table called `notifications`, and their schemas are
+        // irreconcilable — a UUID key and a JSON payload against an
+        // auto-increment id and `title`/`content` prose. Writing the wrong one
+        // fails on every insert, and fails quietly: the send is logged as failed
+        // and the admin never hears about the booking.
+        //
+        // So where cms-framework is installed the notice goes through its
+        // notification centre, which is the better outcome anyway — one inbox
+        // for everything the CMS raises, and the per-user preferences it already
+        // has. Standalone installations keep the Laravel-native channel.
+        $this->app->bind( NotificationChannel::class, function ( $app ): NotificationChannel {
+            return self::usesCmsNotifications()
+                ? $app->make( CmsFrameworkChannel::class )
+                : $app->make( DatabaseChannel::class );
+        } );
+
+        // The channel list is assembled here rather than read from config inside
+        // the service, because config names channels by key and the container is
+        // what turns a key into an object an application may have replaced.
+        // `webhook` is deliberately absent: it is in the default config ahead of
+        // the ticket that implements it, and the service skips a configured
+        // channel nothing is registered for.
+        $this->app->singleton( NotificationService::class, function ( $app ): NotificationService {
+            return new NotificationService( [
+                $app->make( MailChannel::class ),
+                $app->make( NotificationChannel::class ),
+            ] );
+        } );
+
+        $this->app->singleton( ReminderScheduler::class );
     }
 
     /**
@@ -170,13 +226,128 @@ class BookingsServiceProvider extends ServiceProvider
         if ( $this->app->runningInConsole() ) {
             $this->commands( [
                 ReissueDetachedManageTokensCommand::class,
+                SendBookingRemindersCommand::class,
             ] );
         }
+
+        Event::subscribe( SendBookingNotifications::class );
+
+        $this->registerCmsNotificationTypes();
+
+        $this->scheduleReminders();
 
         $this->invalidateAvailabilityOnWrites();
 
         // Routes, views, Livewire components, calendar drivers, and the
         // CMS-framework integration are registered here as each is built.
+    }
+
+    /**
+     * Determines whether staff notices go through cms-framework's centre.
+     *
+     * Detection is the default rather than the only answer. An installation may
+     * have cms-framework present for its admin shell while wanting booking
+     * notices kept in Laravel's own notification table — or the reverse, in a
+     * test — and `notifications.database.driver` says so outright:
+     *
+     * - `auto` (default) — the CMS centre when cms-framework is installed.
+     * - `cms` — always the CMS centre.
+     * - `laravel` — always Laravel's database notifications.
+     *
+     * @since 1.0.0
+     *
+     * @return bool True when the CMS notification centre should be used.
+     */
+    protected static function usesCmsNotifications(): bool
+    {
+        $driver = config( 'artisanpack.bookings.notifications.database.driver', 'auto' );
+
+        if ( 'cms' === $driver ) {
+            return true;
+        }
+
+        if ( 'laravel' === $driver ) {
+            return false;
+        }
+
+        return HookSubscriptions::isInstalled( 'cms-framework' );
+    }
+
+    /**
+     * Declares the booking notification types to cms-framework.
+     *
+     * Registration is what puts them in the preferences UI, so a member of staff
+     * can turn off reminder notices without turning off cancellations. Without
+     * it the notices still arrive, but as rows of an unregistered key that
+     * nothing offers an opt-out for — and the first thing somebody does with a
+     * notification they cannot switch off is stop reading the centre entirely.
+     *
+     * Runs whether or not a notification is ever sent, which is why it lives
+     * here rather than in the channel. Guarded on the helper existing rather
+     * than on the gate alone, because the gate probes for a class and the
+     * helpers come from a file the package autoloads separately.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    protected function registerCmsNotificationTypes(): void
+    {
+        if ( ! self::usesCmsNotifications() || ! function_exists( 'apRegisterNotification' ) ) {
+            return;
+        }
+
+        $types = [
+            NotificationType::Confirmation->value => __( 'Booking confirmed' ),
+            NotificationType::Reminder->value     => __( 'Booking reminder' ),
+            NotificationType::Cancellation->value => __( 'Booking cancelled' ),
+            NotificationType::Reschedule->value   => __( 'Booking rescheduled' ),
+            NotificationType::NoShow->value       => __( 'Booking marked as a no-show' ),
+        ];
+
+        foreach ( $types as $value => $title ) {
+            apRegisterNotification(
+                CmsFrameworkChannel::KEY_PREFIX . $value,
+                $title,
+                __( 'A booking changed. Open it for the details.' ),
+            );
+        }
+    }
+
+    /**
+     * Puts the reminder sweep on the application's schedule.
+     *
+     * Every fifteen minutes, and `withoutOverlapping()` on top of that, even
+     * though the notification log already makes a doubled run harmless. The lock
+     * saves the work rather than the correctness: two runs would walk the same
+     * bookings and lose every claim, which is a lot of database round trips to
+     * send nothing.
+     *
+     * Registered from the console only. `booted()` fires on every HTTP request
+     * too, so without the guard each one resolves the scheduler to describe a
+     * command it will never run — which is the cost the deferred callback was
+     * meant to avoid and, on its own, did not.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    protected function scheduleReminders(): void
+    {
+        if ( ! $this->app->runningInConsole() ) {
+            return;
+        }
+
+        if ( ! (bool) config( 'artisanpack.bookings.notifications.reminder.enabled', true ) ) {
+            return;
+        }
+
+        $this->app->booted( function (): void {
+            $this->app->make( Schedule::class )
+                ->command( 'bookings:send-reminders' )
+                ->everyFifteenMinutes()
+                ->withoutOverlapping();
+        } );
     }
 
     /**
