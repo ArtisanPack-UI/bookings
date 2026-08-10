@@ -21,6 +21,7 @@ declare( strict_types=1 );
 namespace ArtisanPackUI\Bookings\Providers;
 
 use ArtisanPackUI\Bookings\Bookings;
+use ArtisanPackUI\Bookings\Console\Commands\ReissueDetachedManageTokensCommand;
 use ArtisanPackUI\Bookings\Contracts\MeetingTypeRegistry as MeetingTypeRegistryContract;
 use ArtisanPackUI\Bookings\Contracts\RoundRobinStrategy;
 use ArtisanPackUI\Bookings\Contracts\SlotResolver;
@@ -37,6 +38,7 @@ use ArtisanPackUI\Bookings\Models\ServiceProviderService;
 use ArtisanPackUI\Bookings\Services\AvailabilityService;
 use ArtisanPackUI\Bookings\Services\BookingService;
 use ArtisanPackUI\Bookings\Services\IntakeFieldValidator;
+use ArtisanPackUI\Bookings\Services\ManageTokenService;
 use ArtisanPackUI\Bookings\Services\ProviderSlotLock;
 use ArtisanPackUI\Bookings\Services\SeriesService;
 use ArtisanPackUI\Bookings\Strategies\LeastRecentlyAssignedStrategy;
@@ -114,6 +116,12 @@ class BookingsServiceProvider extends ServiceProvider
         $this->app->singleton( IntakeFieldValidator::class );
         $this->app->singleton( BookingService::class );
 
+        // Every manage token in the package is minted, hashed, and checked by
+        // this one object — including the token the Booking model mints on
+        // create, which resolves it from the container rather than newing it up
+        // — so rebinding it replaces the credential scheme everywhere at once.
+        $this->app->singleton( ManageTokenService::class );
+
         // Every occurrence a series materialises is written through
         // BookingService, so the two resolve the same instance and a rebinding
         // of the booking service reaches recurring bookings too.
@@ -158,6 +166,12 @@ class BookingsServiceProvider extends ServiceProvider
             ],
             'bookings-migrations',
         );
+
+        if ( $this->app->runningInConsole() ) {
+            $this->commands( [
+                ReissueDetachedManageTokensCommand::class,
+            ] );
+        }
 
         $this->invalidateAvailabilityOnWrites();
 

@@ -271,6 +271,48 @@ console command using `SiteContext::forSite()` and a maintenance query using
 `acrossAllSites()` — where the ambient site otherwise disagrees with the series
 being edited.
 
+### Manage tokens
+
+A customer with no account manages their booking through a link, and the token in
+that link is their whole credential. `Services\ManageTokenService` is the one
+place one is minted, hashed, and checked:
+
+```php
+use ArtisanPackUI\Bookings\Services\ManageTokenService;
+
+$tokens = app( ManageTokenService::class );
+
+// Minted automatically when a booking is created — take it once, for the email.
+$token = $booking->pullPlainManageToken();
+
+$booking = $tokens->findBooking( $requestToken );   // null when the token is unknown
+$tokens->verifyFor( $booking, $requestToken );      // hash_equals, never ==
+
+$fresh = $tokens->issueFor( $booking );             // the old link stops working here
+```
+
+The token is 32 bytes of CSPRNG output rendered as 64 hex characters, and nothing
+about it is derived from the booking — a token that encoded the reference or the
+customer's email would let somebody who knows one booking enumerate the rest.
+`bookings.manage_token_hash` stores `sha256(token)` and nothing else, so a leaked
+row hands over a hash that cannot be turned back into a working link. There is
+deliberately no way to recover a plain token from a saved booking: it is returned
+once, to whoever minted it. A customer who loses the link gets a new one issued.
+
+When a token has leaked — a forwarded confirmation, a mail archive, a referrer
+header — rotate every one of them:
+
+```bash
+php artisan bookings:reissue-detached-manage-tokens
+```
+
+It is deliberately blunt: every token in every site is replaced, so every manage
+link the package has ever sent stops working, and a customer has no way back in
+until somebody sends them a new one. `ap.bookings.manageTokenReissued` fires per
+booking with the new plain token — the only moment it can be read — so an
+application with mail wired up can re-send as the rotation runs. Pass `--force`
+to skip the confirmation prompt and `--chunk` to tune the query size.
+
 ## Extending
 
 ### Contracts
@@ -336,6 +378,8 @@ Actions fire; filters transform a value and must return one.
 | `ap.bookings.completed` | action | `(Booking $booking)` |
 | `ap.bookings.noShow` | action | `(Booking $booking)` |
 | `ap.bookings.series.editApplying` | action | `(BookingSeries $series, string $scope, array $changes)` |
+| `ap.bookings.manageTokenReissued` | action | `(Booking $booking, string $plainToken)` |
+| `ap.bookings.manageTokensReissued` | action | `(int $count)` |
 | `ap.bookings.availableProviders` | filter | `(array $providers, Service $service, CarbonImmutable $start)` |
 | `ap.bookings.roundRobin.selectProvider` | filter | `(?ServiceProvider $selected, array $candidates, Booking $draft)` |
 | `ap.bookings.intakeSchema` | filter | `(array $schema, Service $service, int $version)` |
@@ -365,6 +409,11 @@ about to replace. `$scope` is the string `this`, `this_and_following`, or `all` 
 the same value the `SeriesEdited` event carries. The occurrences a series edit
 writes and discards go through `BookingService` like any other booking, so they
 fire `ap.bookings.created` and `ap.bookings.cancelled` once each, per occurrence.
+
+`ap.bookings.manageTokenReissued` carries a live secret — the plain manage token,
+at the only moment it is readable. It is there so an emergency rotation can be
+followed by new links reaching customers; do not log it, and do not put it
+anywhere the hash was kept out of.
 
 `ap.bookings.intakeSchema` runs against the version a booking was captured with
 rather than the service's current form, and its output is never written back. A
