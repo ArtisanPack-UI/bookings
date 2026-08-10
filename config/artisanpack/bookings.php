@@ -256,11 +256,27 @@ return [
     | backoff schedule, in minutes; an endpoint that fails "failure_threshold"
     | times in a row is disabled rather than retried forever.
     |
+    | The backoff list is the retry schedule, not the attempt count: an endpoint
+    | gets one attempt plus one per entry, so the default is six attempts spread
+    | over about fourteen hours before the delivery is marked dead.
+    |
+    | "timeout_seconds" and "connect_timeout_seconds" bound one attempt. They are
+    | short on purpose — a delivery is a notification, not a transaction, and a
+    | consumer that takes half a minute to answer would otherwise hold a queue
+    | worker for every endpoint it is slow for.
+    |
+    | "queue" names the queue the delivery jobs are pushed onto. Null uses the
+    | connection's default. Give webhooks their own queue on an installation
+    | where a slow endpoint must not delay anything else that is queued.
+    |
     */
     'webhooks' => [
         'failure_threshold'        => 10,
         'delivery_backoff_minutes' => [ 1, 5, 30, 120, 720 ],
         'delivery_retention_days'  => 30,
+        'timeout_seconds'          => 10,
+        'connect_timeout_seconds'  => 5,
+        'queue'                    => null,
     ],
 
     /*
