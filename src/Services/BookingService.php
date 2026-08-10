@@ -95,6 +95,15 @@ use function trim;
  * veto: it runs inside the lock, and letting a subscriber abort there would hold
  * a slot lock open across arbitrary third-party code.
  *
+ * That veto has one limit worth knowing before relying on it. The event is
+ * `ShouldDispatchAfterCommit`, so a caller who wraps `create()` in a transaction
+ * of their own — materialising a series, importing in bulk — pushes every
+ * listener past the end of this method. The booking is auto-confirmed before any
+ * of them runs, and a listener that then cancels it is cancelling a confirmed
+ * booking rather than preventing one. Callers who need the veto have to let
+ * `create()` own its own transaction, and callers who batch should confirm
+ * explicitly with automatic confirmation switched off.
+ *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
  *

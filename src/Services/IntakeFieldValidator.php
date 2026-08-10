@@ -19,16 +19,19 @@ use ArtisanPackUI\Bookings\Exceptions\IntakeValidationException;
 use ArtisanPackUI\Bookings\Models\IntakeSchemaVersion;
 use ArtisanPackUI\Bookings\Models\Service;
 use Illuminate\Contracts\Validation\Factory as ValidationFactory;
+use Illuminate\Validation\Rule;
 use UnexpectedValueException;
 
 use function applyFilters;
 use function array_key_exists;
 use function array_values;
+use function filter_var;
 use function get_debug_type;
-use function implode;
 use function in_array;
 use function is_array;
 use function is_bool;
+use function is_float;
+use function is_int;
 use function is_string;
 use function sprintf;
 use function trim;
@@ -111,7 +114,7 @@ class IntakeFieldValidator
             // never matches, so applying it at the top level would reject every
             // multi-select answer including the correct ones.
             if ( [] !== $field['options'] && $this->isMultiAnswer( $field['type'] ) ) {
-                $rules[ $field['name'] . '.*' ]      = [ 'string', 'in:' . implode( ',', $field['options'] ) ];
+                $rules[ $field['name'] . '.*' ]      = [ 'string', Rule::in( $field['options'] ) ];
                 $attributes[ $field['name'] . '.*' ] = $field['label'];
             }
         }
@@ -194,13 +197,33 @@ class IntakeFieldValidator
     public function publish( Service $service, array $schema ): IntakeSchemaVersion
     {
         return $service->getConnection()->transaction( static function () use ( $service, $schema ): IntakeSchemaVersion {
-            // Read off the recorded history rather than off the service's
-            // pointer. A service seeded at version 1 with no version row behind
-            // it would otherwise publish its first edit as version 2, leaving
-            // version 1 permanently unreadable for every booking already taken
-            // against it.
-            $highest = (int) $service->intakeSchemaVersions()->max( 'version' );
-            $version = 1 + ( $highest > 0 ? $highest : 0 );
+            $current = (int) $service->intake_schema_version;
+
+            // Back-fill the version the service is *currently* pointing at before
+            // appending anything, when it has a form and nothing ever recorded
+            // it. A service seeded or imported at version 1 keeps its form on the
+            // service row alone, and bookings taken against it snapshot version 1
+            // — so appending the edit as version 1 would rewrite the form those
+            // bookings were captured with, which is the one thing versioning
+            // exists to make impossible.
+            //
+            // Gated on there being a form, because a service that has never had
+            // one has no history to protect: back-filling an empty version there
+            // would only push every real version number up by one and leave a row
+            // recording that nothing was ever asked.
+            $backfill = $service->intake_schema;
+
+            if (
+                is_array( $backfill ) && [] !== $backfill
+                && ! $service->intakeSchemaVersions()->where( 'version', $current )->exists()
+            ) {
+                $service->intakeSchemaVersions()->create( [
+                    'version' => $current,
+                    'schema'  => $backfill,
+                ] );
+            }
+
+            $version = 1 + (int) $service->intakeSchemaVersions()->max( 'version' );
 
             $recorded = $service->intakeSchemaVersions()->create( [
                 'version' => $version,
@@ -254,7 +277,7 @@ class IntakeFieldValidator
                 'name'     => $name,
                 'type'     => is_string( $field['type'] ?? null ) ? $field['type'] : 'text',
                 'label'    => is_string( $field['label'] ?? null ) ? $field['label'] : $name,
-                'required' => is_bool( $field['required'] ?? null ) ? $field['required'] : false,
+                'required' => $this->isTruthy( $field['required'] ?? null ),
                 'options'  => $this->stringList( $field['options'] ?? [] ),
                 'rules'    => $this->stringList( $field['rules'] ?? [] ),
             ];
@@ -280,8 +303,14 @@ class IntakeFieldValidator
      */
     protected function rulesFor( array $field ): array
     {
-        $rules   = [ $field['required'] ? 'required' : 'nullable' ];
-        $choices = [] === $field['options'] ? [] : [ 'in:' . implode( ',', $field['options'] ) ];
+        $rules = [ $field['required'] ? 'required' : 'nullable' ];
+
+        // `Rule::in` rather than an `in:` string. Laravel parses the string form
+        // with `str_getcsv`, so an option holding a comma — "Referral, word of
+        // mouth" is an ordinary thing to put on a form — silently becomes two
+        // entries: the real answer is refused forever, and a value nobody
+        // offered is accepted in its place.
+        $choices = [] === $field['options'] ? [] : [ Rule::in( $field['options'] ) ];
 
         $typed = match ( $field['type'] ) {
             'email'                     => [ 'email' ],
@@ -314,13 +343,49 @@ class IntakeFieldValidator
     }
 
     /**
-     * Gets a list of strings out of whatever a schema put in a field.
+     * Reads a schema's idea of "yes".
+     *
+     * A schema is JSON authored by an administrator through a form builder, an
+     * import, or by hand, so `required` arrives as `true`, `1`, `"1"`, `"true"`,
+     * or `"yes"` depending on which. Insisting on a real boolean would be
+     * defensible if it failed closed — but it fails *open*: every one of those
+     * spellings would read as "optional" and the booking would be accepted with
+     * the mandatory questions blank and no error anywhere to explain it.
      *
      * @since 1.0.0
      *
      * @param  mixed  $value  The raw value.
      *
-     * @return array<int, string> The strings it held.
+     * @return bool True when the schema meant yes.
+     */
+    protected function isTruthy( mixed $value ): bool
+    {
+        if ( is_bool( $value ) ) {
+            return $value;
+        }
+
+        if ( is_string( $value ) || is_int( $value ) ) {
+            return true === filter_var( $value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE );
+        }
+
+        return false;
+    }
+
+    /**
+     * Gets a list of strings out of whatever a schema put in a field.
+     *
+     * Numbers are kept rather than dropped, and that matters more than it looks.
+     * A rating field offering `[ 1, 2, 3, 4, 5 ]` is ordinary JSON, and dropping
+     * every entry would leave the list empty — which does not narrow the field to
+     * nothing, it removes the choice constraint altogether and accepts anything
+     * at all. Silently widening what a form accepts is the wrong way to be
+     * strict about types.
+     *
+     * @since 1.0.0
+     *
+     * @param  mixed  $value  The raw value.
+     *
+     * @return array<int, string> The entries, as strings.
      */
     protected function stringList( mixed $value ): array
     {
@@ -331,8 +396,8 @@ class IntakeFieldValidator
         $strings = [];
 
         foreach ( $value as $entry ) {
-            if ( is_string( $entry ) ) {
-                $strings[] = $entry;
+            if ( is_string( $entry ) || is_int( $entry ) || is_float( $entry ) ) {
+                $strings[] = (string) $entry;
             }
         }
 
