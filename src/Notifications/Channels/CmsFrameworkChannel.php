@@ -223,6 +223,14 @@ class CmsFrameworkChannel implements NotificationChannel
     /**
      * Builds the body staff see for a lifecycle message.
      *
+     * The booking's reference rather than the customer's name. This string is
+     * stored as prose in a table this package does not own, so a name written
+     * here would outlive the erasure of the booking it belongs to — the sweep
+     * walks the booking and the notification log, and cannot rewrite a sentence
+     * sitting in cms-framework's storage. The reference identifies the booking
+     * to staff just as well, and resolves to the customer only by reading the
+     * booking, which erasure does cover.
+     *
      * @since 1.0.0
      *
      * @param  Booking  $booking  The booking the message concerns.
@@ -233,7 +241,7 @@ class CmsFrameworkChannel implements NotificationChannel
     {
         return sprintf(
             '%s — %s',
-            $booking->customer_name,
+            $booking->booking_number,
             $booking->startTimeForCustomer()->format( 'j M Y H:i T' ),
         );
     }
@@ -243,7 +251,9 @@ class CmsFrameworkChannel implements NotificationChannel
      *
      * The identifiers go here rather than into the prose, so an admin screen
      * linking a notification back to its booking reads a column rather than
-     * parsing a sentence that changes with the reader's locale.
+     * parsing a sentence that changes with the reader's locale. It carries no
+     * customer PII, for the reason given on {@see BookingNotification::toArray()}:
+     * this lands in storage the erasure sweep does not walk.
      *
      * @since 1.0.0
      *

@@ -19,7 +19,7 @@ use ArtisanPackUI\Bookings\Enums\BookingStatus;
 use ArtisanPackUI\Bookings\Enums\NotificationType;
 use ArtisanPackUI\Bookings\Models\Booking;
 use Carbon\CarbonImmutable;
-use Illuminate\Support\Collection;
+use Illuminate\Support\LazyCollection;
 use UnexpectedValueException;
 
 use function applyFilters;
@@ -193,13 +193,28 @@ class ReminderScheduler
      * that booking's own details, so there is nothing here that could reach the
      * wrong tenant. The notification log carries no `site_id` of its own.
      *
+     * Read a page at a time rather than all at once. The lookahead bounds the
+     * window, but not the number of bookings inside it — and the documented way
+     * to support a subscriber-added reminder window is to *raise* the lookahead,
+     * so the bound grows on exactly the installations that already have the most
+     * bookings. `sendDue()` handles one booking at a time and sends an email per
+     * reminder, so nothing here benefits from holding the rest in memory while
+     * it waits on a mail server.
+     *
+     * `lazyById()` pages by primary key, which is why the ordering is by id
+     * rather than by start time: a keyset walk over a moving target is what
+     * makes the paging safe, and the alternatives are worse. An offset walk can
+     * skip rows as earlier ones fall out of the window, and a cursor holds one
+     * result set open for the whole run — across every mail send in it. Order
+     * does not affect which reminders go out, only the sequence within a run.
+     *
      * @since 1.0.0
      *
      * @param  CarbonImmutable  $now  The moment to treat as now.
      *
-     * @return Collection<int, Booking> The candidate bookings.
+     * @return LazyCollection<int, Booking> The candidate bookings.
      */
-    protected function candidates( CarbonImmutable $now ): Collection
+    protected function candidates( CarbonImmutable $now ): LazyCollection
     {
         return Booking::query()
             ->acrossAllSites()
@@ -207,8 +222,7 @@ class ReminderScheduler
             ->where( 'start_time', '>', $now )
             ->where( 'start_time', '<=', $now->addHours( $this->lookaheadHours() ) )
             ->with( [ 'service', 'provider' ] )
-            ->orderBy( 'start_time' )
-            ->get();
+            ->lazyById();
     }
 
     /**

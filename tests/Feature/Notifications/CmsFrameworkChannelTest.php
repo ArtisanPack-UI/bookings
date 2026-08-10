@@ -14,14 +14,19 @@ use Tests\Concerns\TestsWithSqlite;
 
 uses( TestsWithSqlite::class, RefreshDatabase::class );
 
-beforeEach( function (): void {
-    // The channel reaches cms-framework through its global helpers, which is how
-    // that package publishes its API. Absent here, so the test defines them once
-    // and records what it was handed — the same shape a real install provides.
-    if ( ! function_exists( 'apSendNotification' ) ) {
-        require __DIR__ . '/../../Fixtures/cms_notification_helpers.php';
-    }
+// The channel reaches cms-framework through its global helpers, which is how
+// that package publishes its API. Absent here, so the fixture stands in and
+// records what it was handed — the same shape a real install provides.
+//
+// Loaded unconditionally, because the spy has to exist either way: gating this
+// on `apSendNotification` not existing would skip the file wholesale on an
+// install that has cms-framework, leaving `cmsNotificationSpy()` undefined and
+// this file fataling before its first assertion. Every declaration inside the
+// fixture guards itself, so loading it when the real helpers are present is
+// harmless — it simply declares nothing.
+require_once __DIR__ . '/../../Fixtures/cms_notification_helpers.php';
 
+beforeEach( function (): void {
     cmsNotificationSpy()->reset();
 
     config()->set( 'artisanpack.bookings.notifications.channels', [ 'database' ] );
@@ -108,7 +113,22 @@ describe( 'sending by role', function (): void {
         expect( $overrides['metadata'] )->toMatchArray( [
             'booking_id' => $this->booking->id,
             'type'       => 'confirmation',
-        ] )->and( $overrides['content'] )->toContain( 'Sam Rivera' );
+        ] )->and( $overrides['content'] )->toContain( $this->booking->booking_number );
+    } );
+
+    it( 'writes no customer PII into storage the erasure sweep cannot reach', function (): void {
+        // The notice lands in cms-framework's tables, which erasing a booking
+        // does not walk. A name written here would stay readable after the
+        // customer asked for it to be gone.
+        ( new NotificationService( [ $this->channel ] ) )
+            ->send( NotificationType::Confirmation, $this->booking );
+
+        $overrides = cmsNotificationSpy()->byRole[ 0 ]['overrides'];
+        $stored    = $overrides['title'] . ' ' . $overrides['content'] . ' ' . json_encode( $overrides['metadata'] );
+
+        expect( $stored )->not->toContain( 'Sam Rivera' )
+            ->and( $stored )->not->toContain( 'sam@example.test' )
+            ->and( $overrides['metadata'] )->not->toHaveKey( 'customer_name' );
     } );
 
     it( 'reuses the filtered subject as the title', function (): void {

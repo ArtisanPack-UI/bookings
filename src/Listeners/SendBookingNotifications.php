@@ -42,6 +42,22 @@ use Illuminate\Events\Dispatcher;
  * appointment; the confirmation goes out when it becomes one. A configuration
  * that auto-confirms gets both at once, which is the same single email.
  *
+ * **Do not make this `ShouldQueue` without giving these sends a schedule key.**
+ * A lifecycle send is claimed with a null `scheduled_for`, and NULLs are
+ * distinct in a unique index — so unlike a reminder, nothing here deduplicates.
+ * That is correct as long as the events fire once, which they do:
+ * {@see \ArtisanPackUI\Bookings\Services\BookingService} refuses every terminal
+ * transition whose booking is not in a state to make it, so a booking cannot be
+ * confirmed, cancelled, or marked no-show twice, and this listener runs
+ * synchronously with no delivery to retry. Reschedules are the exception by
+ * design: a booking that moves twice warrants two notices.
+ *
+ * Queueing this would break that reasoning rather than the code — a job retried
+ * after a timeout would find no claim to lose and send the customer a second
+ * confirmation. Whoever wants it queued needs a per-transition key in the log
+ * first, and coalescing every null into one value is not that: it would suppress
+ * the second reschedule along with the duplicate.
+ *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
  *

@@ -126,10 +126,22 @@ abstract class BookingNotification extends Notification
     /**
      * Builds the database payload.
      *
-     * Deliberately identifiers and short strings rather than the rendered
-     * message. A database notification is read back by an admin screen long
-     * after it was written, and a row holding prose cannot be re-rendered in the
-     * reader's locale or re-checked against a booking that has since moved.
+     * Identifiers and timestamps only — deliberately no customer name, and no
+     * rendered prose. Two reasons that point the same way.
+     *
+     * This payload is written into storage the package does not own and cannot
+     * sweep: Laravel's `notifications` table, or cms-framework's. Erasing a
+     * booking redacts the booking row and the notification log, both of which
+     * are keyed to it, but a staff notification carrying the customer's name
+     * would keep that name readable afterwards in a table nothing in the erasure
+     * routine walks. The way to keep a name out of an erasure sweep's blind spot
+     * is not to write it there.
+     *
+     * The name is not lost, only not duplicated. A staff screen holds
+     * `booking_id` and reads the booking for anything it wants to display —
+     * which means it shows the redaction placeholder after an erasure, and the
+     * current name after a correction, rather than whatever was true on the day
+     * the notification was written.
      *
      * @since 1.0.0
      *
@@ -140,14 +152,13 @@ abstract class BookingNotification extends Notification
     public function toArray( mixed $notifiable ): array
     {
         return [
-            'type'            => $this->type()->value,
-            'booking_id'      => $this->booking->getKey(),
-            'booking_number'  => $this->booking->booking_number,
-            'service_id'      => $this->booking->service_id,
-            'provider_id'     => $this->booking->provider_id,
-            'starts_at'       => $this->booking->start_time->toIso8601String(),
-            'customer_name'   => $this->booking->customer_name,
-            'customer_locale' => $this->booking->customer_timezone,
+            'type'              => $this->type()->value,
+            'booking_id'        => $this->booking->getKey(),
+            'booking_number'    => $this->booking->booking_number,
+            'service_id'        => $this->booking->service_id,
+            'provider_id'       => $this->booking->provider_id,
+            'starts_at'         => $this->booking->start_time->toIso8601String(),
+            'customer_timezone' => $this->booking->customer_timezone,
         ];
     }
 

@@ -323,9 +323,10 @@ class BookingsServiceProvider extends ServiceProvider
      * bookings and lose every claim, which is a lot of database round trips to
      * send nothing.
      *
-     * Registered through a deferred callback because the scheduler is resolved
-     * from the container, and resolving it during boot would force it into
-     * existence for every request that never runs a console command.
+     * Registered from the console only. `booted()` fires on every HTTP request
+     * too, so without the guard each one resolves the scheduler to describe a
+     * command it will never run — which is the cost the deferred callback was
+     * meant to avoid and, on its own, did not.
      *
      * @since 1.0.0
      *
@@ -333,6 +334,10 @@ class BookingsServiceProvider extends ServiceProvider
      */
     protected function scheduleReminders(): void
     {
+        if ( ! $this->app->runningInConsole() ) {
+            return;
+        }
+
         if ( ! (bool) config( 'artisanpack.bookings.notifications.reminder.enabled', true ) ) {
             return;
         }

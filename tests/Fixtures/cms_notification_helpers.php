@@ -9,8 +9,11 @@
  * writing anything, which is what lets the CMS channel be tested against the
  * shape it actually calls.
  *
- * Declared conditionally so that a suite running with cms-framework genuinely
- * installed uses the real helpers and this file does nothing.
+ * Every declaration is guarded, the class included. The file is loaded with
+ * `require_once` from the test that needs it, but a guard on the functions alone
+ * would still fatal with "Cannot declare class" if it were ever reached by a
+ * second path — a composer `files` entry, say — and that failure happens at
+ * compile time, before any of the function guards below get a chance to run.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
@@ -20,44 +23,46 @@
 
 declare( strict_types=1 );
 
-/**
- * Records the notifications the CMS channel asked to be sent.
- *
- * @since 1.0.0
- */
-class CmsNotificationSpy
-{
+if ( ! class_exists( 'CmsNotificationSpy' ) ) {
     /**
-     * Sends made by role.
+     * Records the notifications the CMS channel asked to be sent.
      *
-     * @var array<int, array{key: string, role: string, overrides: array<string, mixed>}>
+     * @since 1.0.0
      */
-    public array $byRole = [];
-
-    /**
-     * Sends made to an explicit id list.
-     *
-     * @var array<int, array{key: string, ids: array<int, int>, overrides: array<string, mixed>}>
-     */
-    public array $byIds = [];
-
-    /**
-     * Whether the helpers should report nobody wanted the notification.
-     *
-     * @var bool
-     */
-    public bool $returnNull = false;
-
-    /**
-     * Forgets everything recorded so far.
-     *
-     * @return void
-     */
-    public function reset(): void
+    class CmsNotificationSpy
     {
-        $this->byRole     = [];
-        $this->byIds      = [];
-        $this->returnNull = false;
+        /**
+         * Sends made by role.
+         *
+         * @var array<int, array{key: string, role: string, overrides: array<string, mixed>}>
+         */
+        public array $byRole = [];
+
+        /**
+         * Sends made to an explicit id list.
+         *
+         * @var array<int, array{key: string, ids: array<int, int>, overrides: array<string, mixed>}>
+         */
+        public array $byIds = [];
+
+        /**
+         * Whether the helpers should report nobody wanted the notification.
+         *
+         * @var bool
+         */
+        public bool $returnNull = false;
+
+        /**
+         * Forgets everything recorded so far.
+         *
+         * @return void
+         */
+        public function reset(): void
+        {
+            $this->byRole     = [];
+            $this->byIds      = [];
+            $this->returnNull = false;
+        }
     }
 }
 
