@@ -38,6 +38,7 @@ use ArtisanPackUI\Bookings\Services\AvailabilityService;
 use ArtisanPackUI\Bookings\Services\BookingService;
 use ArtisanPackUI\Bookings\Services\IntakeFieldValidator;
 use ArtisanPackUI\Bookings\Services\ProviderSlotLock;
+use ArtisanPackUI\Bookings\Services\SeriesService;
 use ArtisanPackUI\Bookings\Strategies\LeastRecentlyAssignedStrategy;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\ServiceProvider;
@@ -112,6 +113,11 @@ class BookingsServiceProvider extends ServiceProvider
         $this->app->singleton( ProviderSlotLock::class );
         $this->app->singleton( IntakeFieldValidator::class );
         $this->app->singleton( BookingService::class );
+
+        // Every occurrence a series materialises is written through
+        // BookingService, so the two resolve the same instance and a rebinding
+        // of the booking service reaches recurring bookings too.
+        $this->app->singleton( SeriesService::class );
     }
 
     /**
