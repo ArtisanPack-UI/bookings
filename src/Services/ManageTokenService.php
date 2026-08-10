@@ -190,6 +190,11 @@ class ManageTokenService
      * link was reissued" is not a sentence anybody expects to mean "and the rest
      * of your edits went live with it".
      *
+     * The write is aimed at the booking by primary key with no scopes applied,
+     * so reissuing works on a booking the caller already holds whichever site is
+     * ambient, and on a soft-deleted one. Nothing crosses a tenant boundary that
+     * the caller had not already crossed to get the model.
+     *
      * A booking that has not been saved yet is given its hash in memory and
      * nothing is written: the `creating` hook on the model keeps a hash that is
      * already set, so the token the caller is holding is the one that lands.
