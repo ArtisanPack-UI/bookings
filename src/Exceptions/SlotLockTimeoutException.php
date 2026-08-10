@@ -15,6 +15,7 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Exceptions;
 
+use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 
 use function sprintf;
@@ -52,7 +53,7 @@ class SlotLockTimeoutException extends BookingException
             'Timed out after %ds waiting for the slot lock on provider %d at %s.',
             $seconds,
             $providerId,
-            $start->utc()->toIso8601String(),
+            CarbonImmutable::instance( $start )->utc()->toIso8601String(),
         ) );
     }
 }

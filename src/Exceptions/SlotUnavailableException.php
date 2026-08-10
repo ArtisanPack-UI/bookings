@@ -16,6 +16,7 @@ declare( strict_types=1 );
 namespace ArtisanPackUI\Bookings\Exceptions;
 
 use ArtisanPackUI\Bookings\Models\Service;
+use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 
 use function sprintf;
@@ -51,7 +52,7 @@ class SlotUnavailableException extends BookingException
         return new self( sprintf(
             'No provider is available for service %d at %s.',
             (int) $service->getKey(),
-            $start->utc()->toIso8601String(),
+            CarbonImmutable::instance( $start )->utc()->toIso8601String(),
         ) );
     }
 }

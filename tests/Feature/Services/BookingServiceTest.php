@@ -430,6 +430,57 @@ describe( 'lifecycle', function (): void {
         expect( $first->fresh()->start_time->equalTo( bookingStart( '10:00' ) ) )->toBeTrue();
     } );
 
+    it( 'leaves the refused time nowhere on the booking it refused', function (): void {
+        // A caller that catches the refusal still holds the booking, and saving
+        // it later must not resurrect the time that was just refused.
+        //
+        // This covers the clash branch, which returns before the instance is
+        // touched at all. The other refusal path — the unique index firing on
+        // `save()` — does mutate the instance first and calls `refresh()` to put
+        // it back, and that branch is deliberately not staged here: it is only
+        // reachable when a competing write bypassed the slot lock, and there is
+        // no seam between the clash check and the save to insert one from. A
+        // test that appeared to cover it would be passing for the wrong reason.
+        [ $service, $providers ] = bookableService( 1 );
+
+        $first = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart( '10:00' ),
+        ] ) );
+
+        // Written straight through the query builder so availability never sees
+        // it — the unique index is what has to refuse the move, which is the
+        // path that leaves the instance dirty.
+        DB::table( 'bookings' )->insert( [
+            'booking_number'        => 'BK-OCCUPIED0001',
+            'service_id'            => $service->getKey(),
+            'provider_id'           => $providers[0]->getKey(),
+            'customer_name'         => 'Already There',
+            'customer_email'        => 'there@example.test',
+            'customer_timezone'     => 'UTC',
+            'start_time'            => bookingStart( '14:00' ),
+            'end_time'              => bookingStart( '15:00' ),
+            'status'                => BookingStatus::Confirmed->value,
+            'assignment_strategy'   => BookingAssignmentStrategy::Customer->value,
+            'intake_schema_version' => 1,
+            'manage_token_hash'     => str_repeat( 'b', 64 ),
+            'created_at'            => now(),
+            'updated_at'            => now(),
+        ] );
+
+        expect( fn () => bookingService()->reschedule( $first, bookingStart( '14:00' ) ) )
+            ->toThrow( SlotUnavailableException::class );
+
+        expect( $first->start_time->equalTo( bookingStart( '10:00' ) ) )->toBeTrue()
+            ->and( $first->isDirty() )->toBeFalse();
+
+        // The proof that matters: saving what the caller still holds cannot
+        // resurrect the refused time.
+        $first->save();
+
+        expect( $first->fresh()->start_time->equalTo( bookingStart( '10:00' ) ) )->toBeTrue();
+    } );
+
     it( 'lets a booking move onto time it was itself occupying', function (): void {
         // The case a naive availability re-check gets wrong: a half-hour shift
         // overlaps the booking's own current position, and reading that as a

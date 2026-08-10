@@ -58,7 +58,7 @@ use function trim;
  * The one place a booking's life is decided.
  *
  * Every state a booking can be in is reached through a method here, and that is
- * a rule rather than a convention. Nine lifecycle actions and five domain events
+ * a rule rather than a convention. Nine lifecycle actions and six domain events
  * hang off these transitions, and the guarantee everything downstream is written
  * against — a calendar push, a confirmation email, a CRM record — is that each
  * one fires exactly once per transition. A manage-token route or an admin screen
@@ -292,6 +292,13 @@ class BookingService
                     $booking->forceFill( [ 'start_time' => $start, 'end_time' => $end ] )->save();
                 } );
             } catch ( UniqueConstraintViolationException ) {
+                // The transaction rolled the row back; the instance did not roll
+                // back with it. Left alone, the caller catching the exception
+                // below holds a booking carrying the time the database just
+                // refused — and saving it later would write exactly the value
+                // this method exists to reject.
+                $booking->refresh();
+
                 return null;
             }
 

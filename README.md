@@ -141,10 +141,17 @@ $booking = app( BookingService::class )->create( [
 ] );
 ```
 
-The whole read-availability-and-write sequence runs behind an advisory lock on
+The whole read-availability-and-write sequence runs behind a slot lock on
 `(provider, start time)`, so two customers after the last slot are decided before
-either reaches the database. If one still loses — the lock is a first line of
-defence, not the last — the partial unique index on `bookings` catches it and the
+either reaches the database. Postgres and MySQL use the server's own advisory
+locks, which hold across every process talking to that database. Every other
+engine — sqlite, chiefly — has no such primitive, so the cache store's lock
+stands in: that is exclusive within one application server and only as wide as
+the cache store behind it, so point `artisanpack.bookings.lock.store` at a shared
+one if you run more than one.
+
+Either way the lock is a first line of defence rather than the last. If a request
+still loses the race, the partial unique index on `bookings` catches it and the
 round-robin assigner falls through to the next free provider. `create()` throws
 `Exceptions\SlotUnavailableException` only when nobody at all could take the slot.
 
