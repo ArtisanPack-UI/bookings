@@ -292,7 +292,7 @@ class BookingService
         $providerId = null === $booking->provider_id ? null : (int) $booking->provider_id;
 
         $move = function () use ( $booking, $start, $end, $providerId ): ?Booking {
-            if ( null !== $providerId && $this->clashes( $booking, $providerId, $start, $end ) ) {
+            if ( null !== $providerId && $this->clashes( $providerId, $start, $end, $booking ) ) {
                 return null;
             }
 
@@ -316,7 +316,7 @@ class BookingService
 
         $moved = null === $providerId
             ? $this->connection()->transaction( $move )
-            : $this->lock->withSlotLock( $providerId, $start, $move );
+            : $this->lock->withSlotLock( $providerId, $start, $this->providerTimezone( $booking ), $move );
 
         if ( null === $moved ) {
             throw SlotUnavailableException::for( $booking->service, $start );
@@ -461,10 +461,23 @@ class BookingService
         return $this->lock->withSlotLock(
             $providerId,
             $start,
+            $provider->timezone,
             function () use ( $service, $provider, $providerId, $start, $base, $customer, $assignment ): ?Booking {
                 $slot = $this->slotAt( $service, $provider, $start );
 
                 if ( null === $slot ) {
+                    return null;
+                }
+
+                // Asked again as a plain overlap, because the resolver's answer
+                // and the index's answer are both narrower than the invariant.
+                // The resolver was read through a cache that a competing commit
+                // on another machine may not have reached yet, and the index
+                // only refuses an identical start time — so a booking landing in
+                // the *middle* of one already there satisfies both and still
+                // double-books. The day lock is what makes this check decisive:
+                // nobody else can be writing to this provider's day while it runs.
+                if ( $this->clashes( $providerId, $slot->period->start, $slot->period->end ) ) {
                     return null;
                 }
 
@@ -761,22 +774,31 @@ class BookingService
      *
      * @since 1.0.0
      *
-     * @param  Booking  $booking  The booking being moved.
      * @param  int  $providerId  The provider whose diary is being checked.
-     * @param  CarbonImmutable  $start  When the booking would now start.
-     * @param  CarbonImmutable  $end  When it would now end.
+     * @param  CarbonImmutable  $start  When the booking would start.
+     * @param  CarbonImmutable  $end  When it would end.
+     * @param  Booking|null  $excluding  A booking to ignore — the one being moved,
+     *                                   which is otherwise its own clash.
      *
      * @return bool True when something else is already there.
      */
-    protected function clashes( Booking $booking, int $providerId, CarbonImmutable $start, CarbonImmutable $end ): bool
-    {
-        return Booking::query()
+    protected function clashes(
+        int $providerId,
+        CarbonImmutable $start,
+        CarbonImmutable $end,
+        ?Booking $excluding = null,
+    ): bool {
+        $query = Booking::query()
             ->active()
             ->where( 'provider_id', $providerId )
-            ->whereKeyNot( $booking->getKey() )
             ->where( 'start_time', '<', $end->utc() )
-            ->where( 'end_time', '>', $start->utc() )
-            ->exists();
+            ->where( 'end_time', '>', $start->utc() );
+
+        if ( null !== $excluding && null !== $excluding->getKey() ) {
+            $query->whereKeyNot( $excluding->getKey() );
+        }
+
+        return $query->exists();
     }
 
     /**
@@ -821,6 +843,25 @@ class BookingService
             'intake_schema_version' => $version,
             'notes'                 => $attributes['notes'] ?? null,
         ];
+    }
+
+    /**
+     * Gets the zone whose calendar day a booking's lock is taken against.
+     *
+     * Falls back to UTC rather than to the application's zone when the provider
+     * has gone. The lock only has to be a name two racing requests agree on, and
+     * a configured zone that an operator later changes would silently stop two
+     * concurrent reschedules of the same booking from seeing each other.
+     *
+     * @since 1.0.0
+     *
+     * @param  Booking  $booking  The booking being written.
+     *
+     * @return string The provider's timezone.
+     */
+    protected function providerTimezone( Booking $booking ): string
+    {
+        return $booking->provider->timezone ?? 'UTC';
     }
 
     /**

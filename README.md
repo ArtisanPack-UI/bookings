@@ -141,9 +141,14 @@ $booking = app( BookingService::class )->create( [
 ] );
 ```
 
-The whole read-availability-and-write sequence runs behind a slot lock on
-`(provider, start time)`, so two customers after the last slot are decided before
-either reaches the database. Postgres and MySQL use the server's own advisory
+The whole read-availability-and-write sequence runs behind a lock on the
+provider's local day, so two customers after the same provider are decided before
+either reaches the database. A day rather than a slot, because bookable slots
+overlap: at the default fifteen-minute interval a sixty-minute service offers one
+every quarter hour, and per-slot locks would let 09:00 and 09:15 race through
+separately and double-book the provider for forty-five minutes.
+
+Postgres and MySQL use the server's own advisory
 locks, which hold across every process talking to that database. Every other
 engine — sqlite, chiefly — has no such primitive, so the cache store's lock
 stands in: that is exclusive within one application server and only as wide as

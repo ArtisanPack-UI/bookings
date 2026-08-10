@@ -326,6 +326,58 @@ describe( 'round-robin assignment', function (): void {
         ] ) ) )->toThrow( SlotUnavailableException::class );
     } );
 
+    it( 'refuses a slot that overlaps one already taken, not just an identical start', function (): void {
+        // The hole a per-instant lock leaves. With the default fifteen-minute
+        // interval a sixty-minute service offers a slot every quarter hour, each
+        // overlapping the last three — so 09:00 and 09:15 are different start
+        // times and the unique index, which keys on the start time, accepts
+        // both. Only the day lock and the overlap check inside it refuse this.
+        [ $service, $providers ] = bookableService( 1 );
+
+        // After bookableService(), which sets its own interval. Set before it
+        // and the quarter-hour slots this case is about would never be
+        // generated, and the refusal below would be an ordinary "no such slot".
+        config()->set( 'artisanpack.bookings.slot_interval', 15 );
+
+        // Warm the resolver's cache for the day *before* the competing booking
+        // exists. Without this the resolver recomputes, sees the clash itself,
+        // and the overlap check is never reached — the test would pass with the
+        // guard removed and prove nothing.
+        availability()->resolve(
+            $service,
+            $providers[0],
+            localDayWindow( '2026-06-01', 'America/Chicago' ),
+        );
+
+        // Written straight through the query builder, so no model event fires
+        // and the cache stamp never moves: the resolver goes on reporting the
+        // stale answer, which is exactly what a competing commit on another
+        // machine looks like from here.
+        DB::table( 'bookings' )->insert( [
+            'booking_number'        => 'BK-OVERLAPPING1',
+            'service_id'            => $service->getKey(),
+            'provider_id'           => $providers[0]->getKey(),
+            'customer_name'         => 'Already There',
+            'customer_email'        => 'there@example.test',
+            'customer_timezone'     => 'UTC',
+            'start_time'            => bookingStart( '09:00' ),
+            'end_time'              => bookingStart( '10:00' ),
+            'status'                => BookingStatus::Confirmed->value,
+            'assignment_strategy'   => BookingAssignmentStrategy::Customer->value,
+            'intake_schema_version' => 1,
+            'manage_token_hash'     => str_repeat( 'c', 64 ),
+            'created_at'            => now(),
+            'updated_at'            => now(),
+        ] );
+
+        expect( fn () => bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart( '09:15' ),
+        ] ) ) )->toThrow( SlotUnavailableException::class );
+
+        expect( Booking::query()->where( 'provider_id', $providers[0]->getKey() )->count() )->toBe( 1 );
+    } );
+
     it( 'never double-books a provider the database has already given away', function (): void {
         [ $service, $providers ] = bookableService( 1 );
 

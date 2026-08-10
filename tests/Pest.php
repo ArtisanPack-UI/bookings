@@ -640,7 +640,7 @@ function defineSlotLockTests(): void
         $start = CarbonImmutable::parse( '2026-06-01 15:00', 'UTC' );
         $held  = null;
 
-        app( ProviderSlotLock::class )->withSlotLock( 7, $start, function () use ( $start, &$held ): void {
+        app( ProviderSlotLock::class )->withSlotLock( 7, $start, 'UTC', function () use ( $start, &$held ): void {
             $held = contenderHoldsSlot( 7, $start );
         } );
 
@@ -650,7 +650,7 @@ function defineSlotLockTests(): void
     it( 'lets the next caller take the slot once the first is done', function (): void {
         $start = CarbonImmutable::parse( '2026-06-01 16:00', 'UTC' );
 
-        app( ProviderSlotLock::class )->withSlotLock( 7, $start, static fn (): bool => true );
+        app( ProviderSlotLock::class )->withSlotLock( 7, $start, 'UTC', static fn (): bool => true );
 
         expect( contenderHoldsSlot( 7, $start ) )->toBeTrue();
     } );
@@ -662,7 +662,7 @@ function defineSlotLockTests(): void
         $start = CarbonImmutable::parse( '2026-06-01 17:00', 'UTC' );
 
         try {
-            app( ProviderSlotLock::class )->withSlotLock( 7, $start, static function (): void {
+            app( ProviderSlotLock::class )->withSlotLock( 7, $start, 'UTC', static function (): void {
                 throw new RuntimeException( 'Lost the race.' );
             } );
         } catch ( RuntimeException ) {
@@ -672,19 +672,26 @@ function defineSlotLockTests(): void
         expect( contenderHoldsSlot( 7, $start ) )->toBeTrue();
     } );
 
-    it( 'leaves every other slot free while it holds one', function (): void {
-        // Serialising more than the one contended pair would turn a busy diary
-        // into a queue, which is the failure mode a table lock would have.
+    it( 'leaves other providers and other days free while it holds one', function (): void {
+        // Serialising more than the one contended provider-day would turn a busy
+        // diary into a queue, which is the failure mode a table lock would have.
+        //
+        // A different *hour* is deliberately not asserted here: the lock buckets
+        // by the day precisely so that two overlapping slots cannot take
+        // different locks, so 18:00 and 19:00 sharing one is the guard working
+        // rather than the guard being too coarse.
         $start = CarbonImmutable::parse( '2026-06-01 18:00', 'UTC' );
         $other = [];
 
-        app( ProviderSlotLock::class )->withSlotLock( 7, $start, function () use ( $start, &$other ): void {
-            $other['provider'] = contenderHoldsSlot( 8, $start );
-            $other['time']     = contenderHoldsSlot( 7, $start->addHour() );
+        app( ProviderSlotLock::class )->withSlotLock( 7, $start, 'UTC', function () use ( $start, &$other ): void {
+            $other['provider']  = contenderHoldsSlot( 8, $start );
+            $other['day']       = contenderHoldsSlot( 7, $start->addDay() );
+            $other['same_hour'] = contenderHoldsSlot( 7, $start->addHour() );
         } );
 
         expect( $other['provider'] )->toBeTrue()
-            ->and( $other['time'] )->toBeTrue();
+            ->and( $other['day'] )->toBeTrue()
+            ->and( $other['same_hour'] )->toBeFalse();
     } );
 }
 
@@ -711,7 +718,7 @@ function contenderHoldsSlot( int $providerId, CarbonImmutable $start ): bool
 
     try {
         if ( 'pgsql' === $driver ) {
-            $key = $lock->lockKey( $providerId, $start );
+            $key = $lock->lockKey( $providerId, $start, 'UTC' );
 
             // Cast in SQL: pdo_pgsql has returned booleans as both real bools
             // and the strings 't'/'f' depending on version, and 'f' is truthy.
@@ -726,7 +733,7 @@ function contenderHoldsSlot( int $providerId, CarbonImmutable $start ): bool
             return $acquired;
         }
 
-        $lockName = $lock->lockName( $providerId, $start );
+        $lockName = $lock->lockName( $providerId, $start, 'UTC' );
         $acquired = 1 === (int) $contender
             ->selectOne( 'select get_lock(?, 0) as acquired', [ $lockName ] )
             ->acquired;

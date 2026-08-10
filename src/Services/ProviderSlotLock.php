@@ -43,9 +43,28 @@ use function substr;
  * built around, and it is not one a read followed by a write can win on its
  * own: both requests read a free slot, both write, and one provider is now in
  * two places. What this class does is make that sequence mutually exclusive for
- * one `(provider, start time)` pair — and only for that pair, so a busy
- * installation is not serialising bookings that have nothing to do with each
- * other.
+ * one provider on one of their working days.
+ *
+ * **The granularity is a day, not a slot, and that is load-bearing.** Locking on
+ * `(provider, start time)` — which is what plan §5.8 originally specified — is
+ * only sufficient when no two bookable slots overlap, and they routinely do:
+ * with the default fifteen-minute interval a sixty-minute service offers a slot
+ * every quarter hour, each overlapping the last three. Two customers taking
+ * 09:00 and 09:15 would hold *different* locks, neither would see the other's
+ * uncommitted row, and the unique index would wave both through because it keys
+ * on the start time and the two starts differ. A provider double-booked for
+ * forty-five minutes, from a completely ordinary pair of requests.
+ *
+ * A day is the smallest bucket that cannot have that problem, because it is
+ * wider than any booking it contains. The cost is that one provider's bookings
+ * for one day serialise — and a provider is one person, so that queue is short
+ * and the critical section is a few reads and an insert.
+ *
+ * The day is the provider's *local* day for the same reason availability is
+ * authored in local time: a working day does not straddle its own midnight, so
+ * every booking that could overlap another lands in the same bucket. An
+ * overnight shift is the exception, and the overlap check the caller runs inside
+ * the lock is what covers the rest.
  *
  * The lock is advisory: it guards a *decision*, not a row, and there is no row
  * to lock in any case because the booking that would take the slot does not
@@ -145,8 +164,9 @@ class ProviderSlotLock
      *
      * @since 1.0.0
      *
-     * @param  int  $providerId  The provider whose slot is being taken.
-     * @param  CarbonInterface  $start  The instant the slot begins.
+     * @param  int  $providerId  The provider whose day is being locked.
+     * @param  CarbonInterface  $start  An instant on that day.
+     * @param  string  $timezone  The provider's zone, which decides whose day it is.
      * @param  Closure  $callback  The work to do while holding the lock.
      *
      * @throws SlotLockTimeoutException When the lock could not be taken in time.
@@ -154,20 +174,20 @@ class ProviderSlotLock
      *
      * @return mixed Whatever the callback returned.
      */
-    public function withSlotLock( int $providerId, CarbonInterface $start, Closure $callback ): mixed
+    public function withSlotLock( int $providerId, CarbonInterface $start, string $timezone, Closure $callback ): mixed
     {
         $connection = $this->connections->connection();
         $driver     = $connection->getDriverName();
 
         if ( 'pgsql' === $driver ) {
-            return $this->withPostgresLock( $connection, $providerId, $start, $callback );
+            return $this->withPostgresLock( $connection, $providerId, $start, $timezone, $callback );
         }
 
         if ( in_array( $driver, [ 'mysql', 'mariadb' ], true ) ) {
-            return $this->withMysqlLock( $connection, $providerId, $start, $callback );
+            return $this->withMysqlLock( $connection, $providerId, $start, $timezone, $callback );
         }
 
-        return $this->withCacheLock( $connection, $providerId, $start, $callback );
+        return $this->withCacheLock( $connection, $providerId, $start, $timezone, $callback );
     }
 
     /**
@@ -180,21 +200,22 @@ class ProviderSlotLock
      * bits, which is far more than a collision needs — and a collision here
      * costs one unnecessary wait, not a wrong answer.
      *
-     * The instant is normalised to UTC first. Two callers holding the same
-     * moment in different zones are contending for the same slot, and a name
-     * built from an unnormalised clock face would give them different locks and
-     * let both through.
+     * The instant is resolved to the provider's local date first. Two callers
+     * holding the same moment in different zones are contending for the same
+     * day, and any two bookings that could overlap fall on the same local date —
+     * which is the property the whole guard rests on.
      *
      * @since 1.0.0
      *
-     * @param  int  $providerId  The provider whose slot is being taken.
-     * @param  CarbonInterface  $start  The instant the slot begins.
+     * @param  int  $providerId  The provider whose day is being locked.
+     * @param  CarbonInterface  $start  An instant on that day.
+     * @param  string  $timezone  The provider's zone.
      *
      * @return string The lock name.
      */
-    public function lockName( int $providerId, CarbonInterface $start ): string
+    public function lockName( int $providerId, CarbonInterface $start, string $timezone ): string
     {
-        return self::LOCK_PREFIX . substr( $this->digest( $providerId, $start ), 0, 32 );
+        return self::LOCK_PREFIX . substr( $this->digest( $providerId, $start, $timezone ), 0, 32 );
     }
 
     /**
@@ -207,14 +228,15 @@ class ProviderSlotLock
      *
      * @since 1.0.0
      *
-     * @param  int  $providerId  The provider whose slot is being taken.
-     * @param  CarbonInterface  $start  The instant the slot begins.
+     * @param  int  $providerId  The provider whose day is being locked.
+     * @param  CarbonInterface  $start  An instant on that day.
+     * @param  string  $timezone  The provider's zone.
      *
      * @return int The advisory lock key.
      */
-    public function lockKey( int $providerId, CarbonInterface $start ): int
+    public function lockKey( int $providerId, CarbonInterface $start, string $timezone ): int
     {
-        return (int) hexdec( substr( $this->digest( $providerId, $start ), 0, 15 ) );
+        return (int) hexdec( substr( $this->digest( $providerId, $start, $timezone ), 0, 15 ) );
     }
 
     /**
@@ -236,8 +258,9 @@ class ProviderSlotLock
      * @since 1.0.0
      *
      * @param  ConnectionInterface  $connection  The database connection.
-     * @param  int  $providerId  The provider whose slot is being taken.
-     * @param  CarbonInterface  $start  The instant the slot begins.
+     * @param  int  $providerId  The provider whose day is being locked.
+     * @param  CarbonInterface  $start  An instant on that day.
+     * @param  string  $timezone  The provider's zone.
      * @param  Closure  $callback  The work to do while holding the lock.
      *
      * @throws SlotLockTimeoutException When the lock could not be taken in time.
@@ -248,9 +271,10 @@ class ProviderSlotLock
         ConnectionInterface $connection,
         int $providerId,
         CarbonInterface $start,
+        string $timezone,
         Closure $callback,
     ): mixed {
-        $key     = $this->lockKey( $providerId, $start );
+        $key     = $this->lockKey( $providerId, $start, $timezone );
         $seconds = $this->waitSeconds();
 
         try {
@@ -282,8 +306,9 @@ class ProviderSlotLock
      * @since 1.0.0
      *
      * @param  ConnectionInterface  $connection  The database connection.
-     * @param  int  $providerId  The provider whose slot is being taken.
-     * @param  CarbonInterface  $start  The instant the slot begins.
+     * @param  int  $providerId  The provider whose day is being locked.
+     * @param  CarbonInterface  $start  An instant on that day.
+     * @param  string  $timezone  The provider's zone.
      * @param  Closure  $callback  The work to do while holding the lock.
      *
      * @throws SlotLockTimeoutException When the lock could not be taken in time.
@@ -294,9 +319,10 @@ class ProviderSlotLock
         ConnectionInterface $connection,
         int $providerId,
         CarbonInterface $start,
+        string $timezone,
         Closure $callback,
     ): mixed {
-        $name    = $this->lockName( $providerId, $start );
+        $name    = $this->lockName( $providerId, $start, $timezone );
         $seconds = $this->waitSeconds();
 
         // Cast in SQL rather than in PHP. GET_LOCK reports failure as 0 and a
@@ -327,8 +353,9 @@ class ProviderSlotLock
      * @since 1.0.0
      *
      * @param  ConnectionInterface  $connection  The database connection.
-     * @param  int  $providerId  The provider whose slot is being taken.
-     * @param  CarbonInterface  $start  The instant the slot begins.
+     * @param  int  $providerId  The provider whose day is being locked.
+     * @param  CarbonInterface  $start  An instant on that day.
+     * @param  string  $timezone  The provider's zone.
      * @param  Closure  $callback  The work to do while holding the lock.
      *
      * @throws SlotLockTimeoutException When the lock could not be taken in time.
@@ -340,6 +367,7 @@ class ProviderSlotLock
         ConnectionInterface $connection,
         int $providerId,
         CarbonInterface $start,
+        string $timezone,
         Closure $callback,
     ): mixed {
         $store = $this->cache->store( $this->config->get( 'artisanpack.bookings.lock.store' ) );
@@ -352,7 +380,7 @@ class ProviderSlotLock
         }
 
         $seconds = $this->waitSeconds();
-        $lock    = $store->getStore()->lock( $this->lockName( $providerId, $start ), self::CACHE_LOCK_TTL_SECONDS );
+        $lock    = $store->getStore()->lock( $this->lockName( $providerId, $start, $timezone ), self::CACHE_LOCK_TTL_SECONDS );
 
         try {
             return $lock->block( $seconds, static fn (): mixed => $connection->transaction( $callback ) );
@@ -380,16 +408,17 @@ class ProviderSlotLock
      *
      * @since 1.0.0
      *
-     * @param  int  $providerId  The provider whose slot is being taken.
-     * @param  CarbonInterface  $start  The instant the slot begins.
+     * @param  int  $providerId  The provider whose day is being locked.
+     * @param  CarbonInterface  $start  An instant on that day.
+     * @param  string  $timezone  The provider's zone.
      *
      * @return string The hex digest.
      */
-    protected function digest( int $providerId, CarbonInterface $start ): string
+    protected function digest( int $providerId, CarbonInterface $start, string $timezone ): string
     {
         return hash(
             'sha256',
-            $providerId . '@' . CarbonImmutable::instance( $start )->utc()->format( 'Y-m-d H:i:s' ),
+            $providerId . '@' . CarbonImmutable::instance( $start )->setTimezone( $timezone )->toDateString(),
         );
     }
 }
