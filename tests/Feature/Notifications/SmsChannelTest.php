@@ -113,6 +113,19 @@ describe( 'the channel', function (): void {
         $this->channel->send( NotificationType::Confirmation, $this->booking, $notification );
     } )->throws( UnexpectedValueException::class, 'empty message' );
 
+    it( 'refuses a notification whose toSms() is not a string', function (): void {
+        // A replacement notification's method carries whatever return type its
+        // author gave it, including none.
+        $notification = new class() extends Notification {
+            public function toSms(): array
+            {
+                return [ 'body' => 'Your appointment is confirmed.' ];
+            }
+        };
+
+        $this->channel->send( NotificationType::Confirmation, $this->booking, $notification );
+    } )->throws( UnexpectedValueException::class, 'must return a string' );
+
     it( 'throws rather than failing quietly when the gateway does', function (): void {
         $channel = new SmsChannel( new RecordingSmsDriver( fails: true ) );
 

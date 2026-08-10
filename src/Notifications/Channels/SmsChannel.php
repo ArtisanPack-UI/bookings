@@ -21,6 +21,7 @@ use ArtisanPackUI\Bookings\Enums\NotificationType;
 use ArtisanPackUI\Bookings\Models\Booking;
 use Illuminate\Container\Container;
 use Illuminate\Notifications\Notification;
+use Throwable;
 use UnexpectedValueException;
 
 use function get_debug_type;
@@ -129,6 +130,8 @@ class SmsChannel implements NotificationChannel
      * @param  Notification  $notification  The filtered notification to deliver.
      *
      * @throws UnexpectedValueException When the notification renders no text.
+     * @throws Throwable When the configured driver cannot be resolved, or the
+     *                   gateway refuses the message.
      *
      * @return void
      */
