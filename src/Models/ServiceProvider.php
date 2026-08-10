@@ -250,11 +250,19 @@ class ServiceProvider extends Model
      */
     public function scopeLeastRecentlyAssigned( Builder $query ): Builder
     {
+        // The tie-breaks matter as much as the cursor and have to match
+        // {@see \ArtisanPackUI\Bookings\Strategies\LeastRecentlyAssignedStrategy},
+        // which sorts the same providers in PHP once availability has narrowed
+        // them. On a fresh rota every timestamp is null, so without the weight
+        // and the key this scope and that strategy would disagree about whose
+        // turn it is for the first booking every service ever takes.
         return $query
             ->orderByRaw(
                 sprintf( 'case when %s is null then 0 else 1 end asc', $this->qualifyColumn( 'round_robin_last_assigned_at' ) ),
             )
-            ->orderBy( $this->qualifyColumn( 'round_robin_last_assigned_at' ) );
+            ->orderBy( $this->qualifyColumn( 'round_robin_last_assigned_at' ) )
+            ->orderByDesc( $this->qualifyColumn( 'round_robin_weight' ) )
+            ->orderBy( $this->getQualifiedKeyName() );
     }
 
     /**

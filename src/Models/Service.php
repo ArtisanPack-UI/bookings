@@ -243,6 +243,42 @@ class Service extends Model
     }
 
     /**
+     * Gets the providers this service can actually be booked with.
+     *
+     * Attachment is asked about separately from activity, and the difference
+     * matters. A service nobody has been attached to still books against its
+     * fallback — that is what `default_provider_id` is for. A service whose
+     * providers have all been deactivated is closed, and falling back there
+     * would offer appointments with somebody who does not offer the service, as
+     * a side effect of an administrator switching the last one off.
+     *
+     * Lives on the model rather than in whichever service asked, because two of
+     * them need the same answer — availability resolves slots for these
+     * providers, and booking assigns one of them — and a second copy of this
+     * rule would let the widget offer a slot the booking path then refuses.
+     *
+     * @since 1.0.0
+     *
+     * @return array<int, ServiceProvider> The active providers offering the service.
+     */
+    public function bookableProviders(): array
+    {
+        $providers = $this->providers()->active()->get()->all();
+
+        if ( [] !== $providers ) {
+            return $providers;
+        }
+
+        if ( $this->providers()->exists() ) {
+            return [];
+        }
+
+        $default = $this->defaultProvider;
+
+        return null !== $default && $default->is_active ? [ $default ] : [];
+    }
+
+    /**
      * Gets the intake schema recorded for a given version of this service's form.
      *
      * Rendering an old booking's answers against the current form gives you

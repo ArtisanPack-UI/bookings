@@ -307,25 +307,11 @@ class AvailabilityService implements SlotResolver
      */
     protected function providersFor( Service $service ): array
     {
-        $providers = $service->providers()->active()->get()->all();
-
-        if ( [] !== $providers ) {
-            return $providers;
-        }
-
-        // Attachment is asked about separately from activity, and the difference
-        // matters. A service nobody has been attached to still books against its
-        // fallback — that is what `default_provider_id` is for. A service whose
-        // providers have all been deactivated is closed, and falling back there
-        // would offer slots with somebody who does not offer the service, as a
-        // side effect of an administrator switching the last one off.
-        if ( $service->providers()->exists() ) {
-            return [];
-        }
-
-        $default = $service->defaultProvider;
-
-        return null !== $default && $default->is_active ? [ $default ] : [];
+        // Deliberately delegated rather than reimplemented. The booking path
+        // assigns out of the same set, and two copies of "which providers count"
+        // would eventually disagree — at which point the widget offers a slot
+        // the booking then refuses, for a reason nobody can see from either side.
+        return $service->bookableProviders();
     }
 
     /**
