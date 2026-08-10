@@ -20,6 +20,8 @@ use ArtisanPackUI\Bookings\Enums\BookingAssignmentStrategy;
 use ArtisanPackUI\Bookings\Enums\BookingStatus;
 use ArtisanPackUI\Bookings\Models\Concerns\BelongsToSite;
 use ArtisanPackUI\Bookings\Models\Concerns\ErasesPersonalData;
+use ArtisanPackUI\Bookings\Services\ManageTokenService;
+use Illuminate\Container\Container;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -30,7 +32,6 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 use function array_key_exists;
-use function hash;
 use function strtoupper;
 
 /**
@@ -82,15 +83,6 @@ class Booking extends Model
     use ErasesPersonalData;
     use HasFactory;
     use SoftDeletes;
-
-    /**
-     * The number of random characters in a generated manage token.
-     *
-     * @since 1.0.0
-     *
-     * @var int
-     */
-    private const MANAGE_TOKEN_LENGTH = 64;
 
     /**
      * The attributes that are mass assignable.
@@ -191,12 +183,7 @@ class Booking extends Model
      */
     public static function newToken(): array
     {
-        $token = Str::random( self::MANAGE_TOKEN_LENGTH );
-
-        return [
-            'token' => $token,
-            'hash'  => self::hashToken( $token ),
-        ];
+        return self::manageTokens()->mint();
     }
 
     /**
@@ -210,7 +197,23 @@ class Booking extends Model
      */
     public static function hashToken( string $token ): string
     {
-        return hash( 'sha256', $token );
+        return self::manageTokens()->hash( $token );
+    }
+
+    /**
+     * Gets the service that owns everything to do with manage tokens.
+     *
+     * Resolved out of the container rather than newed up, so an application that
+     * has rebound {@see ManageTokenService} gets its own implementation here too
+     * — including on the token minted by the `creating` hook below.
+     *
+     * @since 1.0.0
+     *
+     * @return ManageTokenService The manage token service.
+     */
+    public static function manageTokens(): ManageTokenService
+    {
+        return Container::getInstance()->make( ManageTokenService::class );
     }
 
     /**
@@ -284,7 +287,15 @@ class Booking extends Model
      */
     public static function findByManageToken( string $token ): ?static
     {
-        return static::query()->where( 'manage_token_hash', self::hashToken( $token ) )->first();
+        $booking = static::query()->where( 'manage_token_hash', self::hashToken( $token ) )->first();
+
+        if ( null === $booking ) {
+            return null;
+        }
+
+        // The indexed lookup found the row; the constant-time compare is what
+        // decides it is the right one. See {@see ManageTokenService::verify()}.
+        return self::manageTokens()->verifyFor( $booking, $token ) ? $booking : null;
     }
 
     /**
