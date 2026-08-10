@@ -28,6 +28,7 @@ use ArtisanPackUI\Bookings\Contracts\NotificationChannel;
 use ArtisanPackUI\Bookings\Contracts\RoundRobinStrategy;
 use ArtisanPackUI\Bookings\Contracts\SlotResolver;
 use ArtisanPackUI\Bookings\Enums\NotificationType;
+use ArtisanPackUI\Bookings\Listeners\DispatchBookingWebhooks;
 use ArtisanPackUI\Bookings\Listeners\SendBookingNotifications;
 use ArtisanPackUI\Bookings\MeetingTypes\MeetingTypeRegistry;
 use ArtisanPackUI\Bookings\Models\AvailabilityOverride;
@@ -50,6 +51,7 @@ use ArtisanPackUI\Bookings\Services\NotificationService;
 use ArtisanPackUI\Bookings\Services\ProviderSlotLock;
 use ArtisanPackUI\Bookings\Services\ReminderScheduler;
 use ArtisanPackUI\Bookings\Services\SeriesService;
+use ArtisanPackUI\Bookings\Services\WebhookDispatcher;
 use ArtisanPackUI\Bookings\Strategies\LeastRecentlyAssignedStrategy;
 use ArtisanPackUI\Bookings\Support\HookSubscriptions;
 use Illuminate\Console\Scheduling\Schedule;
@@ -182,6 +184,14 @@ class BookingsServiceProvider extends ServiceProvider
         } );
 
         $this->app->singleton( ReminderScheduler::class );
+
+        // A singleton because it holds nothing per call, and bound at all so
+        // that an application signing its webhooks differently — a different
+        // header scheme, a secret held outside the row — replaces one class and
+        // every delivery in the package goes out its way. The delivery job
+        // resolves it from the container rather than constructing it, which is
+        // what makes that rebinding reach the retries too.
+        $this->app->singleton( WebhookDispatcher::class );
     }
 
     /**
@@ -231,6 +241,7 @@ class BookingsServiceProvider extends ServiceProvider
         }
 
         Event::subscribe( SendBookingNotifications::class );
+        Event::subscribe( DispatchBookingWebhooks::class );
 
         $this->registerCmsNotificationTypes();
 

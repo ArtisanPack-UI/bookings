@@ -313,6 +313,138 @@ booking with the new plain token — the only moment it can be read — so an
 application with mail wired up can re-send as the rotation runs. Pass `--force`
 to skip the confirmation prompt and `--chunk` to tune the query size.
 
+### Outbound webhooks
+
+Subscribe an endpoint and the booking lifecycle fans out to it on its own — no
+wiring, no listener of your own:
+
+```php
+use ArtisanPackUI\Bookings\Models\Webhook;
+
+Webhook::create( [
+    'name'   => 'Zapier',
+    'url'    => 'https://hooks.zapier.test/bookings',
+    'secret' => Str::random( 40 ),
+    'events' => [ 'booking.confirmed', 'booking.cancelled' ],
+] );
+```
+
+Six events are raised, one per lifecycle transition:
+
+| Event                 | Raised when                                             |
+|-----------------------|---------------------------------------------------------|
+| `booking.created`     | A booking is made, whether or not it is yet confirmed    |
+| `booking.confirmed`   | It becomes an appointment                                |
+| `booking.rescheduled` | It moves; carries `data.previous_period`                 |
+| `booking.cancelled`   | It is called off; carries `data.reason`                  |
+| `booking.completed`   | It is marked as having happened                          |
+| `booking.no_show`     | The customer did not arrive                              |
+
+A booking that is auto-confirmed raises `booking.created` and
+`booking.confirmed` in that order, which is the pair a consumer should expect.
+
+Each delivery is queued as its own job and recorded in
+`booking_webhook_deliveries`, so what was sent, what came back, and whether it
+will be tried again are questions the database answers. The body is an envelope
+around the booking:
+
+```json
+{
+  "event": "booking.confirmed",
+  "occurred_at": "2026-08-10T20:41:56+00:00",
+  "data": {
+    "booking": {
+      "id": 4711,
+      "booking_number": "BK-8F2A1C",
+      "status": "confirmed",
+      "start_time": "2026-08-14T13:00:00+00:00",
+      "end_time": "2026-08-14T13:30:00+00:00",
+      "customer": { "name": "Dana Scully", "email": "dana@example.test", "timezone": "Pacific/Auckland" },
+      "service": { "id": 3, "name": "Consultation", "slug": "consultation" },
+      "provider": { "id": 8, "name": "Alex Kim", "slug": "alex-kim" }
+    },
+    "actor": "customer"
+  }
+}
+```
+
+Times are UTC, with the customer's own zone named beside them rather than
+applied to them — a consumer wanting to show a clock face has what it needs, and
+one wanting an instant is not made to guess which it was given.
+
+Raise your own events through the same machinery when you have something to say
+that the lifecycle does not cover:
+
+```php
+use ArtisanPackUI\Bookings\Services\WebhookDispatcher;
+
+app( WebhookDispatcher::class )->dispatch( 'booking.confirmed', $payload, $siteId );
+```
+
+Pass the site when you know it. Left out, the endpoint list is scoped to
+whatever site is in context — which in console is none of them, and therefore
+all of them.
+
+Each request carries the event, the delivery id, the attempt number, a
+timestamp, and a signature:
+
+```
+X-ArtisanPack-Event: booking.confirmed
+X-ArtisanPack-Delivery: 4711
+X-ArtisanPack-Attempt: 1
+X-ArtisanPack-Timestamp: 1767024000
+X-ArtisanPack-Signature: sha256=<hex>
+```
+
+The signature is `HMAC-SHA256( "{timestamp}.{body}", secret )` over the exact
+bytes of the request body. Verify it in constant time, and reject a timestamp
+older than your own tolerance — that is what stops a captured request from being
+replayed, and it is why the timestamp is inside the signed string rather than
+merely beside it:
+
+```php
+$signed = $request->header( 'X-ArtisanPack-Timestamp' ) . '.' . $request->getContent();
+
+if ( ! hash_equals( 'sha256=' . hash_hmac( 'sha256', $signed, $secret ), $request->header( 'X-ArtisanPack-Signature' ) ) ) {
+    abort( 401 );
+}
+```
+
+A delivery is accepted on any 2xx. Anything else — a 500, a refused connection, a
+timeout — is a failure, and the delivery is retried on
+`webhooks.delivery_backoff_minutes`, which defaults to 1, 5, 30, 120, and 720
+minutes. That is the list of delays *between* attempts, so an endpoint gets six
+attempts over about fourteen hours before the delivery is marked `dead` and left
+alone.
+
+Failures are counted on the endpoint rather than on the delivery, so an endpoint
+returning 500 to everything is disabled after `webhooks.failure_threshold`
+consecutive failures however those were spread across events — and a single
+success resets the count, because the threshold is for an endpoint that is gone
+rather than one that flapped. Disabling fires `WebhookDisabled`, which is where
+an application tells the consumer their integration has stopped; nothing else
+will.
+
+Deliveries are pushed onto the default queue unless `webhooks.queue` names one.
+Give them their own queue on an installation where a slow consumer must not
+delay everything else that is queued.
+
+**The endpoint URL is trusted input.** The package posts wherever
+`booking_webhooks.url` says, from inside your application, and stores the first
+2,000 characters of the reply where an admin screen can read it. That is a
+request-forgery primitive if the URL is not trusted: an internal service or a
+cloud metadata endpoint is reachable from your server and not from a browser,
+and the response comes back out through the delivery ledger. Redirects are
+refused, so the address that was reviewed stays the address that is called — but
+the address itself is not validated, because a package cannot know which of your
+internal hosts are legitimate destinations.
+
+Creating an endpoint is therefore an administrative act. If you expose it to
+anybody less trusted than an operator — a tenant self-service screen — validate
+the URL before you store it: allow only `https`, resolve it and reject private,
+loopback, and link-local ranges, and re-check at delivery time, since a name can
+be repointed after it is approved.
+
 ## Extending
 
 ### Contracts
