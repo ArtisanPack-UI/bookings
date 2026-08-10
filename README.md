@@ -447,6 +447,27 @@ appending and assigning behave identically. The four built-ins — `one_to_one`,
 `group`, `recurring`, and `round_robin` — are ordinary entries: register a type
 under an existing key to replace it.
 
+#### The registry
+
+`Support\HookRegistry` is the machine-readable version of the table above, and
+the whole list: it also names the hooks whose surfaces — calendar sync,
+notifications — are not built yet, so a subscriber can be written against a name
+before the code that fires it exists.
+
+```php
+use ArtisanPackUI\Bookings\Support\HookRegistry;
+
+HookRegistry::all();      // every hook, with its type and the issue that fires it
+HookRegistry::shipped();  // the ones firing today — the table above
+HookRegistry::pending();  // declared, not yet fired
+```
+
+Nothing inside the package reads it; hook names stay as literals at their call
+sites. What it is for is the test that holds the two lists together — every
+shipped name is fired somewhere in `src/`, and every `ap.bookings.*` literal in
+`src/` is declared here — so a surface cannot ship without its hook, and a hook
+cannot ship undocumented.
+
 ## Optional integrations
 
 The package runs standalone in any Laravel application. When these are installed
@@ -458,6 +479,22 @@ it uses them, and degrades cleanly when they are not:
 - `artisanpack-ui/media-library` — service and provider images
 - `artisanpack-ui/google`, `artisanpack-ui/microsoft`, `artisanpack-ui/apple` — calendar sync drivers
 - `artisanpack-ui/accessibility` — accessible admin and widget theming
+
+Where one of these is subscribed to rather than merely used, the binding goes
+through `Support\HookSubscriptions`, which is the single place that answers "is
+that package installed?" — by probing for the class the integration itself needs,
+so a callback naming absent classes is never entered:
+
+```php
+use ArtisanPackUI\Bookings\Support\HookSubscriptions;
+
+HookSubscriptions::whenInstalled( 'forms', function (): void {
+    addFilter( 'ap.forms.fieldTypes', /* ... */ );
+} );
+```
+
+Upstream hooks keep their upstream names — this package does not rename another
+package's hooks.
 
 ## Development
 
