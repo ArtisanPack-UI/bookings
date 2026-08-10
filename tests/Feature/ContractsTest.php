@@ -6,6 +6,7 @@ use ArtisanPackUI\Bookings\Contracts\CalendarSyncDriver;
 use ArtisanPackUI\Bookings\Contracts\NotificationChannel;
 use ArtisanPackUI\Bookings\Contracts\RoundRobinStrategy;
 use ArtisanPackUI\Bookings\Contracts\SlotResolver;
+use ArtisanPackUI\Bookings\Contracts\SmsDriver;
 use ArtisanPackUI\Bookings\Enums\CalendarDriver;
 use ArtisanPackUI\Bookings\Enums\NotificationType;
 use ArtisanPackUI\Bookings\Models\Booking;
@@ -23,6 +24,7 @@ use Tests\Fixtures\FixedSlotResolver;
 use Tests\Fixtures\InMemoryCalendarSyncDriver;
 use Tests\Fixtures\LeastBusyRoundRobinStrategy;
 use Tests\Fixtures\RecordingNotificationChannel;
+use Tests\Fixtures\RecordingSmsDriver;
 
 uses( TestsWithSqlite::class, RefreshDatabase::class );
 
@@ -105,6 +107,23 @@ describe( 'NotificationChannel', function (): void {
         $booking = Booking::factory()->create();
 
         $channel->send( NotificationType::Reminder, $booking, new BookingReminder( $booking ) );
+    } )->throws( RuntimeException::class );
+} );
+
+describe( 'SmsDriver', function (): void {
+    it( 'is satisfied by an application implementation', function (): void {
+        $driver = new RecordingSmsDriver();
+
+        $driver->send( '+15555550123', 'Your appointment is confirmed.' );
+
+        expect( $driver )->toBeInstanceOf( SmsDriver::class )
+            ->and( $driver->sent )->toBe( [
+                [ 'phone' => '+15555550123', 'message' => 'Your appointment is confirmed.' ],
+            ] );
+    } );
+
+    it( 'throws rather than failing quietly', function (): void {
+        ( new RecordingSmsDriver( fails: true ) )->send( '+15555550123', 'Your appointment is confirmed.' );
     } )->throws( RuntimeException::class );
 } );
 
