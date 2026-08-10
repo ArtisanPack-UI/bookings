@@ -71,6 +71,41 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Slot Lock
+    |--------------------------------------------------------------------------
+    |
+    | Reading availability and writing the booking that takes it happen behind
+    | an advisory lock on a single (provider, start time) pair, so two customers
+    | racing for the last slot are decided before either reaches the database.
+    |
+    | "wait_seconds" bounds how long a request queues for that lock; a waiter
+    | that outlives the customer's patience has already failed. Postgres and
+    | MySQL use their own advisory locks and ignore "store". Every other engine
+    | — sqlite, chiefly — has none, so the cache store stands in; leave "store"
+    | null to use the default cache store, and point it at a shared one if you
+    | run more than one application server on such an engine.
+    |
+    */
+    'lock' => [
+        'wait_seconds' => 5,
+        'store'        => null,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Automatic Confirmation
+    |--------------------------------------------------------------------------
+    |
+    | Whether a new booking confirms itself. A "requested" booking already holds
+    | its slot, so switching this off does not risk losing the appointment while
+    | somebody approves it — it only delays the confirmation email, the calendar
+    | push, and anything else hanging off the BookingConfirmed event.
+    |
+    */
+    'auto_confirm' => true,
+
+    /*
+    |--------------------------------------------------------------------------
     | Booking Window
     |--------------------------------------------------------------------------
     |

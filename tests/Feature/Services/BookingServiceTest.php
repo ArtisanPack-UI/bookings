@@ -1,0 +1,548 @@
+<?php
+
+declare( strict_types=1 );
+
+use ArtisanPackUI\Bookings\Enums\BookingActor;
+use ArtisanPackUI\Bookings\Enums\BookingAssignmentStrategy;
+use ArtisanPackUI\Bookings\Enums\BookingStatus;
+use ArtisanPackUI\Bookings\Enums\ServiceAssignmentStrategy;
+use ArtisanPackUI\Bookings\Events\BookingCancelled;
+use ArtisanPackUI\Bookings\Events\BookingCompleted;
+use ArtisanPackUI\Bookings\Events\BookingConfirmed;
+use ArtisanPackUI\Bookings\Events\BookingNoShow;
+use ArtisanPackUI\Bookings\Events\BookingRequested;
+use ArtisanPackUI\Bookings\Events\BookingRescheduled;
+use ArtisanPackUI\Bookings\Exceptions\IntakeValidationException;
+use ArtisanPackUI\Bookings\Exceptions\InvalidBookingTransitionException;
+use ArtisanPackUI\Bookings\Exceptions\SlotUnavailableException;
+use ArtisanPackUI\Bookings\Models\Booking;
+use ArtisanPackUI\Bookings\Models\Service;
+use ArtisanPackUI\Bookings\Models\ServiceProvider;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
+use Tests\Concerns\TestsWithSqlite;
+
+uses( TestsWithSqlite::class, RefreshDatabase::class );
+
+afterEach( function (): void {
+    removeAllActions( 'ap.bookings.creating' );
+    removeAllFilters( 'ap.bookings.availableProviders' );
+    removeAllFilters( 'ap.bookings.roundRobin.selectProvider' );
+} );
+
+describe( 'create', function (): void {
+    it( 'writes a booking against the provider the customer picked', function (): void {
+        [ $service, $providers ] = bookableService( 2 );
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'     => $service,
+            'provider_id' => $providers[1]->getKey(),
+            'start_time'  => bookingStart(),
+        ] ) );
+
+        expect( $booking->provider_id )->toBe( $providers[1]->id )
+            ->and( $booking->assignment_strategy )->toBe( BookingAssignmentStrategy::Customer )
+            ->and( $booking->start_time->equalTo( bookingStart() ) )->toBeTrue()
+            ->and( $booking->end_time->equalTo( bookingStart( '11:00' ) ) )->toBeTrue()
+            ->and( $booking->booking_number )->toStartWith( 'BK-' );
+    } );
+
+    it( 'confirms the booking it just created', function (): void {
+        Event::fake( [ BookingRequested::class, BookingConfirmed::class ] );
+
+        [ $service ] = bookableService();
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        expect( $booking->status )->toBe( BookingStatus::Confirmed );
+
+        Event::assertDispatched( BookingRequested::class );
+        Event::assertDispatched(
+            BookingConfirmed::class,
+            static fn ( BookingConfirmed $event ): bool => BookingActor::System === $event->actor,
+        );
+    } );
+
+    it( 'leaves the booking awaiting approval when automatic confirmation is off', function (): void {
+        // A requested booking still holds the slot, which is the whole reason
+        // switching this off is safe: nobody else can take the appointment while
+        // somebody decides about it.
+        config()->set( 'artisanpack.bookings.auto_confirm', false );
+
+        [ $service ] = bookableService();
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        expect( $booking->status )->toBe( BookingStatus::Requested )
+            ->and( $booking->occupiesSlot() )->toBeTrue();
+    } );
+
+    it( 'declines to confirm a booking a listener cancelled on request', function (): void {
+        // The veto BookingRequested carries. The event fires once the row exists
+        // — a slot has to be held while an approval is pending — so a listener
+        // that objects cancels it, and confirmation must notice.
+        [ $service ] = bookableService();
+
+        Event::listen( BookingRequested::class, function ( BookingRequested $event ): void {
+            bookingService()->cancel( $event->booking, BookingActor::System, 'Blocked by policy.' );
+        } );
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        expect( $booking->status )->toBe( BookingStatus::Cancelled );
+    } );
+
+    it( 'refuses a slot nobody is free for', function (): void {
+        [ $service ] = bookableService();
+
+        // 03:00 local is outside the nine-to-five window every provider works.
+        expect( fn () => bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart( '03:00' ),
+        ] ) ) )->toThrow( SlotUnavailableException::class );
+    } );
+
+    it( 'refuses a provider who does not offer the service', function (): void {
+        [ $service ] = bookableService();
+        $stranger    = ServiceProvider::factory()->create();
+
+        expect( fn () => bookingService()->create( bookingCustomer( [
+            'service'     => $service,
+            'provider_id' => $stranger->getKey(),
+            'start_time'  => bookingStart(),
+        ] ) ) )->toThrow( InvalidArgumentException::class );
+    } );
+
+    it( 'refuses a booking with nobody to send the confirmation to', function ( array $missing ): void {
+        // The columns are NOT NULL, which sounds like enough and is not: an
+        // empty string satisfies the database and produces a booking whose
+        // manage link goes to an empty address and which no search an
+        // administrator would run will ever surface.
+        [ $service ] = bookableService();
+
+        expect( fn () => bookingService()->create( array_merge( bookingCustomer(), $missing, [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) ) )->toThrow( InvalidArgumentException::class );
+
+        expect( Booking::query()->count() )->toBe( 0 );
+    } )->with( [
+        'no name'     => [ [ 'customer_name' => '' ] ],
+        'blank name'  => [ [ 'customer_name' => '   ' ] ],
+        'no email'    => [ [ 'customer_email' => '' ] ],
+        'blank email' => [ [ 'customer_email' => "\t" ] ],
+    ] );
+
+    it( 'books against the fallback provider when the service names one', function (): void {
+        $provider = ServiceProvider::factory()->inTimezone( 'America/Chicago' )->create();
+        $service  = Service::factory()->create( [
+            'duration'            => 60,
+            'buffer_before'       => 0,
+            'buffer_after'        => 0,
+            'assignment_strategy' => ServiceAssignmentStrategy::DefaultProvider,
+            'default_provider_id' => $provider->getKey(),
+        ] );
+
+        config()->set( 'artisanpack.bookings.slot_interval', 60 );
+        bookingsSchedule( $service, $provider );
+        $service->providers()->detach( $provider->getKey() );
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        expect( $booking->provider_id )->toBe( $provider->id )
+            ->and( $booking->assignment_strategy )->toBe( BookingAssignmentStrategy::DefaultProvider );
+    } );
+} );
+
+describe( 'round-robin assignment', function (): void {
+    it( 'gives the slot to whoever has waited longest', function (): void {
+        [ $service, $providers ] = bookableService( 3 );
+
+        $providers[0]->forceFill( [ 'round_robin_last_assigned_at' => now()->subHour() ] )->save();
+        $providers[1]->forceFill( [ 'round_robin_last_assigned_at' => now()->subDay() ] )->save();
+        $providers[2]->forceFill( [ 'round_robin_last_assigned_at' => now()->subMinute() ] )->save();
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        expect( $booking->provider_id )->toBe( $providers[1]->id )
+            ->and( $booking->assignment_strategy )->toBe( BookingAssignmentStrategy::RoundRobin );
+    } );
+
+    it( 'puts a provider who has never been assigned anything at the front', function (): void {
+        [ $service, $providers ] = bookableService( 2 );
+
+        $providers[0]->forceFill( [ 'round_robin_last_assigned_at' => now()->subYear() ] )->save();
+        $providers[1]->forceFill( [ 'round_robin_last_assigned_at' => null ] )->save();
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        expect( $booking->provider_id )->toBe( $providers[1]->id );
+    } );
+
+    it( 'breaks a dead heat on weight', function (): void {
+        [ $service, $providers ] = bookableService( 2 );
+
+        $providers[0]->forceFill( [ 'round_robin_weight' => 1 ] )->save();
+        $providers[1]->forceFill( [ 'round_robin_weight' => 5 ] )->save();
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        expect( $booking->provider_id )->toBe( $providers[1]->id );
+    } );
+
+    it( 'moves the cursor on so the next booking goes elsewhere', function (): void {
+        [ $service, $providers ] = bookableService( 2 );
+
+        $first = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart( '10:00' ),
+        ] ) );
+
+        $second = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart( '13:00' ),
+        ] ) );
+
+        expect( $first->provider_id )->not->toBe( $second->provider_id )
+            ->and( $providers[0]->fresh()->round_robin_last_assigned_at )->not->toBeNull()
+            ->and( $providers[1]->fresh()->round_robin_last_assigned_at )->not->toBeNull();
+    } );
+
+    it( 'leaves the cursor alone when the customer picked the provider themselves', function (): void {
+        // Choosing a name off a list is not taking a turn in the rota, and
+        // crediting it as one would push that provider to the back of a queue
+        // they were never in.
+        [ $service, $providers ] = bookableService( 2 );
+
+        bookingService()->create( bookingCustomer( [
+            'service'     => $service,
+            'provider_id' => $providers[0]->getKey(),
+            'start_time'  => bookingStart(),
+        ] ) );
+
+        expect( $providers[0]->fresh()->round_robin_last_assigned_at )->toBeNull();
+    } );
+
+    it( 'falls through to the next candidate when it loses the race', function (): void {
+        // The lost race, staged. The competing row is written straight through
+        // the query builder from inside the lock, after availability has already
+        // been read and immediately before the insert — which is exactly the
+        // window the partial unique index exists to close.
+        [ $service, $providers ] = bookableService( 2 );
+
+        $providers[0]->forceFill( [ 'round_robin_last_assigned_at' => now()->subDay() ] )->save();
+        $providers[1]->forceFill( [ 'round_robin_last_assigned_at' => now()->subHour() ] )->save();
+
+        $attempts = 0;
+
+        addAction( 'ap.bookings.creating', function ( array $attributes ) use ( &$attempts, $providers ): void {
+            $attempts++;
+
+            if ( 1 !== $attempts ) {
+                return;
+            }
+
+            DB::table( 'bookings' )->insert( [
+                'booking_number'        => 'BK-RACEWINNER1',
+                'service_id'            => $attributes['service_id'],
+                'provider_id'           => $providers[0]->getKey(),
+                'customer_name'         => 'Someone Faster',
+                'customer_email'        => 'faster@example.test',
+                'customer_timezone'     => 'UTC',
+                'start_time'            => $attributes['start_time'],
+                'end_time'              => $attributes['end_time'],
+                'status'                => BookingStatus::Confirmed->value,
+                'assignment_strategy'   => BookingAssignmentStrategy::Customer->value,
+                'intake_schema_version' => 1,
+                'manage_token_hash'     => str_repeat( 'a', 64 ),
+                'created_at'            => now(),
+                'updated_at'            => now(),
+            ] );
+        } );
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        expect( $attempts )->toBe( 2 )
+            ->and( $booking->provider_id )->toBe( $providers[1]->id )
+            ->and( Booking::query()->count() )->toBe( 2 );
+    } );
+
+    it( 'gives up once every candidate has lost the race', function (): void {
+        [ $service, $providers ] = bookableService( 2 );
+
+        addAction( 'ap.bookings.creating', function ( array $attributes ) use ( $providers ): void {
+            foreach ( $providers as $index => $provider ) {
+                if ( (int) $provider->getKey() !== (int) $attributes['provider_id'] ) {
+                    continue;
+                }
+
+                DB::table( 'bookings' )->insert( [
+                    'booking_number'        => 'BK-BLOCKER' . $index,
+                    'service_id'            => $attributes['service_id'],
+                    'provider_id'           => $provider->getKey(),
+                    'customer_name'         => 'Someone Faster',
+                    'customer_email'        => 'faster@example.test',
+                    'customer_timezone'     => 'UTC',
+                    'start_time'            => $attributes['start_time'],
+                    'end_time'              => $attributes['end_time'],
+                    'status'                => BookingStatus::Confirmed->value,
+                    'assignment_strategy'   => BookingAssignmentStrategy::Customer->value,
+                    'intake_schema_version' => 1,
+                    'manage_token_hash'     => str_repeat( (string) $index, 64 ),
+                    'created_at'            => now(),
+                    'updated_at'            => now(),
+                ] );
+            }
+        } );
+
+        expect( fn () => bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) ) )->toThrow( SlotUnavailableException::class );
+    } );
+
+    it( 'never double-books a provider the database has already given away', function (): void {
+        [ $service, $providers ] = bookableService( 1 );
+
+        bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        expect( fn () => bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) ) )->toThrow( SlotUnavailableException::class );
+
+        expect( Booking::query()->where( 'provider_id', $providers[0]->getKey() )->count() )->toBe( 1 );
+    } );
+} );
+
+describe( 'intake data', function (): void {
+    it( 'snapshots the schema version and keeps only the answers the form asked for', function (): void {
+        [ $service ] = bookableService();
+
+        $service->forceFill( [
+            'intake_schema' => [
+                'fields' => [
+                    [ 'name' => 'goal', 'type' => 'textarea', 'required' => true ],
+                ],
+            ],
+            'intake_schema_version' => 4,
+        ] )->save();
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'     => $service,
+            'start_time'  => bookingStart(),
+            'intake_data' => [ 'goal' => 'Learn to juggle', 'smuggled' => 'not on the form' ],
+        ] ) );
+
+        expect( $booking->intake_schema_version )->toBe( 4 )
+            ->and( $booking->intake_data )->toBe( [ 'goal' => 'Learn to juggle' ] );
+    } );
+
+    it( 'refuses a booking whose intake answers do not satisfy the form', function (): void {
+        [ $service ] = bookableService();
+
+        $service->forceFill( [
+            'intake_schema' => [
+                'fields' => [
+                    [ 'name' => 'goal', 'type' => 'textarea', 'required' => true ],
+                ],
+            ],
+        ] )->save();
+
+        expect( fn () => bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) ) )->toThrow( IntakeValidationException::class );
+
+        expect( Booking::query()->count() )->toBe( 0 );
+    } );
+} );
+
+describe( 'lifecycle', function (): void {
+    it( 'moves a booking to a new time and reports where it came from', function (): void {
+        Event::fake( [ BookingRescheduled::class ] );
+
+        [ $service ] = bookableService();
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart( '10:00' ),
+        ] ) );
+
+        bookingService()->reschedule( $booking, bookingStart( '14:00' ), BookingActor::Customer );
+
+        expect( $booking->fresh()->start_time->equalTo( bookingStart( '14:00' ) ) )->toBeTrue()
+            ->and( $booking->fresh()->end_time->equalTo( bookingStart( '15:00' ) ) )->toBeTrue();
+
+        Event::assertDispatched(
+            BookingRescheduled::class,
+            static fn ( BookingRescheduled $event ): bool => $event->previousPeriod->start->equalTo( bookingStart( '10:00' ) )
+                && BookingActor::Customer === $event->actor,
+        );
+    } );
+
+    it( 'refuses to move a booking onto time the provider has already sold', function (): void {
+        [ $service, $providers ] = bookableService( 1 );
+
+        $first = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart( '10:00' ),
+        ] ) );
+
+        Booking::factory()
+            ->for( $service )
+            ->for( $providers[0], 'provider' )
+            ->confirmed()
+            ->startingAt( bookingStart( '14:00' ), 60 )
+            ->create();
+
+        expect( fn () => bookingService()->reschedule( $first, bookingStart( '14:00' ) ) )
+            ->toThrow( SlotUnavailableException::class );
+
+        expect( $first->fresh()->start_time->equalTo( bookingStart( '10:00' ) ) )->toBeTrue();
+    } );
+
+    it( 'lets a booking move onto time it was itself occupying', function (): void {
+        // The case a naive availability re-check gets wrong: a half-hour shift
+        // overlaps the booking's own current position, and reading that as a
+        // clash would make every small reschedule impossible.
+        [ $service ] = bookableService();
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart( '10:00' ),
+        ] ) );
+
+        bookingService()->reschedule( $booking, bookingStart( '10:30' ) );
+
+        expect( $booking->fresh()->start_time->equalTo( bookingStart( '10:30' ) ) )->toBeTrue();
+    } );
+
+    it( 'cancels a booking and frees the slot it held', function (): void {
+        Event::fake( [ BookingCancelled::class ] );
+
+        [ $service ] = bookableService();
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        bookingService()->cancel( $booking, BookingActor::Customer, 'Something came up.' );
+
+        expect( $booking->fresh()->status )->toBe( BookingStatus::Cancelled )
+            ->and( $booking->fresh()->occupiesSlot() )->toBeFalse();
+
+        Event::assertDispatched(
+            BookingCancelled::class,
+            static fn ( BookingCancelled $event ): bool => BookingActor::Customer === $event->actor
+                && 'Something came up.' === $event->reason,
+        );
+    } );
+
+    it( 'lets the freed slot be booked again', function (): void {
+        [ $service ] = bookableService( 1 );
+
+        $first = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        bookingService()->cancel( $first, BookingActor::Customer );
+
+        $second = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        expect( $second->id )->not->toBe( $first->id )
+            ->and( $second->status )->toBe( BookingStatus::Confirmed );
+    } );
+
+    it( 'marks a booking delivered', function (): void {
+        Event::fake( [ BookingCompleted::class ] );
+
+        [ $service ] = bookableService();
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        bookingService()->complete( $booking, BookingActor::Provider );
+
+        expect( $booking->fresh()->status )->toBe( BookingStatus::Completed );
+
+        Event::assertDispatched( BookingCompleted::class );
+    } );
+
+    it( 'marks a booking as a no-show', function (): void {
+        Event::fake( [ BookingNoShow::class ] );
+
+        [ $service ] = bookableService();
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        bookingService()->markNoShow( $booking, BookingActor::Admin );
+
+        expect( $booking->fresh()->status )->toBe( BookingStatus::NoShow );
+
+        Event::assertDispatched( BookingNoShow::class );
+    } );
+
+    it( 'refuses a transition the booking has already made', function (): void {
+        // The guarantee every listener downstream is written against: one
+        // action per transition. Cancelling a cancelled booking would fire the
+        // cancellation twice for one cancellation.
+        [ $service ] = bookableService();
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        bookingService()->cancel( $booking, BookingActor::Customer );
+
+        expect( fn () => bookingService()->cancel( $booking, BookingActor::Customer ) )
+            ->toThrow( InvalidBookingTransitionException::class );
+        expect( fn () => bookingService()->complete( $booking ) )
+            ->toThrow( InvalidBookingTransitionException::class );
+        expect( fn () => bookingService()->markNoShow( $booking ) )
+            ->toThrow( InvalidBookingTransitionException::class );
+        expect( fn () => bookingService()->reschedule( $booking, bookingStart( '14:00' ) ) )
+            ->toThrow( InvalidBookingTransitionException::class );
+        expect( fn () => bookingService()->confirm( $booking ) )
+            ->toThrow( InvalidBookingTransitionException::class );
+    } );
+} );

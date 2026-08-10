@@ -22,6 +22,7 @@ namespace ArtisanPackUI\Bookings\Providers;
 
 use ArtisanPackUI\Bookings\Bookings;
 use ArtisanPackUI\Bookings\Contracts\MeetingTypeRegistry as MeetingTypeRegistryContract;
+use ArtisanPackUI\Bookings\Contracts\RoundRobinStrategy;
 use ArtisanPackUI\Bookings\Contracts\SlotResolver;
 use ArtisanPackUI\Bookings\MeetingTypes\MeetingTypeRegistry;
 use ArtisanPackUI\Bookings\Models\AvailabilityOverride;
@@ -34,6 +35,10 @@ use ArtisanPackUI\Bookings\Models\ServiceBlackoutDate;
 use ArtisanPackUI\Bookings\Models\ServiceProvider as ServiceProviderModel;
 use ArtisanPackUI\Bookings\Models\ServiceProviderService;
 use ArtisanPackUI\Bookings\Services\AvailabilityService;
+use ArtisanPackUI\Bookings\Services\BookingService;
+use ArtisanPackUI\Bookings\Services\IntakeFieldValidator;
+use ArtisanPackUI\Bookings\Services\ProviderSlotLock;
+use ArtisanPackUI\Bookings\Strategies\LeastRecentlyAssignedStrategy;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\ServiceProvider;
 
@@ -93,6 +98,20 @@ class BookingsServiceProvider extends ServiceProvider
         // the seam rather than the shipped implementation, and an application
         // that rebinds SlotResolver actually replaces it.
         $this->app->bind( SlotResolver::class, AvailabilityService::class );
+
+        // The default rota. Bound against the contract for the same reason as
+        // the resolver above: an application whose idea of "whose turn is it"
+        // is not plain rotation rebinds this one interface and every assignment
+        // in the package asks it instead.
+        $this->app->bind( RoundRobinStrategy::class, LeastRecentlyAssignedStrategy::class );
+
+        // Singletons because both are stateless collaborators that everything
+        // touching a booking resolves — there is nothing to gain from building
+        // them again per call, and the lock in particular is resolved on the
+        // hot path of every write.
+        $this->app->singleton( ProviderSlotLock::class );
+        $this->app->singleton( IntakeFieldValidator::class );
+        $this->app->singleton( BookingService::class );
     }
 
     /**

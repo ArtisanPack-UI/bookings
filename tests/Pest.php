@@ -19,6 +19,8 @@ use ArtisanPackUI\Bookings\Models\ServiceProvider;
 use ArtisanPackUI\Bookings\Models\Webhook;
 use ArtisanPackUI\Bookings\Models\WebhookDelivery;
 use ArtisanPackUI\Bookings\Services\AvailabilityService;
+use ArtisanPackUI\Bookings\Services\BookingService;
+use ArtisanPackUI\Bookings\Services\ProviderSlotLock;
 use ArtisanPackUI\Bookings\Support\Slot;
 use ArtisanPackUI\Bookings\Support\TimeRange;
 use ArtisanPackUI\Core\Contracts\SiteResolver;
@@ -528,6 +530,215 @@ function defineEngineSensitiveAvailabilityTests(): void
             ->and( $starts )->not->toContain( '12:00' )
             ->and( $starts )->toContain( '13:00' );
     } );
+}
+
+/**
+ * Gets the booking service out of the container.
+ *
+ * @since 1.0.0
+ *
+ * @return BookingService The service under test.
+ */
+function bookingService(): BookingService
+{
+    return app( BookingService::class );
+}
+
+/**
+ * Builds a service and however many providers who can all take the same slot.
+ *
+ * Every provider works the same hours in the same zone, which is the shape the
+ * assignment cases want: with availability identical across the rota, the only
+ * thing that can decide who gets a booking is the rotation itself.
+ *
+ * Monday 1 June 2026 is the day the helpers below name. It is chosen for being
+ * an ordinary Monday nowhere near a daylight-saving boundary — the clock-change
+ * cases are the availability suite's business, and a rotation test tripping over
+ * one would be reporting somebody else's bug.
+ *
+ * @since 1.0.0
+ *
+ * @param  int  $providerCount  How many providers to attach.
+ * @param  string  $timezone  The zone they all work in.
+ *
+ * @return array{0: Service, 1: array<int, ServiceProvider>} The service and its providers.
+ */
+function bookableService( int $providerCount = 1, string $timezone = 'America/Chicago' ): array
+{
+    config()->set( 'artisanpack.bookings.slot_interval', 60 );
+
+    /** @var Service $service */
+    $service = Service::factory()->roundRobin()->create( [
+        'duration'      => 60,
+        'buffer_before' => 0,
+        'buffer_after'  => 0,
+    ] );
+
+    $providers = [];
+
+    for ( $index = 0; $index < $providerCount; $index++ ) {
+        $providers[] = bookingsSchedule(
+            $service,
+            ServiceProvider::factory()->inTimezone( $timezone )->create(),
+        );
+    }
+
+    return [ $service, $providers ];
+}
+
+/**
+ * Gets an instant inside the window {@see bookableService()} opens.
+ *
+ * @since 1.0.0
+ *
+ * @param  string  $time  The provider-local clock face, as `H:i`.
+ * @param  string  $timezone  The zone the clock face belongs to.
+ *
+ * @return CarbonImmutable The instant, in UTC.
+ */
+function bookingStart( string $time = '10:00', string $timezone = 'America/Chicago' ): CarbonImmutable
+{
+    return CarbonImmutable::parse( '2026-06-01 ' . $time, $timezone )->utc();
+}
+
+/**
+ * Builds the attributes a booking needs beyond the service and the time.
+ *
+ * @since 1.0.0
+ *
+ * @param  array<string, mixed>  $overrides  Anything to change.
+ *
+ * @return array<string, mixed> The customer's details.
+ */
+function bookingCustomer( array $overrides = [] ): array
+{
+    return $overrides + [
+        'customer_name'     => 'Sam Rivera',
+        'customer_email'    => 'sam@example.test',
+        'customer_timezone' => 'America/Chicago',
+    ];
+}
+
+/**
+ * Registers the slot-lock assertions that only a real server can settle.
+ *
+ * The lock is the first of the three layers that stop two customers taking the
+ * same slot, and it is the only one sqlite cannot express: there is no advisory
+ * lock there, so the sqlite suite exercises a cache lock standing in for one.
+ * That proves the code path and nothing about the primitive. These cases run the
+ * real thing against a second connection — which is what a second PHP worker
+ * actually is — and check that it excludes, releases, and does not over-block.
+ *
+ * The calling file supplies the engine by using the matching TestsWith* concern
+ * before calling this.
+ *
+ * @return void
+ */
+function defineSlotLockTests(): void
+{
+    it( 'holds a provider\'s slot against a second connection', function (): void {
+        $start = CarbonImmutable::parse( '2026-06-01 15:00', 'UTC' );
+        $held  = null;
+
+        app( ProviderSlotLock::class )->withSlotLock( 7, $start, function () use ( $start, &$held ): void {
+            $held = contenderHoldsSlot( 7, $start );
+        } );
+
+        expect( $held )->toBeFalse();
+    } );
+
+    it( 'lets the next caller take the slot once the first is done', function (): void {
+        $start = CarbonImmutable::parse( '2026-06-01 16:00', 'UTC' );
+
+        app( ProviderSlotLock::class )->withSlotLock( 7, $start, static fn (): bool => true );
+
+        expect( contenderHoldsSlot( 7, $start ) )->toBeTrue();
+    } );
+
+    it( 'releases the slot even when the booking inside it fails', function (): void {
+        // The failure that matters: a lost race throws, and a lock still held
+        // afterwards would stall every later attempt on that slot for the life
+        // of the connection.
+        $start = CarbonImmutable::parse( '2026-06-01 17:00', 'UTC' );
+
+        try {
+            app( ProviderSlotLock::class )->withSlotLock( 7, $start, static function (): void {
+                throw new RuntimeException( 'Lost the race.' );
+            } );
+        } catch ( RuntimeException ) {
+            // The point of the test is what happens next.
+        }
+
+        expect( contenderHoldsSlot( 7, $start ) )->toBeTrue();
+    } );
+
+    it( 'leaves every other slot free while it holds one', function (): void {
+        // Serialising more than the one contended pair would turn a busy diary
+        // into a queue, which is the failure mode a table lock would have.
+        $start = CarbonImmutable::parse( '2026-06-01 18:00', 'UTC' );
+        $other = [];
+
+        app( ProviderSlotLock::class )->withSlotLock( 7, $start, function () use ( $start, &$other ): void {
+            $other['provider'] = contenderHoldsSlot( 8, $start );
+            $other['time']     = contenderHoldsSlot( 7, $start->addHour() );
+        } );
+
+        expect( $other['provider'] )->toBeTrue()
+            ->and( $other['time'] )->toBeTrue();
+    } );
+}
+
+/**
+ * Asks a second database connection whether it can take a slot's lock.
+ *
+ * Non-blocking on both engines, because "would have waited" is the answer being
+ * asserted on and a test that actually waited would just be slow.
+ *
+ * @param  int  $providerId  The provider whose slot to try for.
+ * @param  CarbonImmutable  $start  The instant the slot begins.
+ *
+ * @return bool True when the second connection got the lock.
+ */
+function contenderHoldsSlot( int $providerId, CarbonImmutable $start ): bool
+{
+    $lock   = app( ProviderSlotLock::class );
+    $driver = DB::connection()->getDriverName();
+    $name   = 'pgsql' === $driver ? 'pgsql_contender' : 'mysql_contender';
+
+    config()->set( 'database.connections.' . $name, config( 'database.connections.' . $driver ) );
+
+    $contender = DB::connection( $name );
+
+    try {
+        if ( 'pgsql' === $driver ) {
+            $key = $lock->lockKey( $providerId, $start );
+
+            // Cast in SQL: pdo_pgsql has returned booleans as both real bools
+            // and the strings 't'/'f' depending on version, and 'f' is truthy.
+            $acquired = 1 === (int) $contender
+                ->selectOne( 'select pg_try_advisory_lock(?)::int as acquired', [ $key ] )
+                ->acquired;
+
+            if ( $acquired ) {
+                $contender->selectOne( 'select pg_advisory_unlock(?) as released', [ $key ] );
+            }
+
+            return $acquired;
+        }
+
+        $lockName = $lock->lockName( $providerId, $start );
+        $acquired = 1 === (int) $contender
+            ->selectOne( 'select get_lock(?, 0) as acquired', [ $lockName ] )
+            ->acquired;
+
+        if ( $acquired ) {
+            $contender->selectOne( 'select release_lock(?) as released', [ $lockName ] );
+        }
+
+        return $acquired;
+    } finally {
+        $contender->disconnect();
+    }
 }
 
 /**

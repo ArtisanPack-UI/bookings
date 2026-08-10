@@ -122,6 +122,54 @@ bookings();
 The booking, availability, and calendar APIs are added on top of this entry point
 in the alpha releases.
 
+### Creating a booking
+
+`Services\BookingService` is the front door to a booking's whole life. Creating
+one names a service, a start time, and the customer; naming a provider is
+optional, and leaving it out lets the service's assignment strategy pick:
+
+```php
+use ArtisanPackUI\Bookings\Services\BookingService;
+
+$booking = app( BookingService::class )->create( [
+    'service'           => $service,
+    'start_time'        => $start,          // any Carbon or parseable string
+    'customer_name'     => 'Sam Rivera',
+    'customer_email'    => 'sam@example.test',
+    'customer_timezone' => 'America/Chicago',
+    'intake_data'       => [ 'goal' => 'Learn to juggle' ],
+] );
+```
+
+The whole read-availability-and-write sequence runs behind an advisory lock on
+`(provider, start time)`, so two customers after the last slot are decided before
+either reaches the database. If one still loses — the lock is a first line of
+defence, not the last — the partial unique index on `bookings` catches it and the
+round-robin assigner falls through to the next free provider. `create()` throws
+`Exceptions\SlotUnavailableException` only when nobody at all could take the slot.
+
+Intake answers are validated against the service's current form and that version
+is snapshotted onto the booking, so the answers stay readable after an
+administrator edits the form. Answers the form did not ask for are dropped;
+answers it did ask for and did not get raise
+`Exceptions\IntakeValidationException`, which carries a `MessageBag`.
+
+The rest of the lifecycle goes through the same service, and must:
+
+```php
+$bookings = app( BookingService::class );
+
+$bookings->confirm( $booking, BookingActor::Admin );
+$bookings->reschedule( $booking, $newStart, BookingActor::Customer );
+$bookings->cancel( $booking, BookingActor::Customer, 'Something came up.' );
+$bookings->complete( $booking, BookingActor::Provider );
+$bookings->markNoShow( $booking, BookingActor::Admin );
+```
+
+Flipping a status directly would skip the action and the event that transition
+fires, so anything downstream — a calendar push, a confirmation email, a CRM
+record — would either never hear about it or hear about it twice.
+
 ## Extending
 
 ### Contracts
@@ -172,6 +220,47 @@ Actions and filters are registered through `artisanpack-ui/hooks`. Names take an
 `ap.` prefix, `.`-separated segments, and camelCase within each segment — so both
 `ap.bookings.registeredMeetingTypes` and grouped names like
 `ap.bookings.calendarSync.providers` are well formed. Never snake_case.
+
+Actions fire; filters transform a value and must return one.
+
+| Hook | Type | Payload |
+| --- | --- | --- |
+| `ap.bookings.creating` | action | `(array $attributes, ?Authenticatable $customer)` |
+| `ap.bookings.created` | action | `(Booking $booking)` |
+| `ap.bookings.confirmed` | action | `(Booking $booking)` |
+| `ap.bookings.rescheduling` | action | `(Booking $booking, CarbonImmutable $newStart)` |
+| `ap.bookings.rescheduled` | action | `(Booking $booking, CarbonImmutable $oldStart)` |
+| `ap.bookings.cancelling` | action | `(Booking $booking, string $reason)` |
+| `ap.bookings.cancelled` | action | `(Booking $booking)` |
+| `ap.bookings.completed` | action | `(Booking $booking)` |
+| `ap.bookings.noShow` | action | `(Booking $booking)` |
+| `ap.bookings.availableProviders` | filter | `(array $providers, Service $service, CarbonImmutable $start)` |
+| `ap.bookings.roundRobin.selectProvider` | filter | `(?ServiceProvider $selected, array $candidates, Booking $draft)` |
+| `ap.bookings.intakeSchema` | filter | `(array $schema, Service $service, int $version)` |
+| `ap.bookings.availabilityQuery` | filter | `(Builder $query, array $criteria)` |
+| `ap.bookings.availableSlots` | filter | `(array $slots, ServiceProvider $provider, CarbonPeriod $window)` |
+| `ap.bookings.slotBookable` | filter | `(bool $bookable, Slot $slot, ?Authenticatable $customer)` |
+| `ap.bookings.slotDuration` | filter | `(int $minutes, Service $service, ServiceProvider $provider)` |
+| `ap.bookings.registeredMeetingTypes` | filter | `(array $types)` |
+
+Three of these have rules worth stating outright.
+
+`ap.bookings.creating` fires inside the slot lock, and can fire more than once
+for a single `create()` call — once per provider tried, when a lost race falls
+through to the next candidate. `ap.bookings.created` fires exactly once. Neither
+can cancel a booking: subscribe to the `BookingRequested` event and cancel it
+there, which is a real cancellation with a freed slot rather than an abort inside
+a held lock.
+
+`ap.bookings.roundRobin.selectProvider` returning `null` means "no opinion" and
+leaves the default rota's answer standing. Returning somebody who is not in
+`$candidates` throws — they were not free for the slot. It does not fire at all
+when the customer named their provider by hand.
+
+`ap.bookings.intakeSchema` runs against the version a booking was captured with
+rather than the service's current form, and its output is never written back. A
+subscriber is describing how a form should be read, not editing the record of
+what was asked.
 
 Meeting types are contributed through a filter rather than being hard-coded:
 
