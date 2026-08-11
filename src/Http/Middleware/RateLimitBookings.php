@@ -150,6 +150,40 @@ class RateLimitBookings
     }
 
     /**
+     * Spends one request from a bucket, or reports that it is empty.
+     *
+     * The Livewire widget never travels through this middleware — its calls go
+     * to Livewire's own update endpoint, on the host application's routes — so
+     * without this the one guarded write in the package would be unguarded for
+     * whichever half of the widget a visitor happens to be using. The component
+     * spends from the same bucket, under the same key, so the two halves share
+     * one allowance rather than each getting a fresh one.
+     *
+     * @since 1.0.0
+     *
+     * @param  string  $bucket  Which configured limit to spend from.
+     * @param  Request  $request  The request being counted.
+     *
+     * @throws InvalidArgumentException When the bucket is not one this package
+     *                                  defines.
+     *
+     * @return bool True when the request may proceed.
+     */
+    public function consume( string $bucket, Request $request ): bool
+    {
+        $limit = $this->limitFor( $bucket );
+        $key   = $this->keyFor( $bucket, $request );
+
+        if ( $this->limiter->tooManyAttempts( $key, $limit ) ) {
+            return false;
+        }
+
+        $this->limiter->hit( $key, self::WINDOW_SECONDS );
+
+        return true;
+    }
+
+    /**
      * Puts the tightest allowance the request passed through on the response.
      *
      * A route may be guarded by more than one of these — the manage read carries

@@ -271,6 +271,69 @@ console command using `SiteContext::forSite()` and a maintenance query using
 `acrossAllSites()` — where the ambient site otherwise disagrees with the series
 being edited.
 
+### Public booking widget
+
+Drop the widget on any page:
+
+```blade
+<livewire:artisanpack-booking-widget />
+```
+
+It walks the customer through service → provider → date and time → details, and
+confirms the booking in place. Pin it to one service when the page is already
+about that service, and give it a zone to render times in before the browser has
+reported its own:
+
+```blade
+<livewire:artisanpack-booking-widget service="discovery-call" />
+<livewire:artisanpack-booking-widget timezone="Europe/Berlin" />
+```
+
+A pinned service is locked: the widget will not book anything else, whatever the
+page's query string or a modified client asks for.
+
+The component is registered only when `livewire/livewire` is installed. It is a
+suggestion rather than a requirement — the JSON API and the iCal feeds are the
+whole surface a headless installation needs — so `composer require
+livewire/livewire` if you want the widget.
+
+**The flow works without JavaScript.** Every step is a real `<form>`: choosing a
+service, a provider, a month, a day, or a time is a `GET` back to the same page
+carrying the choice in the query string, and confirming is a `POST` to
+`bookings/widget`, which creates the booking and redirects back with the
+confirmation flashed. Where Livewire has loaded it intercepts all of that and
+nothing navigates. What JavaScript adds is the one thing the server cannot know:
+the visitor's timezone, read from
+`Intl.DateTimeFormat().resolvedOptions().timeZone`. Without it the times are
+shown in the service's own zone, and the widget says so on screen rather than
+leaving it to be guessed.
+
+That `POST` route sits in the `web` middleware group — it needs the session and
+the CSRF token the JSON API deliberately does without — and redirects to the
+session's previous URL rather than to anything in the payload.
+
+Because the state lives in the query string, a link is shareable and
+deep-linkable:
+
+```text
+https://example.test/book?bookingService=discovery-call&bookingDate=2026-06-01
+```
+
+The intake step renders the service's current `intake_schema` — the same field
+list, in the same order, with the same idea of "required" that
+`Services\IntakeFieldValidator` will judge the answers against, so the form
+cannot ask for something the check does not want or omit something it does.
+
+The markup is plain HTML with daisyUI class names and no dependency on
+`artisanpack-ui/livewire-ui-components`. Publish it to change anything:
+
+```bash
+php artisan vendor:publish --tag=bookings-views
+```
+
+Both halves of the widget spend the same `public.rate_limits.post` bucket as
+`POST api/bookings`, so a visitor gets one allowance rather than one per route.
+
 ### Manage tokens
 
 A customer with no account manages their booking through a link, and the token in
@@ -934,8 +997,9 @@ cannot ship undocumented.
 The package runs standalone in any Laravel application. When these are installed
 it uses them, and degrades cleanly when they are not:
 
+- `livewire/livewire` — the public booking widget and the admin screens
 - `artisanpack-ui/cms-framework` — admin navigation, permissions, settings
-- `artisanpack-ui/livewire-ui-components` — admin and widget rendering
+- `artisanpack-ui/livewire-ui-components` — admin screen rendering (the public widget is plain HTML and does not use it)
 - `artisanpack-ui/forms` — `booking_slot` field type, booking-from-submission
 - `artisanpack-ui/media-library` — service and provider images
 - `artisanpack-ui/google`, `artisanpack-ui/microsoft`, `artisanpack-ui/apple` — calendar sync drivers

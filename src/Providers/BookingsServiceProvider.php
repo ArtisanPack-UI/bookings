@@ -41,6 +41,7 @@ use ArtisanPackUI\Bookings\Http\Middleware\RateLimitBookings;
 use ArtisanPackUI\Bookings\Http\Middleware\ResolveManageToken;
 use ArtisanPackUI\Bookings\Listeners\DispatchBookingWebhooks;
 use ArtisanPackUI\Bookings\Listeners\SendBookingNotifications;
+use ArtisanPackUI\Bookings\Livewire\Public\BookingWidget;
 use ArtisanPackUI\Bookings\MeetingTypes\MeetingTypeRegistry;
 use ArtisanPackUI\Bookings\Models\AvailabilityOverride;
 use ArtisanPackUI\Bookings\Models\AvailabilitySchedule;
@@ -75,6 +76,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use InvalidArgumentException;
+use Livewire\Livewire;
 
 use function __;
 use function apRegisterNotification;
@@ -358,10 +360,65 @@ class BookingsServiceProvider extends ServiceProvider
 
         $this->invalidateAvailabilityOnWrites();
 
+        $this->registerViews();
+
         $this->registerPublicRoutes();
 
-        // Views, Livewire components, calendar drivers, and the CMS-framework
-        // integration are registered here as each is built.
+        $this->registerLivewireComponents();
+
+        // Calendar drivers and the CMS-framework integration are registered here
+        // as each is built.
+    }
+
+    /**
+     * Makes the package's Blade views resolvable, and publishable.
+     *
+     * Loaded under the `bookings::` namespace rather than published by default,
+     * so an upgrade that fixes the widget's markup reaches an installation that
+     * never wanted to fork it. The publish tag is for the ones that do — and a
+     * published copy wins, which is the whole point and also the thing to
+     * remember when a template edit appears to do nothing.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    protected function registerViews(): void
+    {
+        $this->loadViewsFrom( __DIR__ . '/../../resources/views', 'bookings' );
+
+        $this->publishes(
+            [
+                __DIR__ . '/../../resources/views' => resource_path( 'views/vendor/bookings' ),
+            ],
+            'bookings-views',
+        );
+    }
+
+    /**
+     * Registers the package's Livewire components, where Livewire is installed.
+     *
+     * Guarded rather than assumed. Livewire is a suggestion, not a requirement:
+     * the JSON API, the iCal feeds, and the no-JavaScript booking form are the
+     * whole surface a headless installation needs, and requiring Livewire for
+     * them would put a front-end framework in a queue worker's dependency tree.
+     *
+     * The alias is `artisanpack-booking-widget` rather than a namespaced name,
+     * because it is written by hand into somebody else's marketing page —
+     * `<livewire:artisanpack-booking-widget />` — and the prefix is what keeps
+     * that name from colliding with a component the host application already has.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    protected function registerLivewireComponents(): void
+    {
+        if ( ! class_exists( Livewire::class ) ) {
+            return;
+        }
+
+        Livewire::component( 'artisanpack-booking-widget', BookingWidget::class );
     }
 
     /**
@@ -392,6 +449,10 @@ class BookingsServiceProvider extends ServiceProvider
         }
 
         Route::middleware( 'api' )->group( __DIR__ . '/../../routes/public.php' );
+
+        // The widget's plain-HTML form target, which needs the session and the
+        // CSRF token the `api` group deliberately does without.
+        Route::middleware( 'web' )->group( __DIR__ . '/../../routes/widget.php' );
     }
 
     /**
