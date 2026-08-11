@@ -7,6 +7,7 @@ namespace Tests;
 use ArtisanPackUI\Bookings\Providers\BookingsServiceProvider;
 use ArtisanPackUI\Core\CoreServiceProvider;
 use ArtisanPackUI\Hooks\Providers\HooksServiceProvider;
+use ArtisanPackUI\Security\SecurityServiceProvider;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Foundation\Testing\RefreshDatabaseState;
 use Illuminate\Support\Facades\DB;
@@ -84,12 +85,14 @@ abstract class TestCase extends BaseTestCase
     protected function getPackageProviders( $app ): array
     {
         // Core owns the shared site context this package scopes its queries by,
-        // and hooks backs core's default resolver — both are hard dependencies
+        // hooks backs core's default resolver, and security binds the sanitizers
+        // every public request is put through — all three are hard dependencies
         // rather than suggestions, so the test application registers them the
         // same way a host application would.
         return [
             CoreServiceProvider::class,
             HooksServiceProvider::class,
+            SecurityServiceProvider::class,
             BookingsServiceProvider::class,
         ];
     }
