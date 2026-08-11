@@ -21,7 +21,14 @@ declare( strict_types=1 );
 namespace ArtisanPackUI\Bookings\Providers;
 
 use ArtisanPackUI\Bookings\Bookings;
+use ArtisanPackUI\Bookings\Console\Commands\CompletePastBookingsCommand;
+use ArtisanPackUI\Bookings\Console\Commands\PollAppleCalendarsCommand;
+use ArtisanPackUI\Bookings\Console\Commands\PruneCalendarEventsCommand;
+use ArtisanPackUI\Bookings\Console\Commands\PruneNotificationLogCommand;
+use ArtisanPackUI\Bookings\Console\Commands\PruneWebhookDeliveriesCommand;
+use ArtisanPackUI\Bookings\Console\Commands\RefreshCalendarsCommand;
 use ArtisanPackUI\Bookings\Console\Commands\ReissueDetachedManageTokensCommand;
+use ArtisanPackUI\Bookings\Console\Commands\RenewCalendarWatchChannelsCommand;
 use ArtisanPackUI\Bookings\Console\Commands\SendBookingRemindersCommand;
 use ArtisanPackUI\Bookings\Contracts\MeetingTypeRegistry as MeetingTypeRegistryContract;
 use ArtisanPackUI\Bookings\Contracts\NotificationChannel;
@@ -85,6 +92,44 @@ use function trim;
  */
 class BookingsServiceProvider extends ServiceProvider
 {
+    /**
+     * How long an overlap lock is held for a quarter-hourly command, in minutes.
+     *
+     * Every `withoutOverlapping()` here is given an expiry rather than taking
+     * the framework's twenty-four hour default. The lock is released when a run
+     * finishes, so the expiry only matters when a run never finishes — a
+     * SIGKILL, an OOM kill, a container replaced mid-sweep — and a day-long
+     * default means one of those silences the command until tomorrow. For the
+     * Apple poll that is precisely the failure polling exists to prevent, since
+     * CalDAV has no push to fall back on.
+     *
+     * Each is comfortably longer than its command's interval, so a slow run is
+     * still protected from a second one starting on top of it.
+     *
+     * @since 1.0.0
+     *
+     * @var int
+     */
+    protected const LOCK_QUARTER_HOURLY = 30;
+
+    /**
+     * How long an overlap lock is held for an hourly command, in minutes.
+     *
+     * @since 1.0.0
+     *
+     * @var int
+     */
+    protected const LOCK_HOURLY = 120;
+
+    /**
+     * How long an overlap lock is held for a daily command, in minutes.
+     *
+     * @since 1.0.0
+     *
+     * @var int
+     */
+    protected const LOCK_DAILY = 360;
+
     /**
      * Registers any application services.
      *
@@ -273,7 +318,14 @@ class BookingsServiceProvider extends ServiceProvider
 
         if ( $this->app->runningInConsole() ) {
             $this->commands( [
+                CompletePastBookingsCommand::class,
+                PollAppleCalendarsCommand::class,
+                PruneCalendarEventsCommand::class,
+                PruneNotificationLogCommand::class,
+                PruneWebhookDeliveriesCommand::class,
+                RefreshCalendarsCommand::class,
                 ReissueDetachedManageTokensCommand::class,
+                RenewCalendarWatchChannelsCommand::class,
                 SendBookingRemindersCommand::class,
             ] );
         }
@@ -283,7 +335,7 @@ class BookingsServiceProvider extends ServiceProvider
 
         $this->registerCmsNotificationTypes();
 
-        $this->scheduleReminders();
+        $this->scheduleCommands();
 
         $this->invalidateAvailabilityOnWrites();
 
@@ -409,39 +461,116 @@ class BookingsServiceProvider extends ServiceProvider
     }
 
     /**
-     * Puts the reminder sweep on the application's schedule.
+     * Puts the package's recurring commands on the application's schedule.
      *
-     * Every fifteen minutes, and `withoutOverlapping()` on top of that, even
-     * though the notification log already makes a doubled run harmless. The lock
-     * saves the work rather than the correctness: two runs would walk the same
-     * bookings and lose every claim, which is a lot of database round trips to
-     * send nothing.
+     * Every one of them is registered `withoutOverlapping()`. None of them
+     * *needs* it for correctness — the reminder sweep claims each send in the
+     * notification log, the completion sweep re-reads the status it transitions,
+     * and a prune deleting rows another prune already deleted is a no-op — but a
+     * doubled run is a lot of database round trips to do nothing, and on an
+     * installation big enough for a sweep to outlive its interval, it is a lot
+     * of them repeatedly.
      *
      * Registered from the console only. `booted()` fires on every HTTP request
-     * too, so without the guard each one resolves the scheduler to describe a
-     * command it will never run — which is the cost the deferred callback was
+     * too, so without the guard each one resolves the scheduler to describe
+     * commands it will never run — which is the cost the deferred callback was
      * meant to avoid and, on its own, did not.
+     *
+     * `bookings:reissue-detached-manage-tokens` is deliberately absent. It
+     * invalidates every manage link the package has ever sent, which is
+     * something an operator does in response to a leak and nothing a clock
+     * should ever decide to do.
      *
      * @since 1.0.0
      *
      * @return void
      */
-    protected function scheduleReminders(): void
+    protected function scheduleCommands(): void
     {
         if ( ! $this->app->runningInConsole() ) {
             return;
         }
 
-        if ( ! (bool) config( 'artisanpack.bookings.notifications.reminder.enabled', true ) ) {
-            return;
+        $this->app->booted( function (): void {
+            $schedule = $this->app->make( Schedule::class );
+
+            // Fifteen minutes is the resolution a reminder is delivered at: a
+            // cadence is configured in whole hours, so a sweep this frequent
+            // sends one within a quarter of an hour of the moment it came due.
+            if ( (bool) config( 'artisanpack.bookings.notifications.reminder.enabled', true ) ) {
+                $schedule->command( 'bookings:send-reminders' )
+                    ->everyFifteenMinutes()
+                    ->withoutOverlapping( self::LOCK_QUARTER_HOURLY );
+            }
+
+            // Hourly rather than more often because nothing downstream of a
+            // completion is time-critical, and less often would leave a
+            // provider's diary showing yesterday's work as still upcoming.
+            $schedule->command( 'bookings:complete-past' )
+                ->hourly()
+                ->withoutOverlapping( self::LOCK_HOURLY );
+
+            $this->scheduleCalendarCommands( $schedule );
+
+            // Overnight, because a prune is the one thing here that holds locks
+            // on tables the request path writes to.
+            $schedule->command( 'bookings:prune-notification-log' )
+                ->dailyAt( '03:10' )
+                ->withoutOverlapping( self::LOCK_DAILY );
+
+            $schedule->command( 'bookings:prune-webhook-deliveries' )
+                ->dailyAt( '03:20' )
+                ->withoutOverlapping( self::LOCK_DAILY );
+
+            $schedule->command( 'bookings:prune-calendar-events' )
+                ->dailyAt( '03:30' )
+                ->withoutOverlapping( self::LOCK_DAILY );
+        } );
+    }
+
+    /**
+     * Puts the calendar sweeps on the schedule, where any are wanted.
+     *
+     * Each is gated on a driver being switched on, because none of them can do
+     * anything without one and an installation that has never connected a
+     * calendar should not have three commands waking up to say so. Apple is
+     * gated on its own driver rather than on any driver: it is polled every
+     * fifteen minutes precisely because CalDAV cannot push, and running that
+     * frequency for an installation that only uses Google would be paying
+     * Apple's cost for nobody's benefit.
+     *
+     * @since 1.0.0
+     *
+     * @param  Schedule  $schedule  The application's schedule.
+     *
+     * @return void
+     */
+    protected function scheduleCalendarCommands( Schedule $schedule ): void
+    {
+        $drivers = (array) config( 'artisanpack.bookings.calendar.drivers', [] );
+        $enabled = static fn ( string $driver ): bool => (bool) ( $drivers[ $driver ]['enabled'] ?? false );
+
+        if ( $enabled( 'google' ) || $enabled( 'microsoft' ) || $enabled( 'apple' ) ) {
+            // Daily: this is the backstop under push sync, not the mechanism.
+            $schedule->command( 'bookings:calendar-refresh' )
+                ->daily()
+                ->withoutOverlapping( self::LOCK_DAILY );
         }
 
-        $this->app->booted( function (): void {
-            $this->app->make( Schedule::class )
-                ->command( 'bookings:send-reminders' )
+        // Hourly, against registrations that are renewed an hour before they
+        // lapse — so a renewal that fails has a whole run to be retried in
+        // before the channel behind it goes quiet.
+        if ( $enabled( 'google' ) || $enabled( 'microsoft' ) ) {
+            $schedule->command( 'bookings:calendar-watch-renew' )
+                ->hourly()
+                ->withoutOverlapping( self::LOCK_HOURLY );
+        }
+
+        if ( $enabled( 'apple' ) ) {
+            $schedule->command( 'bookings:calendar-apple-poll' )
                 ->everyFifteenMinutes()
-                ->withoutOverlapping();
-        } );
+                ->withoutOverlapping( self::LOCK_QUARTER_HOURLY );
+        }
     }
 
     /**

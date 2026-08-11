@@ -370,6 +370,12 @@ class BookingService
      * about the real world rather than a consequence of the clock, and a provider
      * closing out an appointment that ran short is making it correctly.
      *
+     * **The transition is claimed against the row, not asserted from memory.**
+     * A caller holding a booking that has been cancelled underneath it — which
+     * is the normal case for `bookings:complete-past`, walking a page at a time
+     * — gets an exception rather than silently overwriting the cancellation, and
+     * the hook and event fire only for the caller that actually moved the row.
+     *
      * @since 1.0.0
      *
      * @param  Booking  $booking  The booking that was delivered.
@@ -386,7 +392,37 @@ class BookingService
             throw InvalidBookingTransitionException::from( $booking, BookingStatus::Completed );
         }
 
-        $booking->forceFill( [ 'status' => BookingStatus::Completed ] )->save();
+        // The check above reads the model in memory, and the completion sweep
+        // hands over bookings it enumerated a page at a time — so by the time one
+        // is reached, the customer may have cancelled it. A plain `save()` writes
+        // by primary key with no condition on status, which would overwrite that
+        // cancellation with `completed` and then announce it: the customer is
+        // told their appointment was cancelled and the CRM is told it was
+        // delivered.
+        //
+        // So the transition is claimed rather than asserted, the same way
+        // {@see Webhook::disable()} claims a disable. The database decides, and
+        // whoever did not win it throws — which is a normal outcome the sweep
+        // catches and moves past, not an error. Scopes are dropped because the
+        // sweep runs from cron across every site; soft deletes are re-guarded by
+        // hand, since dropping the scopes drops that one too.
+        $claimed = $booking->newQueryWithoutScopes()
+            ->whereKey( $booking->getKey() )
+            ->whereNull( 'deleted_at' )
+            ->whereIn( 'status', BookingStatus::activeValues() )
+            ->update( [ 'status' => BookingStatus::Completed->value ] );
+
+        if ( 1 !== $claimed ) {
+            throw InvalidBookingTransitionException::from( $booking, BookingStatus::Completed );
+        }
+
+        // Written onto the instance rather than reloaded with `refresh()`, which
+        // re-reads the loaded relations through the model's own scopes — and the
+        // sweep loads the service and provider across every site precisely so
+        // the webhook body can name them. Refreshing here would null them again
+        // for every tenant but the resolved one.
+        $booking->setAttribute( 'status', BookingStatus::Completed );
+        $booking->syncOriginalAttribute( 'status' );
 
         doAction( 'ap.bookings.completed', $booking );
 

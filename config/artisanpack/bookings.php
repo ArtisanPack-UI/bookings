@@ -341,14 +341,36 @@ return [
     | Retention
     |--------------------------------------------------------------------------
     |
-    | How long booking data is kept before the prune command removes it. The
+    | How long booking data is kept before the prune commands remove it. The
     | default of three years is a starting point, not legal advice — set it to
     | whatever the retention policy you actually operate under requires.
+    |
+    | "prune_after_days" is the window for the bookings themselves, and nothing
+    | reads it yet — booking retention is its own ticket. Setting it (or
+    | BOOKING_PRUNE_DAYS) today prunes nothing; the three windows below are the
+    | ones with a command behind them.
+    |
+    | Each of those is read by one scheduled command:
+    |
+    | - "notification_log_days" by "bookings:prune-notification-log". Keep it
+    |   comfortably longer than the longest reminder in "hours_before": the log
+    |   row is what stops a reminder being sent twice, so pruning one inside its
+    |   own reminder window un-claims a send that already happened.
+    | - "webhook_delivery_days" by "bookings:prune-webhook-deliveries". Null
+    |   defers to "webhooks.delivery_retention_days", which is the same window
+    |   under the settings it belongs to.
+    | - "calendar_events_ttl_days" by "bookings:prune-calendar-events", measured
+    |   from the booking's end time rather than from the row's own age.
+    |
+    | A window of zero or less is read as "not configured" and prunes nothing,
+    | rather than as "keep nothing" — a blank environment variable is a likelier
+    | way to reach zero than a retention policy is.
     |
     */
     'retention' => [
         'prune_after_days'         => env( 'BOOKING_PRUNE_DAYS', 365 * 3 ),
         'notification_log_days'    => 90,
+        'webhook_delivery_days'    => null,
         'calendar_events_ttl_days' => 30,
     ],
 

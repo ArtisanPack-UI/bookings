@@ -18,6 +18,7 @@ use ArtisanPackUI\Bookings\Models\ServiceBlackoutDate;
 use ArtisanPackUI\Bookings\Models\ServiceProvider;
 use ArtisanPackUI\Bookings\Models\Webhook;
 use ArtisanPackUI\Bookings\Models\WebhookDelivery;
+use ArtisanPackUI\Bookings\Providers\BookingsServiceProvider;
 use ArtisanPackUI\Bookings\Services\AvailabilityService;
 use ArtisanPackUI\Bookings\Services\BookingService;
 use ArtisanPackUI\Bookings\Services\ProviderSlotLock;
@@ -27,6 +28,9 @@ use ArtisanPackUI\Bookings\Support\TimeRange;
 use ArtisanPackUI\Core\Contracts\SiteResolver;
 use ArtisanPackUI\Core\MultiTenancy\SiteContext;
 use Carbon\CarbonImmutable;
+use Illuminate\Console\Scheduling\Event as ScheduledEvent;
+use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Tests\Fixtures\FixedSiteResolver;
@@ -792,6 +796,76 @@ function contenderHoldsSlot( int $providerId, CarbonImmutable $start ): bool
     } finally {
         $contender->disconnect();
     }
+}
+
+/**
+ * Re-runs the provider's schedule registration and hands back what it produced.
+ *
+ * The provider registers on `booted`, which has already fired by the time a test
+ * body runs, so the callback is invoked again against a schedule of its own. What
+ * is under test is the registration logic — which commands, at what cadence,
+ * under what configuration — rather than the framework's ability to hold a list.
+ *
+ * @since 1.0.0
+ *
+ * @return array<int, ScheduledEvent> The events the provider registered.
+ */
+function bookingScheduleEvents(): array
+{
+    app()->forgetInstance( Schedule::class );
+    app()->instance( Schedule::class, new Schedule() );
+
+    $provider = new BookingsServiceProvider( app() );
+    $register = ( new ReflectionClass( $provider ) )->getMethod( 'scheduleCommands' );
+
+    $register->setAccessible( true );
+    $register->invoke( $provider );
+
+    return app( Schedule::class )->events();
+}
+
+/**
+ * Gets the cron expression the provider scheduled each command at.
+ *
+ * @since 1.0.0
+ *
+ * @return array<string, string> The expression, keyed by artisan command name.
+ */
+function bookingSchedule(): array
+{
+    $registered = [];
+
+    foreach ( bookingScheduleEvents() as $event ) {
+        // The event's command is a whole shell invocation — the PHP binary, the
+        // artisan script, the command, and its arguments — so the name is the
+        // one part of it that looks like a command this package owns.
+        preg_match( '/bookings:[a-z-]+/', (string) $event->command, $matches );
+
+        $registered[ $matches[0] ?? (string) $event->command ] = $event->expression;
+    }
+
+    return $registered;
+}
+
+/**
+ * Backdates a row's timestamps, so a retention window can be tested against it.
+ *
+ * Written straight to the table rather than through the model, because
+ * `created_at` is what a prune reads and Eloquent overwrites it on save.
+ *
+ * @since 1.0.0
+ *
+ * @param  Model  $model  The row to age.
+ * @param  string  $age  A relative time to stamp it with.
+ *
+ * @return void
+ */
+function bookingRowAgedTo( Model $model, string $age ): void
+{
+    $model->newQuery()->whereKey( $model->getKey() )->update( [
+        'created_at' => CarbonImmutable::parse( $age ),
+        'updated_at' => CarbonImmutable::parse( $age ),
+    ] );
 }
 
 /**
