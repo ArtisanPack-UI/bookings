@@ -11,10 +11,12 @@ use ArtisanPackUI\Security\SecurityServiceProvider;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Foundation\Testing\RefreshDatabaseState;
 use Illuminate\Support\Facades\DB;
+use Livewire\LivewireServiceProvider;
 use Orchestra\Testbench\TestCase as BaseTestCase;
 use Throwable;
 
 use function class_basename;
+use function class_exists;
 use function config;
 use function env;
 use function filter_var;
@@ -89,12 +91,24 @@ abstract class TestCase extends BaseTestCase
         // every public request is put through — all three are hard dependencies
         // rather than suggestions, so the test application registers them the
         // same way a host application would.
-        return [
+        $providers = [
             CoreServiceProvider::class,
             HooksServiceProvider::class,
             SecurityServiceProvider::class,
-            BookingsServiceProvider::class,
         ];
+
+        // Livewire is a suggestion rather than a requirement, and the package
+        // registers its components only where it is installed. Registering it
+        // here on the same condition is what makes the widget tests exercise the
+        // real registration path rather than a test-only one — and what leaves
+        // the rest of the suite green in an environment without it.
+        if ( class_exists( LivewireServiceProvider::class ) ) {
+            $providers[] = LivewireServiceProvider::class;
+        }
+
+        $providers[] = BookingsServiceProvider::class;
+
+        return $providers;
     }
 
     /**

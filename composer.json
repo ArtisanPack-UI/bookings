@@ -55,6 +55,7 @@
     "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
     "friendsofphp/php-cs-fixer": "^3.75",
     "laravel/pint": "^1.26",
+    "livewire/livewire": "^3.6|^4.0",
     "orchestra/testbench": "^9.0|^10.0|^11.0",
     "pestphp/pest": "^3.8",
     "pestphp/pest-plugin-laravel": "^3.2"
@@ -67,7 +68,8 @@
     "artisanpack-ui/google": "Enables the Google Calendar sync driver.",
     "artisanpack-ui/livewire-ui-components": "Renders the admin and widget screens with x-artisanpack-* components. Falls back to plain HTML/DaisyUI when absent.",
     "artisanpack-ui/media-library": "Stores service and provider images. Plain image URLs are supported when absent.",
-    "artisanpack-ui/microsoft": "Enables the Outlook/Microsoft 365 calendar sync driver."
+    "artisanpack-ui/microsoft": "Enables the Outlook/Microsoft 365 calendar sync driver.",
+    "livewire/livewire": "Renders the public booking widget and the admin screens. The REST API, the iCal feeds, and the no-JavaScript booking form work without it."
   },
   "scripts": {
     "lint": [

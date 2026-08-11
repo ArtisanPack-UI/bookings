@@ -22,9 +22,9 @@ use ArtisanPackUI\Bookings\Http\Resources\ServiceProviderResource;
 use ArtisanPackUI\Bookings\Http\Resources\ServiceResource;
 use ArtisanPackUI\Bookings\Models\Service;
 use ArtisanPackUI\Bookings\Models\ServiceProvider;
+use ArtisanPackUI\Bookings\Support\BookingWindow;
 use ArtisanPackUI\Bookings\Support\Slot;
 use ArtisanPackUI\Bookings\Support\TimeRange;
-use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Routing\Controller;
@@ -32,8 +32,6 @@ use Illuminate\Validation\ValidationException;
 
 use function __;
 use function array_map;
-use function config;
-use function max;
 use function response;
 
 /**
@@ -184,22 +182,6 @@ class ServiceController extends Controller
      */
     protected function window( Service $service, string $month ): ?TimeRange
     {
-        $timezone = $service->timezone ?: ( config( 'artisanpack.bookings.timezone' ) ?: 'UTC' );
-
-        $start = CarbonImmutable::createFromFormat( '!Y-m', $month, $timezone )->utc();
-        $end   = $start->addMonth();
-
-        $now      = CarbonImmutable::now()->utc();
-        $earliest = $now->addMinutes( max( 0, (int) config( 'artisanpack.bookings.booking_window.min_advance_minutes', 0 ) ) );
-        $latest   = $now->addMinutes( max( 0, (int) config( 'artisanpack.bookings.booking_window.max_advance_minutes', 0 ) ) );
-
-        $start = $start->lessThan( $earliest ) ? $earliest : $start;
-        $end   = $end->greaterThan( $latest ) ? $latest : $end;
-
-        if ( $end->lessThanOrEqualTo( $start ) ) {
-            return null;
-        }
-
-        return new TimeRange( $start, $end );
+        return BookingWindow::month( $service, $month );
     }
 }

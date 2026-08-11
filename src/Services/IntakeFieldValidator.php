@@ -180,6 +180,33 @@ class IntakeFieldValidator
     }
 
     /**
+     * Gets the fields one version of a service's form asks, normalised.
+     *
+     * What the public widget renders its intake step from. It reads the fields
+     * through the validator rather than off `intake_schema` so that the form a
+     * customer is shown is the same list, in the same order, with the same idea
+     * of "required", that their answers will be judged against — including
+     * whatever `ap.bookings.intakeSchema` did to it. A widget reading the raw
+     * column would drift from the check the moment a subscriber touched it, and
+     * the drift shows up as a booking refused for a question nobody was asked.
+     *
+     * @since 1.0.0
+     *
+     * @param  Service  $service  The service whose form is wanted.
+     * @param  int  $version  The version to read.
+     *
+     * @throws UnexpectedValueException When a subscriber to
+     *                                  `ap.bookings.intakeSchema` returns
+     *                                  something that is not a schema.
+     *
+     * @return array<int, array{name: string, type: string, label: string, required: bool, options: array<int, string>, rules: array<int, string>}> The fields.
+     */
+    public function fieldsFor( Service $service, int $version ): array
+    {
+        return $this->fields( $this->schemaFor( $service, $version ) );
+    }
+
+    /**
      * Records a new version of a service's intake form.
      *
      * Appends rather than replaces, and moves the service's pointer to the row
