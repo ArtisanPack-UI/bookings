@@ -302,7 +302,7 @@ once, to whoever minted it. A customer who loses the link gets a new one issued.
 Three endpoints are mounted behind that token, and the `bookings.manage-token`
 middleware in front of them is the whole authentication layer:
 
-```
+```text
 GET  api/bookings/manage/{token}
 POST api/bookings/manage/{token}/cancel        { "reason": "optional" }
 POST api/bookings/manage/{token}/reschedule    { "start_time": "2026-06-01T19:00:00+00:00" }

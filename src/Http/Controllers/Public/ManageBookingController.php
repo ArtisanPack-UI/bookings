@@ -33,7 +33,6 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 
 use function __;
-use function config;
 use function response;
 
 /**
@@ -234,10 +233,15 @@ class ManageBookingController extends Controller
     /**
      * Determines whether the service is free at the time being asked for.
      *
-     * The window is the whole provider-local day rather than the length of the
-     * appointment, because a slot is only returned when it fits inside the
-     * window it was asked about — and a slot carrying the service's buffers runs
-     * past the end of a window cut to the booking's own duration.
+     * The window runs a day forward from the requested instant, which is the
+     * same window {@see BookingService::slotAt()} asks creation's question with
+     * — deliberately, because the two have to agree. The resolver drops any slot
+     * running past the end of the window it was given, and how long a slot runs
+     * for is not knowable from here: a provider can be attached to a service at
+     * a duration of their own, and `ap.bookings.slotDuration` can change it
+     * again. A window cut to the local day would therefore reject a late slot
+     * the booking endpoint would have taken happily, and the customer would be
+     * told a time is unavailable that the widget is still offering.
      *
      * @since 1.0.0
      *
@@ -254,8 +258,7 @@ class ManageBookingController extends Controller
             return false;
         }
 
-        $dayStart = $start->setTimezone( $this->timezoneFor( $booking ) )->startOfDay();
-        $window   = new TimeRange( $dayStart, $dayStart->addDay() );
+        $window = new TimeRange( $start, $start->addDay() );
 
         foreach ( $this->slots->resolve( $service, $booking->provider, $window ) as $slot ) {
             if ( $slot->period->start->equalTo( $start ) ) {
@@ -264,22 +267,6 @@ class ManageBookingController extends Controller
         }
 
         return false;
-    }
-
-    /**
-     * Gets the zone the day around a requested time is measured in.
-     *
-     * @since 1.0.0
-     *
-     * @param  Booking  $booking  The booking being moved.
-     *
-     * @return string The provider's zone, falling back to the service's and then
-     *                the installation's.
-     */
-    protected function timezoneFor( Booking $booking ): string
-    {
-        return $booking->provider?->timezone
-            ?: ( $booking->service?->timezone ?: ( (string) config( 'artisanpack.bookings.timezone' ) ?: 'UTC' ) );
     }
 
     /**
