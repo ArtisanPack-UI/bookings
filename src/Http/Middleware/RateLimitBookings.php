@@ -75,22 +75,27 @@ class RateLimitBookings
         'manage_get'   => 20,
         'manage_token' => 60,
         'ical'         => 30,
+        'ical_token'   => 30,
     ];
 
     /**
      * The buckets counted per manage token rather than per caller.
      *
-     * The manage endpoints are guarded twice over, and the two limits answer
-     * different questions. The per-IP bucket bounds one machine hammering the
-     * path; this one bounds one *booking* being read at that rate however many
-     * addresses it comes from, which is what a leaked link being passed around
-     * looks like.
+     * The manage endpoints and the provider calendar feed are guarded twice
+     * over, and the two limits answer different questions. The per-IP bucket
+     * bounds one machine hammering the path; these bound one *booking* or one
+     * *feed* being read at that rate however many addresses it comes from, which
+     * is what a leaked link being passed around looks like.
+     *
+     * A feed URL leaks the way a manage link does, and then some: it is pasted
+     * into a calendar client and sits in its settings for years, syncing to
+     * whatever else that account is signed into.
      *
      * @since 1.0.0
      *
      * @var array<int, string>
      */
-    protected const TOKEN_KEYED = [ 'manage_token' ];
+    protected const TOKEN_KEYED = [ 'manage_token', 'ical_token' ];
 
     /**
      * The length of one bucket's window, in seconds.

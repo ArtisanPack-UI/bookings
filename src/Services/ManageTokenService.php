@@ -17,15 +17,12 @@ namespace ArtisanPackUI\Bookings\Services;
 
 use ArtisanPackUI\Bookings\Models\Booking;
 use ArtisanPackUI\Bookings\Models\Scopes\BelongsToSiteScope;
+use ArtisanPackUI\Bookings\Services\Concerns\MintsOpaqueTokens;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
-use function bin2hex;
 use function doAction;
-use function hash;
-use function hash_equals;
 use function max;
-use function random_bytes;
 
 /**
  * The one place a manage token is minted, hashed, and checked.
@@ -33,33 +30,22 @@ use function random_bytes;
  * A manage token is the customer's whole credential. There is no account behind
  * a public booking — the link in the confirmation email is what proves the
  * person cancelling is the person who booked — so the token is the only thing
- * standing between a stranger and somebody else's appointment. Three properties
- * follow from that, and all three live here rather than at each call site.
+ * standing between a stranger and somebody else's appointment.
  *
- * **It is unguessable.** The token is 32 bytes from the CSPRNG rendered as 64
- * hexadecimal characters. Nothing about it is derived from the booking: not the
- * reference, not the email, not the time it was created. A token that encoded
- * any of those would let somebody who knows one booking enumerate the rest.
+ * {@see MintsOpaqueTokens} carries the three properties that follow from that,
+ * and carries them for the provider calendar feed as well, so the two credential
+ * schemes cannot drift apart: the token is 32 CSPRNG bytes as 64 hexadecimal
+ * characters and derived from nothing about the booking, `bookings.manage_token_hash`
+ * holds `sha256(token)` and nothing else, and the comparison is `hash_equals()`.
  *
- * **The database never holds the token itself.** `bookings.manage_token_hash`
- * stores `sha256(token)` and nothing else, so a leaked row — a backup, a
- * read-only replica, an admin API that forgot `$hidden` — hands over a hash that
- * cannot be turned back into a working link. There is deliberately no way to
- * recover the plain token from a saved booking: it exists in the confirmation
- * email and the manage URL, and it is returned exactly once, by whoever minted
- * it. A customer who loses the link gets a new one issued, not the old one back.
+ * What is specific to a manage token is what this class adds: there is
+ * deliberately no way to recover the plain value from a saved booking. It exists
+ * in the confirmation email and the manage URL, and it is returned exactly once,
+ * by whoever minted it. A customer who loses the link gets a new one issued, not
+ * the old one back — see {@see self::issueFor()} and {@see self::reissueAll()}.
  *
- * A plain SHA-256 is the right primitive here and a password hash would not be.
- * The input is 256 bits of CSPRNG output rather than something a person chose,
- * so there is no dictionary to run and nothing for a work factor to slow down —
- * while the cost of one would be paid on a lookup that happens on every manage
- * request, and, worse, would rule out finding the booking by its hash at all.
- *
- * **Comparison is timing-safe.** {@see self::verify()} compares with
- * `hash_equals()`, never `==`. The index lookup in {@see self::findBooking()}
- * gets the candidate row; the constant-time compare is what decides whether the
- * token is right, so a caller cannot learn a hash prefix by measuring how long
- * a wrong token takes to be rejected.
+ * The lookup that makes that usable is {@see self::findBooking()}: an indexed
+ * match on the hash, confirmed in constant time before the row is handed back.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
@@ -68,17 +54,7 @@ use function random_bytes;
  */
 class ManageTokenService
 {
-    /**
-     * The number of random bytes behind a token.
-     *
-     * Rendered as hex, so the token itself is twice this many characters — 64,
-     * which is what the `char(64)` column and the widget URL are sized for.
-     *
-     * @since 1.0.0
-     *
-     * @var int
-     */
-    public const TOKEN_BYTES = 32;
+    use MintsOpaqueTokens;
 
     /**
      * How many bookings a reissue rotates per query by default.
@@ -88,56 +64,6 @@ class ManageTokenService
      * @var int
      */
     public const REISSUE_CHUNK_SIZE = 500;
-
-    /**
-     * Mints a token and returns the plain value alongside its hash.
-     *
-     * The plain token is returned here and nowhere else. Store the hash; put the
-     * plain value in the confirmation email and the manage URL, and then forget
-     * it.
-     *
-     * @since 1.0.0
-     *
-     * @return array{token: string, hash: string} The plain token and its hash.
-     */
-    public function mint(): array
-    {
-        $token = bin2hex( random_bytes( self::TOKEN_BYTES ) );
-
-        return [
-            'token' => $token,
-            'hash'  => $this->hash( $token ),
-        ];
-    }
-
-    /**
-     * Hashes a plain token the way the column stores it.
-     *
-     * @since 1.0.0
-     *
-     * @param  string  $token  The plain manage token.
-     *
-     * @return string The SHA-256 hash of the token.
-     */
-    public function hash( string $token ): string
-    {
-        return hash( 'sha256', $token );
-    }
-
-    /**
-     * Checks a plain token against a stored hash in constant time.
-     *
-     * @since 1.0.0
-     *
-     * @param  string  $token  The plain manage token presented by the caller.
-     * @param  string  $hash  The hash held in `bookings.manage_token_hash`.
-     *
-     * @return bool True when the token is the one the hash was made from.
-     */
-    public function verify( string $token, string $hash ): bool
-    {
-        return hash_equals( $hash, $this->hash( $token ) );
-    }
 
     /**
      * Checks a plain token against a booking's stored hash.

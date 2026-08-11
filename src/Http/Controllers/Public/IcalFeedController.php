@@ -18,6 +18,7 @@ namespace ArtisanPackUI\Bookings\Http\Controllers\Public;
 use ArtisanPackUI\Bookings\Http\Controllers\Public\Concerns\ResolvesManagedBooking;
 use ArtisanPackUI\Bookings\Models\ServiceProvider;
 use ArtisanPackUI\Bookings\Services\IcalFeedService;
+use ArtisanPackUI\Bookings\Services\IcalTokenService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Routing\Controller;
@@ -79,32 +80,35 @@ class IcalFeedController extends Controller
      * @since 1.0.0
      *
      * @param  IcalFeedService  $feeds  The service that builds calendars and stamps.
+     * @param  IcalTokenService  $tokens  The service that owns feed token lookups.
      */
-    public function __construct( protected IcalFeedService $feeds )
-    {
+    public function __construct(
+        protected IcalFeedService $feeds,
+        protected IcalTokenService $tokens,
+    ) {
     }
 
     /**
      * Serves a provider's diary.
      *
-     * The address is the provider's public slug, which is exactly as secret as
-     * the widget that lists it — which is to say not at all. What the feed
-     * carries is bounded accordingly: service names and times, and the customer
-     * only when `public.ical.provider_feed_details` is set to `full`. See
-     * {@see IcalFeedService::providerFeedNamesCustomer()}.
+     * The address is a token issued to that provider and to nobody else, which
+     * is what lets the feed carry the customer's name and email at all. It was
+     * the provider's slug once — and a slug is published by
+     * `GET api/bookings/services/{slug}/providers`, so that URL was one anybody
+     * who could read the booking widget could construct.
      *
      * @since 1.0.0
      *
      * @param  Request  $request  The incoming request.
-     * @param  string  $slug  The provider's slug.
+     * @param  string  $token  The provider's feed token.
      *
-     * @throws NotFoundHttpException When no active provider answers to the slug.
+     * @throws NotFoundHttpException When the token addresses no provider's feed.
      *
      * @return Response The calendar, or an empty 304.
      */
-    public function provider( Request $request, string $slug ): Response
+    public function provider( Request $request, string $token ): Response
     {
-        $provider = $this->resolveProvider( $slug );
+        $provider = $this->resolveProvider( $token );
         $window   = $this->feeds->window();
         $etag     = $this->feeds->providerStamp( $provider, $window );
 
@@ -152,30 +156,29 @@ class IcalFeedController extends Controller
     }
 
     /**
-     * Gets the provider a slug names, or gives up.
+     * Gets the provider a feed token belongs to, or gives up.
      *
-     * Inactive providers 404 rather than serving an empty calendar. A feed that
-     * answered with no events would be indistinguishable from a quiet week, and
-     * a client would keep polling a provider who has left indefinitely.
+     * Every failure is the same 404 with the same message: an unknown token, one
+     * belonging to a provider who has been deactivated, one whose feed has been
+     * revoked, and one belonging to another site are indistinguishable from
+     * outside. Anything more specific would confirm which guesses were closer,
+     * and the token is the whole credential.
      *
-     * The 404 is raised here rather than by `firstOrFail()`, whose message names
-     * the model class — an internal detail otherwise handed to anybody who
-     * mistypes a slug.
+     * A provider who has left 404s rather than serving an empty calendar, which
+     * would be indistinguishable from a quiet week — their subscribers would go
+     * on polling a diary nobody maintains, showing nothing, forever.
      *
      * @since 1.0.0
      *
-     * @param  string  $slug  The slug from the request.
+     * @param  string  $token  The feed token from the request.
      *
-     * @throws NotFoundHttpException When no active provider answers to the slug.
+     * @throws NotFoundHttpException When the token addresses no feed.
      *
      * @return ServiceProvider The provider.
      */
-    protected function resolveProvider( string $slug ): ServiceProvider
+    protected function resolveProvider( string $token ): ServiceProvider
     {
-        $provider = ServiceProvider::query()
-            ->active()
-            ->where( 'slug', $slug )
-            ->first();
+        $provider = $this->tokens->findProvider( $token );
 
         if ( ! $provider instanceof ServiceProvider ) {
             throw new NotFoundHttpException( __( 'No calendar was found for that address.' ) );

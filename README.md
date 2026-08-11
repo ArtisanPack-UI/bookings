@@ -352,7 +352,7 @@ Two subscribable calendars, so a provider can watch their diary from Apple
 Calendar, Google Calendar, or Outlook without anybody connecting an account:
 
 ```text
-GET bookings/ical/providers/{slug}.ics      # a provider's diary
+GET bookings/ical/providers/{token}.ics     # a provider's diary
 GET bookings/ical/customers/{token}.ics     # the booking a manage token stands for
 ```
 
@@ -382,21 +382,66 @@ A feed carries the recent past and the booked future rather than the archive.
 `public.ical.past_days` (30) and `future_days` (365) set the window, and
 `max_age` (300) says how long a client may hold the answer.
 
-**A provider feed is addressed by the provider's slug, and that slug is published
-by `GET api/bookings/services/{slug}/providers`.** The URL is therefore not a
-secret, and the shipped feed is bounded to match: service names, times, and the
-booking reference, and nothing about the customer. Setting
-`public.ical.provider_feed_details` to `full` adds the customer's name and email —
-which is a directory of everybody who has ever booked, behind an address anybody
-who can read the booking widget can construct. Only turn it on when the feeds are
-not reachable from the internet.
+#### The provider feed token
+
+A provider feed is addressed by a token issued to that provider and to nobody
+else. It has to be: the feed carries the customer's name and email, and the only
+other thing that could address it is the provider's slug — which
+`GET api/bookings/services/{slug}/providers` publishes, making the URL something
+anybody who can read the booking widget could construct.
+
+Nothing mints a token automatically. A provider has no feed until somebody asks
+for one, and a provider without one 404s:
+
+```bash
+php artisan bookings:ical-token ada-lovelace     # by slug, or by id
+php artisan bookings:ical-token ada-lovelace --revoke
+```
+
+The URL it prints is shown once and cannot be recovered. Only `sha256(token)` is
+stored, in `service_providers.ical_token_hash`, the way `bookings.manage_token_hash`
+holds a manage token — so a leaked backup or a read-only replica hands over
+something that cannot be turned back into a working subscription.
+
+One URL, any number of devices: the same address can be pasted into a phone, a
+laptop, and a desktop client, and they all keep working. What cannot be done is
+*look it up again* — so the URL is worth keeping somewhere the provider can reach
+it, not just pasting once.
+
+Rotate when the URL has been lost or you think it has been seen by somebody it
+should not have been. **Rotation is not free**: running the command again for a
+provider who already has a feed replaces the token, and every calendar client
+subscribed to the old URL stops updating at that moment. It does so silently,
+because a subscribed feed that starts 404ing does not announce itself — so after
+a rotation every one of that provider's clients has to be given the new URL. The
+command warns and asks before it does this; `--force` skips the prompt.
+
+`ap.bookings.icalTokenIssued` fires with the new plain token — the only moment it
+is readable — so an application with mail wired up can deliver the subscription
+URL itself:
+
+```php
+addAction( 'ap.bookings.icalTokenIssued', function ( ServiceProvider $provider, string $token ) {
+    Mail::to( $provider->email )->send( new CalendarFeedIssued(
+        app( IcalTokenService::class )->feedUrl( $token ),
+    ) );
+} );
+```
+
+Feed lookups go through `Services\IcalTokenService`, which shares its primitives
+with `ManageTokenService` — 32 CSPRNG bytes as 64 hex characters, `sha256` in the
+column, `hash_equals()` on the way back — so the two credential schemes cannot
+drift apart. Unknown tokens, revoked feeds, rotated tokens, deactivated providers,
+and tokens belonging to another site all answer with the same 404 and the same
+message.
 
 The customer feed is the manage token's, guarded by the same
 `bookings.manage-token` middleware as the manage endpoints, and carries the one
 booking that token stands for — a token discloses no more through its calendar
 than through the link it came in on. It is limited per address *and* per token,
 for the reason the manage read is: a feed URL sits in a calendar client's settings
-for years, which is exactly how a link escapes.
+for years, which is exactly how a link escapes. The provider feed is limited the
+same way, per address and per token (`public.rate_limits.ical` and `ical_token`).
 
 Rescheduling moves an event a subscriber already has rather than leaving a
 duplicate behind: the `UID` is built from `booking_number`, which never changes.
@@ -639,9 +684,11 @@ php artisan schedule:work    # or the usual cron entry for schedule:run
 | `bookings:prune-webhook-deliveries` | Daily, 03:20 | Removes settled delivery attempts past their retention window. |
 | `bookings:prune-calendar-events` | Daily, 03:30 | Removes calendar mappings for bookings long over. |
 
-`bookings:reissue-detached-manage-tokens` is never scheduled. It invalidates
-every manage link the package has ever sent, which is something you do in
-response to a leak rather than something a clock should decide.
+`bookings:reissue-detached-manage-tokens` and `bookings:ical-token` are never
+scheduled. The first invalidates every manage link the package has ever sent; the
+second invalidates one provider's calendar subscriptions and prints a URL that
+exists nowhere else. Both are things you do in response to something, in front of
+the output, rather than things a clock should decide.
 
 Every one is registered `withoutOverlapping()`. None of them needs it for
 correctness — a reminder is claimed in the notification log before it is sent,
@@ -766,6 +813,8 @@ Actions fire; filters transform a value and must return one.
 | `ap.bookings.series.editApplying` | action | `(BookingSeries $series, string $scope, array $changes)` |
 | `ap.bookings.manageTokenReissued` | action | `(Booking $booking, string $plainToken)` |
 | `ap.bookings.manageTokensReissued` | action | `(int $count)` |
+| `ap.bookings.icalTokenIssued` | action | `(ServiceProvider $provider, string $plainToken)` |
+| `ap.bookings.icalTokenRevoked` | action | `(ServiceProvider $provider)` |
 | `ap.bookings.availableProviders` | filter | `(array $providers, Service $service, CarbonImmutable $start)` |
 | `ap.bookings.roundRobin.selectProvider` | filter | `(?ServiceProvider $selected, array $candidates, Booking $draft)` |
 | `ap.bookings.intakeSchema` | filter | `(array $schema, Service $service, int $version)` |
@@ -804,6 +853,14 @@ fire `ap.bookings.created` and `ap.bookings.cancelled` once each, per occurrence
 at the only moment it is readable. It is there so an emergency rotation can be
 followed by new links reaching customers; do not log it, and do not put it
 anywhere the hash was kept out of.
+
+`ap.bookings.icalTokenIssued` carries a live secret for the same reason: the plain
+calendar feed token, at the only moment it is readable, which is the whole
+credential behind a provider's diary. It fires on a rotation as well as on a first
+issue, and by the time it does the provider's previous token is already dead — so
+a subscriber that delivers the new subscription URL is not being helpful, it is
+the only thing standing between the provider and a feed that has silently stopped
+updating.
 
 `ap.bookings.intakeSchema` runs against the version a booking was captured with
 rather than the service's current form, and its output is never written back. A

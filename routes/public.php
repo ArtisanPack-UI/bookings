@@ -96,17 +96,21 @@ Route::prefix( 'api/' . trim( (string) config( 'artisanpack.bookings.public.rout
 Route::prefix( trim( (string) config( 'artisanpack.bookings.public.route_prefix', 'bookings' ), '/' ) . '/ical' )
     ->name( 'artisanpack.bookings.ical.' )
     ->group( static function (): void {
-        Route::get( 'providers/{slug}.ics', [ IcalFeedController::class, 'provider' ] )
-            ->middleware( 'bookings.rate-limit:ical' )
-            ->where( 'slug', '[A-Za-z0-9._-]+' )
+        // Addressed by a token rather than by the provider's slug. The slug is
+        // published by `GET api/bookings/services/{slug}/providers`, so a slug
+        // route is a diary anybody who can read the booking widget can
+        // construct. Limited per address and per token for the reason the
+        // customer feed is: one bucket bounds a machine walking the path, the
+        // other bounds one leaked URL fetched from everywhere at once.
+        Route::get( 'providers/{token}.ics', [ IcalFeedController::class, 'provider' ] )
+            ->middleware( [ 'bookings.rate-limit:ical', 'bookings.rate-limit:ical_token' ] )
+            ->where( 'token', '[0-9a-f]{64}' )
             ->name( 'provider' );
 
-        // Limited twice for the reason the manage read is: one bucket bounds a
-        // machine walking the path, the other bounds one link being fetched from
-        // everywhere at once — and a feed URL leaks the way a manage link does,
-        // by sitting in a calendar client's settings for years. Both limiters are
-        // declared before the resolver, so a guess costs a cache read rather than
-        // an indexed lookup.
+        // Limited twice for the same reason, and with the resolver declared
+        // last: middleware runs in declaration order, so written the other way
+        // round each guess would cost an indexed lookup before anything counted
+        // how many guesses had been made.
         Route::get( 'customers/{token}.ics', [ IcalFeedController::class, 'customer' ] )
             ->middleware( [
                 'bookings.rate-limit:ical',

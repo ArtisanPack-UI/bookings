@@ -137,6 +137,21 @@ function defineBookingMigrationTests(): void
         $this->assertErasureColumnsExist();
     } );
 
+    it( 'keeps a provider feed token unique and lets providers have none', function (): void {
+        // Nullable and unique together: a provider has no feed until one is
+        // minted, so the column has to admit many nulls while admitting no two
+        // providers sharing a token. MySQL, Postgres, and sqlite all treat NULLs
+        // as distinct in a unique index, which is the behaviour being relied on.
+        $hash = hash( 'sha256', 'a-feed-token' );
+
+        $this->insertProvider( [ 'ical_token_hash' => null ] );
+        $this->insertProvider( [ 'ical_token_hash' => null ] );
+        $this->insertProvider( [ 'ical_token_hash' => $hash ] );
+
+        expect( fn () => DB::transaction( fn () => $this->insertProvider( [ 'ical_token_hash' => $hash ] ) ) )
+            ->toThrow( QueryException::class );
+    } );
+
     it( 'refuses a second active booking in the same provider slot', function (): void {
         // The race the round-robin assigner has to survive: two requests taking
         // the same slot at the same instant. An advisory lock is the first line

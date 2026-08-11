@@ -322,8 +322,9 @@ return [
     |--------------------------------------------------------------------------
     |
     | The route prefix for the customer-facing booking widget and the rate
-    | limits applied to it. The "post" and "manage_get" limits are per IP per
-    | minute, "manage_token" is per manage token, and "ical" is per IP.
+    | limits applied to it. The "post", "manage_get", and "ical" limits are per
+    | IP per minute; "manage_token" is per manage token and "ical_token" is per
+    | calendar feed token.
     |
     | "ical" configures the subscribable calendars at "{route_prefix}/ical/…".
     |
@@ -338,14 +339,11 @@ return [
     | seconds. Short enough that a booking made now appears in the next poll;
     | long enough to absorb a client fetching the same URL from two places.
     |
-    | "provider_feed_details" decides what a provider feed says about the person
-    | who booked. **Leave it on "busy" unless the feed URLs are not reachable
-    | from the internet.** A provider feed is addressed by the provider's slug,
-    | and that slug is published by "GET api/bookings/services/{slug}/providers"
-    | — so the address is not a secret, and "full" puts every customer's name and
-    | email behind a URL anybody who can read the booking widget can construct.
-    | On "busy" the feed still carries the service name and the times, which is
-    | the diary a provider subscribed for.
+    | A provider feed is addressed by a token rather than by the provider's slug,
+    | so the URL is unguessable and the feed carries the customer's name and
+    | email — it is the provider's own diary, behind an address only they have.
+    | Mint one with "php artisan bookings:ical-token {provider}"; there is no
+    | setting for it, because a token is not configuration.
     |
     */
     'public' => [
@@ -355,12 +353,12 @@ return [
             'manage_get'   => 20,
             'manage_token' => 60,
             'ical'         => 30,
+            'ical_token'   => 30,
         ],
         'ical'         => [
-            'past_days'             => 30,
-            'future_days'           => 365,
-            'max_age'               => 300,
-            'provider_feed_details' => 'busy',
+            'past_days'   => 30,
+            'future_days' => 365,
+            'max_age'     => 300,
         ],
     ],
 

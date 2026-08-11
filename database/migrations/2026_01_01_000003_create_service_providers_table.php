@@ -52,6 +52,13 @@ return new class extends Migration {
             $table->integer( 'sort_order' )->default( 0 );
             $table->boolean( 'is_active' )->default( true );
             $table->json( 'metadata' )->nullable();
+
+            // The provider's calendar feed credential, hashed the way
+            // bookings.manage_token_hash is. Nullable because a provider has no
+            // feed until somebody asks for one — and because only the hash is
+            // stored, minting on create would throw the plain token away
+            // unread, leaving a credential nobody can ever use.
+            $table->char( 'ical_token_hash', 64 )->nullable()->unique();
             $table->timestamp( 'pii_erased_at' )->nullable();
             $table->timestamps();
             $table->softDeletes();
