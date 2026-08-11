@@ -225,6 +225,12 @@ class IcalFeedService
     /**
      * Builds the calendar a provider subscribes to.
      *
+     * The customer is named in it. That is only defensible because the feed is
+     * addressed by an unguessable token rather than by the provider's slug — the
+     * slug is published by the public providers endpoint, and a customer
+     * directory behind an address anybody can construct is a different thing
+     * entirely.
+     *
      * @since 1.0.0
      *
      * @param  ServiceProvider  $provider  The provider whose feed is being served.
@@ -234,11 +240,10 @@ class IcalFeedService
      */
     public function providerCalendar( ServiceProvider $provider, Collection $bookings ): string
     {
-        $calendar      = $this->calendar( $provider->name, $provider->timezone );
-        $namesCustomer = $this->providerFeedNamesCustomer();
+        $calendar = $this->calendar( $provider->name, $provider->timezone );
 
         foreach ( $bookings as $booking ) {
-            $this->addEvent( $calendar, $booking, $this->providerSummary( $booking ), $namesCustomer );
+            $this->addEvent( $calendar, $booking, $this->providerSummary( $booking ), true );
         }
 
         return $calendar->serialize();
@@ -268,30 +273,6 @@ class IcalFeedService
         $this->addEvent( $calendar, $booking, $this->customerSummary( $booking ), false );
 
         return $calendar->serialize();
-    }
-
-    /**
-     * Determines whether provider feeds may name the customer.
-     *
-     * They may not, unless an installation says so. A provider feed is addressed
-     * by the provider's slug, and that slug is published by
-     * `GET api/bookings/services/{slug}/providers` — so the URL is not a secret,
-     * and anybody who can read the widget can read the feed. Putting the
-     * customer's name and email behind an address like that is a directory of
-     * everybody who has ever booked, available to whoever asks.
-     *
-     * What is left is still the provider's diary — service names and times — and
-     * that is the trade the shipped route makes. An installation that serves the
-     * feed from somewhere it controls, or that has no customers whose identity is
-     * sensitive, can set `public.ical.provider_feed_details` to `full`.
-     *
-     * @since 1.0.0
-     *
-     * @return bool True when the customer's details may appear in a provider feed.
-     */
-    public function providerFeedNamesCustomer(): bool
-    {
-        return 'full' === config( 'artisanpack.bookings.public.ical.provider_feed_details', 'busy' );
     }
 
     /**
@@ -429,13 +410,11 @@ class IcalFeedService
      */
     protected function providerSummary( Booking $booking ): string
     {
-        $service = (string) ( $booking->service?->name ?? __( 'Booking' ) );
-
-        if ( ! $this->providerFeedNamesCustomer() ) {
-            return $service;
-        }
-
-        return sprintf( '%s — %s', $service, $booking->customer_name );
+        return sprintf(
+            '%s — %s',
+            (string) ( $booking->service?->name ?? __( 'Booking' ) ),
+            $booking->customer_name,
+        );
     }
 
     /**

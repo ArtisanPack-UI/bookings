@@ -22,6 +22,7 @@ namespace ArtisanPackUI\Bookings\Providers;
 
 use ArtisanPackUI\Bookings\Bookings;
 use ArtisanPackUI\Bookings\Console\Commands\CompletePastBookingsCommand;
+use ArtisanPackUI\Bookings\Console\Commands\IcalTokenCommand;
 use ArtisanPackUI\Bookings\Console\Commands\PollAppleCalendarsCommand;
 use ArtisanPackUI\Bookings\Console\Commands\PruneCalendarEventsCommand;
 use ArtisanPackUI\Bookings\Console\Commands\PruneNotificationLogCommand;
@@ -58,6 +59,7 @@ use ArtisanPackUI\Bookings\Notifications\Sms\NullSmsDriver;
 use ArtisanPackUI\Bookings\Services\AvailabilityService;
 use ArtisanPackUI\Bookings\Services\BookingService;
 use ArtisanPackUI\Bookings\Services\IcalFeedService;
+use ArtisanPackUI\Bookings\Services\IcalTokenService;
 use ArtisanPackUI\Bookings\Services\IntakeFieldValidator;
 use ArtisanPackUI\Bookings\Services\ManageTokenService;
 use ArtisanPackUI\Bookings\Services\NotificationService;
@@ -204,6 +206,12 @@ class BookingsServiceProvider extends ServiceProvider
         // actions that call it.
         $this->app->singleton( IcalFeedService::class );
 
+        // Every provider feed token is minted, hashed, and checked by this one
+        // object, for the reason ManageTokenService is a singleton: rebinding it
+        // replaces the credential scheme behind the calendar feeds everywhere at
+        // once rather than in each of the places that happens to mint one.
+        $this->app->singleton( IcalTokenService::class );
+
         // Every occurrence a series materialises is written through
         // BookingService, so the two resolve the same instance and a rebinding
         // of the booking service reaches recurring bookings too.
@@ -329,6 +337,7 @@ class BookingsServiceProvider extends ServiceProvider
         if ( $this->app->runningInConsole() ) {
             $this->commands( [
                 CompletePastBookingsCommand::class,
+                IcalTokenCommand::class,
                 PollAppleCalendarsCommand::class,
                 PruneCalendarEventsCommand::class,
                 PruneNotificationLogCommand::class,

@@ -159,6 +159,23 @@ final class HookRegistry
         'ap.bookings.manageTokensReissued' => [ 'type' => 'action', 'issues' => '#16' ],
 
         /*
+        | Calendar feed tokens — #82.
+        |
+        | icalTokenIssued  ( ServiceProvider $provider, string $token )
+        |                  $token is a LIVE SECRET — the plain feed token, at the only
+        |                  moment it is readable, and the whole credential behind a
+        |                  provider's calendar feed. The hook exists so an application
+        |                  can deliver the new subscription URL to the provider. Do not
+        |                  log it, and do not put it anywhere the hash was deliberately
+        |                  kept out of. Fires on a rotation as well as a first issue,
+        |                  and the previous token is already dead by the time it does.
+        | icalTokenRevoked ( ServiceProvider $provider )
+        |                  The feed 404s from here on. Nothing is minted to replace it.
+        */
+        'ap.bookings.icalTokenIssued'      => [ 'type' => 'action', 'issues' => '#82' ],
+        'ap.bookings.icalTokenRevoked'     => [ 'type' => 'action', 'issues' => '#82' ],
+
+        /*
         | Calendar sync — #39, #40, #41, #43, #44. Pending: no sync surface yet.
         |
         | calendarSync.providers          ( array<string, CalendarSyncDriver> $drivers ): array<string, CalendarSyncDriver>

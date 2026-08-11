@@ -61,6 +61,7 @@ use function sprintf;
  * @property int $sort_order
  * @property bool $is_active
  * @property array<string, mixed>|null $metadata
+ * @property string|null $ical_token_hash
  * @property \Illuminate\Support\Carbon|null $pii_erased_at
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
@@ -75,6 +76,13 @@ class ServiceProvider extends Model
 
     /**
      * The attributes that are mass assignable.
+     *
+     * `ical_token_hash` is absent on purpose, for the reason
+     * {@see Booking::$fillable} leaves `manage_token_hash` off: a caller who
+     * could set the hash directly could set it to the hash of a token they
+     * already know, which is the whole attack the hashing exists to prevent.
+     * Feed tokens are minted, never assigned — see
+     * {@see \ArtisanPackUI\Bookings\Services\IcalTokenService}.
      *
      * See {@see Service::$fillable} for why `site_id` and `pii_erased_at` are
      * not on this list.
@@ -122,6 +130,19 @@ class ServiceProvider extends Model
         'metadata'                     => 'array',
         'pii_erased_at'                => 'datetime',
     ];
+
+    /**
+     * The attributes hidden from array and JSON output.
+     *
+     * The hash is not the feed token, but it is the only secret the row holds,
+     * and an admin API that serialised a provider wholesale would publish it to
+     * anybody who could read the response.
+     *
+     * @since 1.0.0
+     *
+     * @var list<string>
+     */
+    protected $hidden = [ 'ical_token_hash' ];
 
     /**
      * Gets the services this provider offers.
