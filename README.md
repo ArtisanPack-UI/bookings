@@ -299,6 +299,39 @@ row hands over a hash that cannot be turned back into a working link. There is
 deliberately no way to recover a plain token from a saved booking: it is returned
 once, to whoever minted it. A customer who loses the link gets a new one issued.
 
+Three endpoints are mounted behind that token, and the `bookings.manage-token`
+middleware in front of them is the whole authentication layer:
+
+```
+GET  api/bookings/manage/{token}
+POST api/bookings/manage/{token}/cancel        { "reason": "optional" }
+POST api/bookings/manage/{token}/reschedule    { "start_time": "2026-06-01T19:00:00+00:00" }
+```
+
+An unknown token, a malformed one, and a token belonging to another site all
+answer with the same 404 and the same message — anything more specific tells a
+guesser which guesses were closer. Reads are limited per address *and* per token
+(`public.rate_limits.manage_get` and `manage_token`); writes share the `post`
+bucket.
+
+Both writes go through `BookingService`, so `ap.bookings.cancelled` and
+`ap.bookings.rescheduled` fire with `actor: customer`, and the notifications,
+webhooks, and calendar sync hanging off them behave as they do everywhere else.
+`cancellation.allowed` and `cancellation.min_advance_minutes` govern what the link
+may still do; the read reports that as `meta`, which is what a widget should draw
+its buttons from rather than working the policy out again:
+
+```json
+{
+    "data": { "id": 41, "status": "confirmed", "start_time": "2026-06-01T15:00:00+00:00" },
+    "meta": { "can_cancel": true, "can_reschedule": true, "changes_allowed_until": "2026-05-31T15:00:00+00:00" }
+}
+```
+
+A reschedule is checked against availability as it stands now rather than against
+the slot list the page was drawn from, and answers 409 when somebody else took the
+slot first.
+
 When a token has leaked — a forwarded confirmation, a mail archive, a referrer
 header — rotate every one of them:
 

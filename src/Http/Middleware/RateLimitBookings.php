@@ -27,7 +27,9 @@ use function array_key_exists;
 use function array_keys;
 use function config;
 use function implode;
+use function in_array;
 use function is_numeric;
+use function is_string;
 use function sha1;
 use function sprintf;
 
@@ -41,7 +43,7 @@ use function sprintf;
  * raise for its own traffic, in one place, instead of being spelled out at each
  * route.
  *
- * **The buckets are keyed by the client IP**, which means they are only as
+ * **Most buckets are keyed by the client IP**, which means they are only as
  * truthful as `Request::ip()`. Behind a reverse proxy or a CDN, an application
  * that has not configured Laravel's `TrustedProxies` middleware sees every
  * request as coming from the proxy — so every customer in the world shares one
@@ -74,6 +76,21 @@ class RateLimitBookings
         'manage_token' => 60,
         'ical'         => 30,
     ];
+
+    /**
+     * The buckets counted per manage token rather than per caller.
+     *
+     * The manage endpoints are guarded twice over, and the two limits answer
+     * different questions. The per-IP bucket bounds one machine hammering the
+     * path; this one bounds one *booking* being read at that rate however many
+     * addresses it comes from, which is what a leaked link being passed around
+     * looks like.
+     *
+     * @since 1.0.0
+     *
+     * @var array<int, string>
+     */
+    protected const TOKEN_KEYED = [ 'manage_token' ];
 
     /**
      * The length of one bucket's window, in seconds.
@@ -122,12 +139,39 @@ class RateLimitBookings
 
         $response = $next( $request );
 
-        $response->headers->add( [
-            'X-RateLimit-Limit'     => (string) $limit,
-            'X-RateLimit-Remaining' => (string) $this->limiter->remaining( $key, $limit ),
-        ] );
+        $this->report( $response, $limit, $this->limiter->remaining( $key, $limit ) );
 
         return $response;
+    }
+
+    /**
+     * Puts the tightest allowance the request passed through on the response.
+     *
+     * A route may be guarded by more than one of these — the manage read carries
+     * a per-address bucket and a per-token one — and each of them would
+     * otherwise overwrite the last one's headers on the way out. Whichever
+     * happened to be outermost would be the number a widget backed off on, and
+     * pacing against the roomier of two buckets is how a client walks into a 429
+     * it was told it had room for.
+     *
+     * @since 1.0.0
+     *
+     * @param  Response  $response  The response on its way out.
+     * @param  int  $limit  This bucket's size.
+     * @param  int  $remaining  What is left in this bucket.
+     *
+     * @return void
+     */
+    protected function report( Response $response, int $limit, int $remaining ): void
+    {
+        $reported = $response->headers->get( 'X-RateLimit-Remaining' );
+
+        if ( null !== $reported && (int) $reported <= $remaining ) {
+            return;
+        }
+
+        $response->headers->set( 'X-RateLimit-Limit', (string) $limit );
+        $response->headers->set( 'X-RateLimit-Remaining', (string) $remaining );
     }
 
     /**
@@ -172,7 +216,14 @@ class RateLimitBookings
      * The address is hashed rather than stored plainly. Cache keys are read by
      * anybody who can see the store — a shared Redis, a log line, a dashboard —
      * and an IP address is personal data in every regime this package is likely
-     * to be deployed under.
+     * to be deployed under. A manage token is hashed for a stronger reason: it
+     * is the customer's entire credential, and a cache key holding the plain
+     * value would put a working link in every one of those places.
+     *
+     * A token-keyed bucket on a request carrying no token falls back to the
+     * address rather than counting every such request together — the shared key
+     * a missing token would otherwise produce is one bucket for the whole world,
+     * which the first handful of requests would exhaust for everybody.
      *
      * @since 1.0.0
      *
@@ -183,7 +234,15 @@ class RateLimitBookings
      */
     protected function keyFor( string $bucket, Request $request ): string
     {
-        return sprintf( 'artisanpack:bookings:%s:%s', $bucket, sha1( (string) $request->ip() ) );
+        $subject = (string) $request->ip();
+
+        if ( in_array( $bucket, self::TOKEN_KEYED, true ) ) {
+            $token = $request->route( 'token' );
+
+            $subject = is_string( $token ) && '' !== $token ? 'token:' . $token : $subject;
+        }
+
+        return sprintf( 'artisanpack:bookings:%s:%s', $bucket, sha1( $subject ) );
     }
 
     /**
