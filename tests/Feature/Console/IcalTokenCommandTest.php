@@ -50,6 +50,44 @@ describe( 'issuing', function (): void {
         $this->artisan( 'bookings:ical-token', [ 'provider' => 'ada' ] )->assertSuccessful();
     } );
 
+    it( 'refuses to issue a token for a provider whose feed would 404', function (): void {
+        $provider = ServiceProvider::factory()->create( [ 'slug' => 'ada', 'name' => 'Ada', 'is_active' => false ] );
+
+        // The feed resolves through an active() query, so this would have been
+        // the command printing a subscription URL that has never worked.
+        $this->artisan( 'bookings:ical-token', [ 'provider' => 'ada' ] )
+            ->expectsOutputToContain( 'Ada is not active' )
+            ->assertFailed();
+
+        expect( $provider->fresh()->ical_token_hash )->toBeNull();
+    } );
+
+    it( 'reads a numeric-looking slug as a slug', function (): void {
+        $decoy = ServiceProvider::factory()->create( [ 'slug' => 'decoy' ] );
+        $named = ServiceProvider::factory()->create( [ 'slug' => '1e3' ] );
+
+        // is_numeric( '1e3' ) is true and (int) '1e3' is 1000, so reading the
+        // argument as a number would rotate whichever provider happened to hold
+        // that id — somebody else entirely.
+        $this->artisan( 'bookings:ical-token', [ 'provider' => '1e3' ] )->assertSuccessful();
+
+        expect( $named->fresh()->ical_token_hash )->not->toBeNull()
+            ->and( $decoy->fresh()->ical_token_hash )->toBeNull();
+    } );
+
+    it( 'prefers a slug to an id when both could match', function (): void {
+        $first = ServiceProvider::factory()->create();
+
+        // A provider whose slug is the id of another one. The operator typed the
+        // slug, so the slug is what they meant.
+        $named = ServiceProvider::factory()->create( [ 'slug' => (string) $first->getKey() ] );
+
+        $this->artisan( 'bookings:ical-token', [ 'provider' => (string) $first->getKey() ] )->assertSuccessful();
+
+        expect( $named->fresh()->ical_token_hash )->not->toBeNull()
+            ->and( $first->fresh()->ical_token_hash )->toBeNull();
+    } );
+
     it( 'gives up on a provider nothing answers to', function (): void {
         $this->artisan( 'bookings:ical-token', [ 'provider' => 'nobody-here' ] )
             ->expectsOutputToContain( 'No provider was found for that id or slug.' )
@@ -90,6 +128,58 @@ describe( 'rotating', function (): void {
             ->assertSuccessful();
 
         expect( app( IcalTokenService::class )->findProvider( $token ) )->toBeNull();
+    } );
+
+    it( 'does not overwrite a token that appeared while the prompt was open', function (): void {
+        $provider = ServiceProvider::factory()->create( [ 'slug' => 'ada', 'name' => 'Ada' ] );
+
+        app( IcalTokenService::class )->issueFor( $provider );
+
+        // A second operator at another terminal, writing in the window between
+        // this command reading the provider and writing to it. The read-then-write
+        // this replaced would have overwritten their token without either of them
+        // finding out, and they would have gone on to send a provider a URL that
+        // was already dead.
+        app()->instance( IcalTokenService::class, new class() extends IcalTokenService {
+            public int $races = 1;
+
+            public function issueIfUnchanged( ServiceProvider $provider, ?string $expected ): ?string
+            {
+                if ( $this->races > 0 ) {
+                    $this->races--;
+
+                    parent::issueFor( $provider->fresh() ?? $provider );
+                }
+
+                return parent::issueIfUnchanged( $provider, $expected );
+            }
+        } );
+
+        $this->artisan( 'bookings:ical-token', [ 'provider' => 'ada' ] )
+            ->expectsConfirmation( 'Replace the existing token?', 'yes' )
+            ->expectsOutputToContain( 'feed token changed while that was being answered' )
+            ->expectsConfirmation( 'Replace the existing token?', 'no' )
+            ->expectsOutputToContain( 'Nothing was changed.' )
+            ->assertSuccessful();
+    } );
+
+    it( 'gives up rather than looping forever against something that keeps rotating', function (): void {
+        $provider = ServiceProvider::factory()->create( [ 'slug' => 'ada', 'name' => 'Ada' ] );
+
+        app( IcalTokenService::class )->issueFor( $provider );
+
+        // Every attempt loses. A loop that could not give up would be a command
+        // that hangs, and it is holding a prompt open each time round.
+        app()->instance( IcalTokenService::class, new class() extends IcalTokenService {
+            public function issueIfUnchanged( ServiceProvider $provider, ?string $expected ): ?string
+            {
+                return null;
+            }
+        } );
+
+        $this->artisan( 'bookings:ical-token', [ 'provider' => 'ada', '--force' => true ] )
+            ->expectsOutputToContain( 'keeps rotating that feed token' )
+            ->assertFailed();
     } );
 } );
 

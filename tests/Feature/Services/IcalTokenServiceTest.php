@@ -115,14 +115,20 @@ describe( 'resolving', function (): void {
             'unknown'     => str_repeat( 'a', 64 ),
             'empty'       => '',
             'hash'        => icalTokens()->hash( $token ),
-            'revoked'     => tap( $token, static fn (): mixed => icalTokens()->revokeFor( $provider ) ),
-            'rotated'     => tap( $token, static fn (): string => icalTokens()->issueFor( $provider ) ),
+            'revoked'     => tap( $token, static function () use ( $provider ): void {
+                icalTokens()->revokeFor( $provider );
+            } ),
+            'rotated'     => tap( $token, static function () use ( $provider ): void {
+                icalTokens()->issueFor( $provider );
+            } ),
             'deactivated' => tap( $token, static function () use ( $provider ): void {
                 $provider->newQueryWithoutScopes()->whereKey( $provider->getKey() )->toBase()->update( [
                     'is_active' => false,
                 ] );
             } ),
-            'trashed'     => tap( $token, static fn (): mixed => $provider->delete() ),
+            'trashed'     => tap( $token, static function () use ( $provider ): void {
+                $provider->delete();
+            } ),
         };
 
         expect( icalTokens()->findProvider( $presented ) )->toBeNull();
@@ -197,6 +203,69 @@ describe( 'rotating and revoking', function (): void {
         icalTokens()->revokeFor( ServiceProvider::factory()->create() );
 
         expect( $seen )->toBe( 1 );
+    } );
+} );
+
+describe( 'the conditional issue', function (): void {
+    it( 'issues while the provider still holds the token the caller saw', function (): void {
+        $provider = ServiceProvider::factory()->create();
+        $first    = icalTokens()->issueFor( $provider );
+
+        $second = icalTokens()->issueIfUnchanged( $provider, icalTokens()->hash( $first ) );
+
+        expect( $second )->toMatch( '/^[0-9a-f]{64}$/' )
+            ->and( icalTokens()->findProvider( (string) $second )?->getKey() )->toBe( $provider->getKey() )
+            ->and( icalTokens()->findProvider( $first ) )->toBeNull();
+    } );
+
+    it( 'writes nothing once somebody else has moved the row', function (): void {
+        $provider = ServiceProvider::factory()->create();
+        $stale    = icalTokens()->hash( icalTokens()->issueFor( $provider ) );
+
+        // What a second operator does while the first is answering a prompt.
+        $theirs = icalTokens()->issueFor( $provider );
+
+        expect( icalTokens()->issueIfUnchanged( $provider, $stale ) )->toBeNull()
+            // Their token has to survive. Losing this race must be a caller being
+            // told to look again, not a caller silently invalidating a URL
+            // somebody is already walking away with.
+            ->and( icalTokens()->findProvider( $theirs )?->getKey() )->toBe( $provider->getKey() );
+    } );
+
+    it( 'treats "there was no feed" as a condition too', function (): void {
+        $provider = ServiceProvider::factory()->create();
+
+        $theirs = icalTokens()->issueFor( $provider );
+
+        // A caller who read a provider with no feed, then had one appear under
+        // them, is in exactly the same race and must lose it the same way.
+        expect( icalTokens()->issueIfUnchanged( $provider->fresh(), null ) )->toBeNull()
+            ->and( icalTokens()->findProvider( $theirs ) )->not->toBeNull();
+    } );
+
+    it( 'issues a first token when there genuinely is not one', function (): void {
+        $provider = ServiceProvider::factory()->create();
+
+        $token = icalTokens()->issueIfUnchanged( $provider, null );
+
+        expect( $token )->not->toBeNull()
+            ->and( icalTokens()->findProvider( (string) $token )?->getKey() )->toBe( $provider->getKey() );
+    } );
+
+    it( 'announces only the token it actually wrote', function (): void {
+        $seen = [];
+
+        addAction( 'ap.bookings.icalTokenIssued', function ( ServiceProvider $provider, string $token ) use ( &$seen ): void {
+            $seen[] = $token;
+        } );
+
+        $provider = ServiceProvider::factory()->create();
+
+        icalTokens()->issueIfUnchanged( $provider, icalTokens()->hash( 'never-issued' ) );
+
+        // A lost race writes nothing, so it must announce nothing — a subscriber
+        // that mailed the URL would otherwise send one that was never live.
+        expect( $seen )->toBe( [] );
     } );
 } );
 

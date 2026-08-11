@@ -403,13 +403,18 @@ stored, in `service_providers.ical_token_hash`, the way `bookings.manage_token_h
 holds a manage token — so a leaked backup or a read-only replica hands over
 something that cannot be turned back into a working subscription.
 
-**That has a cost, and it is worth being clear about it.** Running the command
-again for a provider who already has a feed *rotates* the token: every calendar
-client already subscribed to the old URL stops updating at that moment, and does
-so silently, because a subscribed feed that starts 404ing does not announce
-itself. A provider who wants to add a second device six months later needs a new
-URL pasted into both. The command warns and asks before it does this; `--force`
-skips the prompt.
+One URL, any number of devices: the same address can be pasted into a phone, a
+laptop, and a desktop client, and they all keep working. What cannot be done is
+*look it up again* — so the URL is worth keeping somewhere the provider can reach
+it, not just pasting once.
+
+Rotate when the URL has been lost or you think it has been seen by somebody it
+should not have been. **Rotation is not free**: running the command again for a
+provider who already has a feed replaces the token, and every calendar client
+subscribed to the old URL stops updating at that moment. It does so silently,
+because a subscribed feed that starts 404ing does not announce itself — so after
+a rotation every one of that provider's clients has to be given the new URL. The
+command warns and asks before it does this; `--force` skips the prompt.
 
 `ap.bookings.icalTokenIssued` fires with the new plain token — the only moment it
 is readable — so an application with mail wired up can deliver the subscription

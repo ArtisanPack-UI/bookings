@@ -42,11 +42,15 @@ use function route;
  *
  * **A lost token is replaced, not recovered.** The plain value is returned once,
  * by {@see self::issueFor()}, and there is deliberately no way back to it from a
- * saved row. That has a cost this package accepts openly: a provider who wants
- * to add a second calendar client six months later has to be issued a new token,
- * and the client they already subscribed stops updating until the new URL is
- * pasted into it too. The alternative is a plain token in a column, where a
- * leaked backup is a working subscription to somebody's diary.
+ * saved row. The URL itself is not single-use — it can be pasted into as many
+ * calendar clients as the provider owns, and they all go on working — but nobody
+ * can ever read it off a screen again, so whoever mints it has to keep it or
+ * rotate. The alternative is a plain token in a column, where a leaked backup is
+ * a working subscription to somebody's diary.
+ *
+ * Rotating is therefore for a URL that has been lost or exposed, not for adding a
+ * device. It is not free: every client subscribed to the previous URL stops
+ * updating the moment {@see self::issueFor()} returns, and none of them says so.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
@@ -149,6 +153,66 @@ class IcalTokenService
         // would tell an instance carrying the caller's other pending edits that
         // they had already been written, and the save that was meant to persist
         // them would find nothing dirty and do nothing.
+        $provider->ical_token_hash = $minted['hash'];
+        $provider->syncOriginalAttribute( 'ical_token_hash' );
+
+        doAction( 'ap.bookings.icalTokenIssued', $provider, $minted['token'] );
+
+        return $minted['token'];
+    }
+
+    /**
+     * Issues a token only while the provider still holds the one the caller saw.
+     *
+     * The unconditional {@see self::issueFor()} is a read followed by a write,
+     * and a rotation is decided in between: the command reads the provider to
+     * find out whether there is anything to warn about, waits for a human to
+     * answer a prompt, and only then writes. Anything that issues a token in that
+     * gap — a second operator, a queued job, an admin screen — has its token
+     * overwritten by a caller who never saw it, and the operator holding *that*
+     * URL walks away and sends a provider a subscription that is already dead.
+     *
+     * The database decides instead. The update carries the hash the caller
+     * inspected as a condition, so exactly one of two concurrent rotations
+     * writes; the loser gets null back and can go and look again. This is the
+     * idiom `BookingService::complete()` and `Webhook::disable()` already use for
+     * the same reason.
+     *
+     * `$expected` of null means "the caller saw no feed", which is a condition
+     * too — it is how a first issue refuses to silently clobber a token that
+     * appeared while a prompt was open.
+     *
+     * @since 1.0.0
+     *
+     * @param  ServiceProvider  $provider  The provider to issue a token for.
+     * @param  string|null  $expected  The hash the caller inspected, or null when
+     *                                 they saw no feed at all.
+     *
+     * @return string|null The new plain token, or null when the row moved and
+     *                     nothing was written.
+     */
+    public function issueIfUnchanged( ServiceProvider $provider, ?string $expected ): ?string
+    {
+        if ( ! $provider->exists ) {
+            return $this->issueFor( $provider );
+        }
+
+        $minted = $this->mint();
+
+        $claimed = $provider->newQueryWithoutScopes()
+            ->whereKey( $provider->getKey() )
+            ->where( function ( Builder $query ) use ( $expected ): void {
+                null === $expected
+                    ? $query->whereNull( 'ical_token_hash' )
+                    : $query->where( 'ical_token_hash', $expected );
+            } )
+            ->toBase()
+            ->update( [ 'ical_token_hash' => $minted['hash'] ] );
+
+        if ( $claimed < 1 ) {
+            return null;
+        }
+
         $provider->ical_token_hash = $minted['hash'];
         $provider->syncOriginalAttribute( 'ical_token_hash' );
 

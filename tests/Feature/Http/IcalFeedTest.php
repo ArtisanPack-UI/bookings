@@ -333,8 +333,12 @@ describe( 'GET provider feed', function (): void {
                     'is_active' => false,
                 ] );
             } ),
-            'revoked'     => tap( $token, static fn (): mixed => $tokens->revokeFor( $provider ) ),
-            'rotated'     => tap( $token, static fn (): string => issueFeedToken( $provider ) ),
+            'revoked'     => tap( $token, static function () use ( $tokens, $provider ): void {
+                $tokens->revokeFor( $provider );
+            } ),
+            'rotated'     => tap( $token, static function () use ( $provider ): void {
+                issueFeedToken( $provider );
+            } ),
         };
 
         $response = $this->get( providerFeedUrl( $presented ) );
