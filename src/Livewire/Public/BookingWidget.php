@@ -409,7 +409,7 @@ class BookingWidget extends Component
     public function back(): void
     {
         match ( $this->step ) {
-            'details'  => $this->slotStart = '',
+            'details'  => $this->forgetChosenSlot(),
             'slot'     => $this->forgetChoicesBelow( $this->offersProviderChoice ? 'service' : 'start' ),
             'provider' => $this->forgetChoicesBelow( 'start' ),
             default    => null,
@@ -451,7 +451,7 @@ class BookingWidget extends Component
         $slot = $this->chosenSlot();
 
         if ( null === $slot ) {
-            $this->slotStart = '';
+            $this->forgetChosenSlot();
 
             $this->addError( 'slotStart', __( 'That appointment time is no longer available. Please choose another.' ) );
 
@@ -477,7 +477,7 @@ class BookingWidget extends Component
 
             return;
         } catch ( SlotUnavailableException ) {
-            $this->slotStart = '';
+            $this->forgetChosenSlot();
 
             $this->addError( 'slotStart', __( 'That appointment time is no longer available. Please choose another.' ) );
 
@@ -1069,7 +1069,27 @@ class BookingWidget extends Component
             $this->date = '';
         }
 
+        $this->forgetChosenSlot();
+    }
+
+    /**
+     * Drops the chosen slot, and everything derived from it this request.
+     *
+     * The property alone is not enough. `chosenStart` and `step` are computed
+     * and cached per request, and `book()` reads both on its way to discovering
+     * that the slot has gone — so clearing only the property leaves the same
+     * render still believing a time is chosen, and the customer is shown the
+     * details form underneath a message telling them to pick another time.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    protected function forgetChosenSlot(): void
+    {
         $this->slotStart = '';
+
+        unset( $this->chosenStart, $this->step );
     }
 
     /**

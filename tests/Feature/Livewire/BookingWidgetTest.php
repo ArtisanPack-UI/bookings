@@ -290,7 +290,11 @@ describe( 'booking', function (): void {
             } )
             ->call( 'book' )
             ->assertHasErrors( 'slotStart' )
-            ->assertSet( 'slotStart', '' );
+            ->assertSet( 'slotStart', '' )
+            // The same render, not the next one: a message telling somebody to
+            // choose another time is no use above the form they just submitted.
+            ->assertSee( 'Available days' )
+            ->assertDontSee( 'Confirm your details' );
     } );
 
     it( 'refuses a time nobody is free at, however it was submitted', function (): void {
