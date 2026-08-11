@@ -37,6 +37,7 @@ use ArtisanPackUI\Bookings\Contracts\SlotResolver;
 use ArtisanPackUI\Bookings\Contracts\SmsDriver;
 use ArtisanPackUI\Bookings\Enums\NotificationType;
 use ArtisanPackUI\Bookings\Http\Middleware\RateLimitBookings;
+use ArtisanPackUI\Bookings\Http\Middleware\ResolveManageToken;
 use ArtisanPackUI\Bookings\Listeners\DispatchBookingWebhooks;
 use ArtisanPackUI\Bookings\Listeners\SendBookingNotifications;
 use ArtisanPackUI\Bookings\MeetingTypes\MeetingTypeRegistry;
@@ -368,6 +369,7 @@ class BookingsServiceProvider extends ServiceProvider
     protected function registerPublicRoutes(): void
     {
         Route::aliasMiddleware( 'bookings.rate-limit', RateLimitBookings::class );
+        Route::aliasMiddleware( 'bookings.manage-token', ResolveManageToken::class );
 
         if ( $this->app->routesAreCached() ) {
             return;
