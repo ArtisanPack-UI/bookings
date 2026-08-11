@@ -530,6 +530,85 @@ numbers are legitimate.
 
 Twilio and Vonage drivers ship in v1.1.
 
+### Scheduled commands
+
+The package puts its own recurring work on your application's schedule. You do
+not register anything — run Laravel's scheduler and it happens:
+
+```bash
+php artisan schedule:work    # or the usual cron entry for schedule:run
+```
+
+| Command | Cadence | What it does |
+|---------|---------|--------------|
+| `bookings:send-reminders` | Every 15 minutes | Sends the reminders that have come due. |
+| `bookings:complete-past` | Hourly | Marks confirmed bookings whose end time has passed as completed. |
+| `bookings:calendar-refresh` | Daily | Re-reads busy blocks for two-way connections. |
+| `bookings:calendar-watch-renew` | Hourly | Renews Google/Microsoft push registrations before they lapse. |
+| `bookings:calendar-apple-poll` | Every 15 minutes | Polls Apple calendars, which cannot push. |
+| `bookings:prune-notification-log` | Daily, 03:10 | Removes notification log rows past their retention window. |
+| `bookings:prune-webhook-deliveries` | Daily, 03:20 | Removes settled delivery attempts past their retention window. |
+| `bookings:prune-calendar-events` | Daily, 03:30 | Removes calendar mappings for bookings long over. |
+
+`bookings:reissue-detached-manage-tokens` is never scheduled. It invalidates
+every manage link the package has ever sent, which is something you do in
+response to a leak rather than something a clock should decide.
+
+Every one is registered `withoutOverlapping()`. None of them needs it for
+correctness — a reminder is claimed in the notification log before it is sent,
+completion re-reads the status it transitions, and deleting rows another prune
+already deleted is a no-op — but a doubled run is a lot of database round trips
+to do nothing.
+
+The reminder sweep is dropped when `notifications.reminder.enabled` is false, and
+the three calendar sweeps are registered only when a matching driver is switched
+on under `calendar.drivers`. Both are gates on the schedule, not on the commands:
+you can always run any of them by hand.
+
+**Everything destructive takes `--dry-run`**, which reports what a run would do
+and changes nothing. On `bookings:complete-past` that includes firing no hooks
+and dispatching no events, so a subscriber cannot email a customer about a
+completion that has not happened:
+
+```bash
+php artisan bookings:complete-past --dry-run
+php artisan bookings:prune-notification-log --dry-run
+```
+
+Only `confirmed` bookings are completed. A `requested` one is an appointment
+nobody approved, and marking it delivered would be the package asserting that
+something happened which may never have been accepted — those are left for staff
+to dispose of, as a completion or a no-show.
+
+The three prunes read their windows from `retention`:
+
+```php
+'retention' => [
+    'notification_log_days'    => 90,
+    'webhook_delivery_days'    => null,   // falls back to webhooks.delivery_retention_days
+    'calendar_events_ttl_days' => 30,
+],
+```
+
+A window of zero or less is read as "not configured" and prunes nothing, rather
+than as "keep nothing" — a blank environment variable is a likelier way to reach
+zero than a retention policy is. That holds for `webhook_delivery_days` too: only
+leaving it unset defers to `webhooks.delivery_retention_days`, so zeroing it
+switches the prune off rather than falling back to somebody else's thirty days.
+Keep `notification_log_days` comfortably longer
+than your longest reminder in `hours_before`: the log row is what stops a
+reminder being sent twice, so pruning one inside its own reminder window
+un-claims a send that already happened. A `pending` webhook delivery is never
+pruned however old it is, because deleting it makes the delivery stop existing
+rather than fail. And calendar mappings are pruned by the booking's end time
+rather than by the row's own age — a mapping for an appointment a year out is
+older than yesterday's, and is exactly what a reschedule still needs.
+
+The calendar sweeps find what is due and then need a `CalendarSyncDriver` to act
+on it. Those ship in `artisanpack-ui/google`, `artisanpack-ui/microsoft`, and
+`artisanpack-ui/apple`; until one is installed the sweeps report what they found
+and warn that nothing was synced.
+
 ## Extending
 
 ### Contracts
