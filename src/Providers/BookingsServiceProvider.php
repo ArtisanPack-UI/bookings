@@ -57,6 +57,7 @@ use ArtisanPackUI\Bookings\Notifications\Channels\SmsChannel;
 use ArtisanPackUI\Bookings\Notifications\Sms\NullSmsDriver;
 use ArtisanPackUI\Bookings\Services\AvailabilityService;
 use ArtisanPackUI\Bookings\Services\BookingService;
+use ArtisanPackUI\Bookings\Services\IcalFeedService;
 use ArtisanPackUI\Bookings\Services\IntakeFieldValidator;
 use ArtisanPackUI\Bookings\Services\ManageTokenService;
 use ArtisanPackUI\Bookings\Services\NotificationService;
@@ -196,6 +197,12 @@ class BookingsServiceProvider extends ServiceProvider
         // create, which resolves it from the container rather than newing it up
         // — so rebinding it replaces the credential scheme everywhere at once.
         $this->app->singleton( ManageTokenService::class );
+
+        // Bound so an installation can change what its calendars say — a
+        // different summary, an extra property, a different window — by
+        // rebinding one class rather than by replacing the two controller
+        // actions that call it.
+        $this->app->singleton( IcalFeedService::class );
 
         // Every occurrence a series materialises is written through
         // BookingService, so the two resolve the same instance and a rebinding

@@ -12,6 +12,12 @@
  * shipped defaults produce `api/bookings/...` and an installation that already
  * owns that path can move the whole surface with one setting.
  *
+ * The iCal feeds sit under the same setting without the `api/` — `bookings/ical/…`
+ * — because they are not part of that contract. Nothing calls them from a widget:
+ * a person pastes one into Apple Calendar or Google Calendar and it is fetched by
+ * software that expects a file at a URL, so the address is one somebody has to be
+ * able to read out loud.
+ *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
  *
@@ -23,6 +29,7 @@
 declare( strict_types=1 );
 
 use ArtisanPackUI\Bookings\Http\Controllers\Public\BookingController;
+use ArtisanPackUI\Bookings\Http\Controllers\Public\IcalFeedController;
 use ArtisanPackUI\Bookings\Http\Controllers\Public\ManageBookingController;
 use ArtisanPackUI\Bookings\Http\Controllers\Public\ServiceController;
 use Illuminate\Support\Facades\Route;
@@ -76,4 +83,36 @@ Route::prefix( 'api/' . trim( (string) config( 'artisanpack.bookings.public.rout
                     ->middleware( [ 'bookings.rate-limit:post', 'bookings.manage-token' ] )
                     ->name( 'reschedule' );
             } );
+    } );
+
+// The subscribable calendars. These are fetched on a timer nobody here controls
+// — Google roughly hourly, Apple about every fifteen minutes, forever, once per
+// subscriber — so the `ical` bucket is sized for machines rather than for people
+// and the endpoints answer 304 before they read a booking.
+//
+// The `.ics` is part of the path rather than a query string or a content
+// negotiation: clients guess how to treat a subscription URL from its extension,
+// and one without it gets offered as a download or refused outright.
+Route::prefix( trim( (string) config( 'artisanpack.bookings.public.route_prefix', 'bookings' ), '/' ) . '/ical' )
+    ->name( 'artisanpack.bookings.ical.' )
+    ->group( static function (): void {
+        Route::get( 'providers/{slug}.ics', [ IcalFeedController::class, 'provider' ] )
+            ->middleware( 'bookings.rate-limit:ical' )
+            ->where( 'slug', '[A-Za-z0-9._-]+' )
+            ->name( 'provider' );
+
+        // Limited twice for the reason the manage read is: one bucket bounds a
+        // machine walking the path, the other bounds one link being fetched from
+        // everywhere at once — and a feed URL leaks the way a manage link does,
+        // by sitting in a calendar client's settings for years. Both limiters are
+        // declared before the resolver, so a guess costs a cache read rather than
+        // an indexed lookup.
+        Route::get( 'customers/{token}.ics', [ IcalFeedController::class, 'customer' ] )
+            ->middleware( [
+                'bookings.rate-limit:ical',
+                'bookings.rate-limit:manage_token',
+                'bookings.manage-token',
+            ] )
+            ->where( 'token', '[0-9a-f]{64}' )
+            ->name( 'customer' );
     } );

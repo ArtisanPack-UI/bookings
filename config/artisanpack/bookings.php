@@ -325,6 +325,28 @@ return [
     | limits applied to it. The "post" and "manage_get" limits are per IP per
     | minute, "manage_token" is per manage token, and "ical" is per IP.
     |
+    | "ical" configures the subscribable calendars at "{route_prefix}/ical/…".
+    |
+    | "past_days" and "future_days" bound what one feed carries, measured from
+    | now. A calendar client has no use for last year's appointments, and a
+    | subscription is refetched every fifteen minutes to an hour for as long as
+    | it exists — so an unbounded feed is the whole archive, serialised, on that
+    | timer, once per subscriber. Zero or less on either side reads as "not
+    | configured" and falls back to the shipped window.
+    |
+    | "max_age" is how long a client may reuse a feed before revalidating, in
+    | seconds. Short enough that a booking made now appears in the next poll;
+    | long enough to absorb a client fetching the same URL from two places.
+    |
+    | "provider_feed_details" decides what a provider feed says about the person
+    | who booked. **Leave it on "busy" unless the feed URLs are not reachable
+    | from the internet.** A provider feed is addressed by the provider's slug,
+    | and that slug is published by "GET api/bookings/services/{slug}/providers"
+    | — so the address is not a secret, and "full" puts every customer's name and
+    | email behind a URL anybody who can read the booking widget can construct.
+    | On "busy" the feed still carries the service name and the times, which is
+    | the diary a provider subscribed for.
+    |
     */
     'public' => [
         'route_prefix' => 'bookings',
@@ -333,6 +355,12 @@ return [
             'manage_get'   => 20,
             'manage_token' => 60,
             'ical'         => 30,
+        ],
+        'ical'         => [
+            'past_days'             => 30,
+            'future_days'           => 365,
+            'max_age'               => 300,
+            'provider_feed_details' => 'busy',
         ],
     ],
 

@@ -346,6 +346,62 @@ booking with the new plain token — the only moment it can be read — so an
 application with mail wired up can re-send as the rotation runs. Pass `--force`
 to skip the confirmation prompt and `--chunk` to tune the query size.
 
+### iCal feeds
+
+Two subscribable calendars, so a provider can watch their diary from Apple
+Calendar, Google Calendar, or Outlook without anybody connecting an account:
+
+```text
+GET bookings/ical/providers/{slug}.ics      # a provider's diary
+GET bookings/ical/customers/{token}.ics     # the booking a manage token stands for
+```
+
+Both sit under `public.route_prefix` without the `api/` the JSON endpoints carry:
+nothing calls them from a widget, so the address is one somebody has to be able to
+paste into a subscription box. The `.ics` is part of the path rather than a query
+string, because clients guess how to treat a subscription URL from its extension.
+
+They are built to be polled. Google refetches a subscribed feed roughly hourly,
+Apple about every fifteen minutes, forever, once per subscriber — so every request
+computes an entity tag from one aggregate and answers `304 Not Modified` before a
+single booking is read:
+
+```text
+ETag: "7f3c…"
+Cache-Control: private, max-age=300
+```
+
+Send it back as `If-None-Match` and the answer is an empty 304. Weak tags and
+multi-tag lists are handled, so a proxy in the way does not turn every poll into a
+full fetch. The tag folds in the newest `updated_at` in the window, how many
+bookings are in it, and how many of those are still published — the counts are
+what make a cancellation move the tag, since a booking going away lowers the
+newest timestamp rather than raising it.
+
+A feed carries the recent past and the booked future rather than the archive.
+`public.ical.past_days` (30) and `future_days` (365) set the window, and
+`max_age` (300) says how long a client may hold the answer.
+
+**A provider feed is addressed by the provider's slug, and that slug is published
+by `GET api/bookings/services/{slug}/providers`.** The URL is therefore not a
+secret, and the shipped feed is bounded to match: service names, times, and the
+booking reference, and nothing about the customer. Setting
+`public.ical.provider_feed_details` to `full` adds the customer's name and email —
+which is a directory of everybody who has ever booked, behind an address anybody
+who can read the booking widget can construct. Only turn it on when the feeds are
+not reachable from the internet.
+
+The customer feed is the manage token's, guarded by the same
+`bookings.manage-token` middleware as the manage endpoints, and carries the one
+booking that token stands for — a token discloses no more through its calendar
+than through the link it came in on. It is limited per address *and* per token,
+for the reason the manage read is: a feed URL sits in a calendar client's settings
+for years, which is exactly how a link escapes.
+
+Rescheduling moves an event a subscriber already has rather than leaving a
+duplicate behind: the `UID` is built from `booking_number`, which never changes.
+Cancelling removes it, which is what a provider wants their week to look like.
+
 ### Outbound webhooks
 
 Subscribe an endpoint and the booking lifecycle fans out to it on its own — no

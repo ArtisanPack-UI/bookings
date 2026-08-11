@@ -3,6 +3,7 @@
 declare( strict_types=1 );
 
 use ArtisanPackUI\Bookings\Enums\AvailabilityOverrideType;
+use ArtisanPackUI\Bookings\Enums\BookingActor;
 use ArtisanPackUI\Bookings\Enums\BookingStatus;
 use ArtisanPackUI\Bookings\Enums\CalendarSyncMode;
 use ArtisanPackUI\Bookings\Enums\NotificationType;
@@ -21,6 +22,7 @@ use ArtisanPackUI\Bookings\Models\WebhookDelivery;
 use ArtisanPackUI\Bookings\Providers\BookingsServiceProvider;
 use ArtisanPackUI\Bookings\Services\AvailabilityService;
 use ArtisanPackUI\Bookings\Services\BookingService;
+use ArtisanPackUI\Bookings\Services\IcalFeedService;
 use ArtisanPackUI\Bookings\Services\ProviderSlotLock;
 use ArtisanPackUI\Bookings\Services\SeriesService;
 use ArtisanPackUI\Bookings\Support\Slot;
@@ -534,6 +536,87 @@ function defineEngineSensitiveAvailabilityTests(): void
         expect( $starts )->not->toContain( '11:00' )
             ->and( $starts )->not->toContain( '12:00' )
             ->and( $starts )->toContain( '13:00' );
+    } );
+}
+
+/**
+ * Defines the iCal stamp cases every engine has to agree on.
+ *
+ * The feed's entity tag comes from one aggregate — a max, a count, and a
+ * conditional sum with a bound parameter in the select list. Two things about it
+ * only exist on a real server: whether the engine accepts `sum(case when …)` at
+ * all, and whether the binding in the select list lands ahead of the bindings in
+ * the where clause. Get the second wrong and the query does not fail — it
+ * compares the wrong column to the wrong value and quietly returns a stamp that
+ * never moves, which is a feed that never updates.
+ *
+ * The calling file supplies the engine by using the matching TestsWith* concern
+ * before calling this.
+ *
+ * @since 1.0.0
+ *
+ * @return void
+ */
+function defineEngineSensitiveIcalStampTests(): void
+{
+    it( 'stamps a provider feed against the engine\'s own SQL', function (): void {
+        // The diary every booking helper works around; the window is measured
+        // from now, so a clock left on the real date puts the whole of it in the
+        // past and the aggregate would be counting nothing.
+        $this->travelTo( CarbonImmutable::parse( '2026-05-25 12:00:00', 'UTC' ) );
+
+        [ $service ] = bookableService();
+
+        $provider = ServiceProvider::query()->firstOrFail();
+        $feeds    = app( IcalFeedService::class );
+
+        $empty = $feeds->providerStamp( $provider, $feeds->window() );
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'provider'   => $provider,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        $booked = $feeds->providerStamp( $provider, $feeds->window() );
+
+        bookingService()->cancel( $booking, BookingActor::Customer );
+
+        $cancelled = $feeds->providerStamp( $provider, $feeds->window() );
+
+        // Three distinct answers. The third is the one the conditional sum is
+        // there for: the row is still in the window and its timestamp has not
+        // gone backwards, so only the count of what is still published can tell
+        // the engine that the feed's contents shrank.
+        expect( $booked )->not->toBe( $empty )
+            ->and( $cancelled )->not->toBe( $booked )
+            ->and( $cancelled )->not->toBe( $empty );
+    } );
+
+    it( 'stamps only the window it was asked about', function (): void {
+        $this->travelTo( CarbonImmutable::parse( '2026-05-25 12:00:00', 'UTC' ) );
+
+        [ $service ] = bookableService();
+
+        $provider = ServiceProvider::query()->firstOrFail();
+        $feeds    = app( IcalFeedService::class );
+
+        bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'provider'   => $provider,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        // The booking is months out, so a window ending tomorrow must not see it
+        // — which is the range comparison, on whatever the engine stores
+        // start_time as.
+        $narrow = new TimeRange(
+            CarbonImmutable::now()->utc()->subDay(),
+            CarbonImmutable::now()->utc()->addDay(),
+        );
+
+        expect( $feeds->providerStamp( $provider, $narrow ) )
+            ->not->toBe( $feeds->providerStamp( $provider, $feeds->window() ) );
     } );
 }
 
