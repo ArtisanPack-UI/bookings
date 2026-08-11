@@ -13,3 +13,5 @@ uses( TestsWithPostgres::class, RefreshDatabase::class )->group( 'postgres' );
 defineEngineSensitiveModelTests();
 
 defineEngineSensitiveAvailabilityTests();
+
+defineEngineSensitiveIcalStampTests();

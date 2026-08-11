@@ -14,3 +14,5 @@ uses( TestsWithSqlite::class, RefreshDatabase::class );
 defineEngineSensitiveModelTests();
 
 defineEngineSensitiveAvailabilityTests();
+
+defineEngineSensitiveIcalStampTests();

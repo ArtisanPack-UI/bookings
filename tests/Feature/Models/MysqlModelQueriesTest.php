@@ -12,3 +12,5 @@ uses( TestsWithMysql::class, RefreshDatabase::class )->group( 'mysql' );
 defineEngineSensitiveModelTests();
 
 defineEngineSensitiveAvailabilityTests();
+
+defineEngineSensitiveIcalStampTests();
