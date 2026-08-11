@@ -315,7 +315,7 @@ session's previous URL rather than to anything in the payload.
 Because the state lives in the query string, a link is shareable and
 deep-linkable:
 
-```
+```text
 https://example.test/book?bookingService=discovery-call&bookingDate=2026-06-01
 ```
 
@@ -999,7 +999,7 @@ it uses them, and degrades cleanly when they are not:
 
 - `livewire/livewire` — the public booking widget and the admin screens
 - `artisanpack-ui/cms-framework` — admin navigation, permissions, settings
-- `artisanpack-ui/livewire-ui-components` — admin and widget rendering
+- `artisanpack-ui/livewire-ui-components` — admin screen rendering (the public widget is plain HTML and does not use it)
 - `artisanpack-ui/forms` — `booking_slot` field type, booking-from-submission
 - `artisanpack-ui/media-library` — service and provider images
 - `artisanpack-ui/google`, `artisanpack-ui/microsoft`, `artisanpack-ui/apple` — calendar sync drivers

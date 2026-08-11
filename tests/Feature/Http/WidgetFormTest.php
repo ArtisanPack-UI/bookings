@@ -2,9 +2,9 @@
 
 declare( strict_types=1 );
 
-use ArtisanPackUI\Bookings\Livewire\Public\BookingWidget;
 use ArtisanPackUI\Bookings\Models\Booking;
 use ArtisanPackUI\Bookings\Models\Service;
+use ArtisanPackUI\Bookings\Support\WidgetConfirmation;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Concerns\TestsWithSqlite;
@@ -40,7 +40,7 @@ it( 'creates a booking without a line of JavaScript', function (): void {
     $this->from( '/book' )
         ->post( '/bookings/widget', widgetFormBody( $service ) )
         ->assertRedirect( '/book' )
-        ->assertSessionHas( BookingWidget::CONFIRMATION_KEY );
+        ->assertSessionHas( WidgetConfirmation::SESSION_KEY );
 
     $booking = Booking::query()->sole();
 
@@ -54,7 +54,7 @@ it( 'flashes the confirmation in the shape the widget renders', function (): voi
     $confirmation = $this->from( '/book' )
         ->post( '/bookings/widget', widgetFormBody( $service ) )
         ->getSession()
-        ->get( BookingWidget::CONFIRMATION_KEY );
+        ->get( WidgetConfirmation::SESSION_KEY );
 
     expect( $confirmation )->toHaveKeys( [ 'booking_number', 'service', 'starts_at', 'timezone', 'email' ] )
         ->and( $confirmation['timezone'] )->toBe( 'Europe/Berlin' )
@@ -67,7 +67,7 @@ it( 'states the time in the service\'s zone when the browser reported none', fun
     $confirmation = $this->from( '/book' )
         ->post( '/bookings/widget', widgetFormBody( $service, [ 'customer_timezone' => null ] ) )
         ->getSession()
-        ->get( BookingWidget::CONFIRMATION_KEY );
+        ->get( WidgetConfirmation::SESSION_KEY );
 
     expect( $confirmation['timezone'] )->toBe( $service->timezone );
 } );
@@ -124,4 +124,24 @@ it( 'is guarded by the same rate limit the API write is', function (): void {
         ->assertTooManyRequests();
 
     expect( Booking::query()->count() )->toBe( 1 );
+} );
+
+it( 'never reaches for the Livewire component, so a headless install can post to it', function (): void {
+    // Livewire is a suggestion in this package, and the widget route is
+    // registered whether or not it is installed. A static call into the
+    // component from here would autoload a class extending `Livewire\Component`
+    // — a fatal error raised *after* the booking row has been written, leaving
+    // the customer a 500 and an appointment nobody was told about.
+    $sources = [
+        'src/Http/Controllers/Public/WidgetController.php',
+        'src/Support/WidgetConfirmation.php',
+        'routes/widget.php',
+    ];
+
+    foreach ( $sources as $source ) {
+        // Comments stripped first: the docblocks on these files explain the
+        // rule, and a test that read prose would fail for saying so.
+        expect( php_strip_whitespace( dirname( __DIR__, 3 ) . '/' . $source ) )
+            ->not->toContain( 'Livewire' );
+    }
 } );

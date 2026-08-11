@@ -27,9 +27,11 @@ use ArtisanPackUI\Bookings\Services\BookingService;
 use ArtisanPackUI\Bookings\Services\IntakeFieldValidator;
 use ArtisanPackUI\Bookings\Support\BookingWindow;
 use ArtisanPackUI\Bookings\Support\Slot;
+use ArtisanPackUI\Bookings\Support\WidgetConfirmation;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ViewErrorBag;
 use InvalidArgumentException;
 use Livewire\Attributes\Computed;
@@ -94,15 +96,6 @@ use function view;
  */
 class BookingWidget extends Component
 {
-    /**
-     * The session key the no-JavaScript submission flashes its result under.
-     *
-     * @since 1.0.0
-     *
-     * @var string
-     */
-    public const CONFIRMATION_KEY = 'artisanpack.bookings.widget.confirmation';
-
     /**
      * The service the embed pinned this widget to, when it pinned one.
      *
@@ -261,13 +254,18 @@ class BookingWidget extends Component
             $this->serviceSlug   = $this->pinnedService;
         }
 
+        // Before the canonicalisers, and the order is load-bearing: each of
+        // them reads `displayTimezone`, which is computed and memoised for the
+        // request — so assigning the zone afterwards would cache the service's
+        // zone and then quietly ignore the one the embed asked for, in the slot
+        // list and everywhere else that reads it.
+        $this->timezone = $this->cleanTimezone( (string) $timezone );
+
         $this->recoverQueryString();
 
         $this->canonicaliseMonth();
         $this->canonicaliseDate();
         $this->canonicaliseSlot();
-
-        $this->timezone = $this->cleanTimezone( (string) $timezone );
 
         // A site offering one service should not open on a list of one.
         if ( '' === $this->serviceSlug && 1 === count( $this->services ) ) {
@@ -277,6 +275,7 @@ class BookingWidget extends Component
         $this->readFlashedConfirmation();
         $this->readOldInput();
         $this->readFlashedErrors();
+        $this->seedMultiAnswerIntake();
     }
 
     /**
@@ -297,6 +296,14 @@ class BookingWidget extends Component
         $this->serviceSlug = $slug;
 
         $this->forgetChoicesBelow( 'service' );
+
+        // The new service asks its own questions, so the old service's answers
+        // go and the new one's multi-answer fields are seeded.
+        $this->intake = [];
+
+        unset( $this->intakeFields );
+
+        $this->seedMultiAnswerIntake();
     }
 
     /**
@@ -487,12 +494,20 @@ class BookingWidget extends Component
 
             return;
         } catch ( InvalidArgumentException $rejected ) {
-            $this->addError( 'providerSlug', $rejected->getMessage() );
+            // A fixed message rather than the exception's own, for the reason
+            // WidgetController::providerRefused() gives: `BookingService`
+            // raises this from several places and only one of them is a
+            // sentence a customer should read.
+            Log::warning( 'A booking from the widget was refused.', [
+                'exception' => $rejected->getMessage(),
+            ] );
+
+            $this->addError( 'providerSlug', __( 'That appointment could not be booked. Please choose another time.' ) );
 
             return;
         }
 
-        $this->confirmation = self::confirmationFor( $booking, $this->displayTimezone );
+        $this->confirmation = WidgetConfirmation::forBooking( $booking, $this->displayTimezone );
     }
 
     /**
@@ -509,33 +524,8 @@ class BookingWidget extends Component
         $this->reset( [ 'customerName', 'customerEmail', 'customerPhone', 'notes', 'intake' ] );
 
         $this->forgetChoicesBelow( null === $this->pinnedService ? 'start' : 'service' );
-    }
 
-    /**
-     * Describes a booking to the person who just made it.
-     *
-     * Shared with the no-JavaScript controller, which flashes the same shape
-     * into the session for this component to pick up on the redirect back — so
-     * the confirmation screen is one screen rather than two that drift.
-     *
-     * @since 1.0.0
-     *
-     * @param  Booking  $booking  The booking that was made.
-     * @param  string  $timezone  The zone to state the time in.
-     *
-     * @return array<string, string> The confirmation.
-     */
-    public static function confirmationFor( Booking $booking, string $timezone ): array
-    {
-        $start = CarbonImmutable::parse( $booking->start_time )->setTimezone( $timezone );
-
-        return [
-            'booking_number' => (string) $booking->booking_number,
-            'service'        => (string) $booking->service?->name,
-            'starts_at'      => $start->translatedFormat( 'l j F Y, g:i a' ),
-            'timezone'       => $timezone,
-            'email'          => (string) $booking->customer_email,
-        ];
+        $this->seedMultiAnswerIntake();
     }
 
     /**
@@ -834,6 +824,11 @@ class BookingWidget extends Component
     public function updatedTimezone(): void
     {
         $this->timezone = $this->cleanTimezone( $this->timezone );
+
+        // Everything on screen is dated in this zone, and all of it is computed
+        // and memoised for the request — so the value that arrives has to
+        // invalidate them or the browser's zone lands one round trip late.
+        unset( $this->displayTimezone, $this->slotsByDay, $this->slotsOnDate, $this->browsedMonth );
     }
 
     /**
@@ -869,15 +864,23 @@ class BookingWidget extends Component
     /**
      * Gets the validation rules that apply to the details step.
      *
-     * Deliberately the same rules, in the same order, as
-     * {@see \ArtisanPackUI\Bookings\Http\Requests\Public\StoreBookingRequest}.
-     * The two are the JavaScript and the no-JavaScript halves of one form, and a
-     * field one accepts and the other refuses is a bug a visitor can only find
-     * by turning JavaScript off.
+     * The customer's own fields carry the same rules as their counterparts on
+     * {@see \ArtisanPackUI\Bookings\Http\Requests\Public\StoreBookingRequest}
+     * — `customerName` against `customer_name`, `slotStart` against
+     * `start_time`, and so on. The two are the JavaScript and the
+     * no-JavaScript halves of one form, and a name one accepts and the other
+     * refuses is a bug a visitor can only find by turning JavaScript off.
      *
-     * The intake answers are absent on purpose: they are judged by
+     * It is a mapping rather than a copy, and the parts that differ are the
+     * parts each half enforces elsewhere. `service_slug`, `provider_id`, and
+     * `customer_timezone` have no rules here because nothing on this side
+     * accepts them as free text: the service and the provider are matched
+     * against the lists the customer was shown, and the zone against the ones
+     * this machine knows. The booking window is enforced by the slot having to
+     * still be on offer, which `BookingWindow` has already clipped. And the
+     * intake answers are absent on purpose — they are judged by
      * `IntakeFieldValidator` against the schema version the booking is captured
-     * at, and a second copy of those rules here could only ever disagree with it.
+     * at, and a second copy of those rules here could only ever disagree.
      *
      * @since 1.0.0
      *
@@ -982,6 +985,56 @@ class BookingWidget extends Component
         }
 
         return null;
+    }
+
+    /**
+     * Gives every multi-answer intake field an array to collect answers into.
+     *
+     * Livewire's grouped-checkbox binding appends to the bound property, and it
+     * can only do that if the property is already an array. Bound to a nested
+     * key that does not exist, the first box ticked writes a scalar instead —
+     * and `IntakeFieldValidator` then refuses the whole booking against the
+     * `array` rule those field types carry, naming a field the customer can see
+     * they answered.
+     *
+     * Only the multi-answer types are seeded. A text field seeded with `[]`
+     * would arrive at the validator as an array where the schema declares a
+     * string, which is the same failure the other way round.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    protected function seedMultiAnswerIntake(): void
+    {
+        foreach ( $this->intakeFields as $field ) {
+            if ( ! $this->isMultiAnswerField( $field['type'] ) ) {
+                continue;
+            }
+
+            if ( ! array_key_exists( $field['name'], $this->intake ) || ! is_array( $this->intake[ $field['name'] ] ) ) {
+                $this->intake[ $field['name'] ] = [];
+            }
+        }
+    }
+
+    /**
+     * Determines whether an intake field type holds more than one answer.
+     *
+     * The same two types `IntakeFieldValidator::isMultiAnswer()` names. They are
+     * restated rather than shared because that method is the validator's own
+     * judgement about rules, and this is the form's about markup — but they have
+     * to agree, and the test suite is what holds them to it.
+     *
+     * @since 1.0.0
+     *
+     * @param  string  $type  The field type.
+     *
+     * @return bool True when the answer is an array of answers.
+     */
+    protected function isMultiAnswerField( string $type ): bool
+    {
+        return in_array( $type, [ 'multiselect', 'checkboxes' ], true );
     }
 
     /**
@@ -1143,7 +1196,7 @@ class BookingWidget extends Component
      */
     protected function readFlashedConfirmation(): void
     {
-        $flashed = session()->get( self::CONFIRMATION_KEY );
+        $flashed = session()->get( WidgetConfirmation::SESSION_KEY );
 
         if ( ! is_array( $flashed ) || ! array_key_exists( 'booking_number', $flashed ) ) {
             return;

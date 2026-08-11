@@ -20,10 +20,11 @@ use ArtisanPackUI\Bookings\Exceptions\SlotLockTimeoutException;
 use ArtisanPackUI\Bookings\Exceptions\SlotUnavailableException;
 use ArtisanPackUI\Bookings\Http\Controllers\Public\Concerns\ResolvesPublicService;
 use ArtisanPackUI\Bookings\Http\Requests\Public\StoreBookingRequest;
-use ArtisanPackUI\Bookings\Livewire\Public\BookingWidget;
 use ArtisanPackUI\Bookings\Services\BookingService;
+use ArtisanPackUI\Bookings\Support\WidgetConfirmation;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
@@ -99,18 +100,44 @@ class WidgetController extends Controller
         } catch ( SlotLockTimeoutException ) {
             return $this->refuse( __( 'That appointment time is busy right now. Please try again.' ) );
         } catch ( InvalidArgumentException $rejected ) {
-            throw ValidationException::withMessages( [
-                'provider_id' => $rejected->getMessage(),
-            ] );
+            throw $this->providerRefused( $rejected );
         }
 
         return back()->with(
-            BookingWidget::CONFIRMATION_KEY,
-            BookingWidget::confirmationFor(
-                $booking->loadMissing( 'service' ),
+            WidgetConfirmation::SESSION_KEY,
+            WidgetConfirmation::forBooking(
+                $booking,
                 $this->displayTimezone( $request, $service->timezone ),
             ),
         );
+    }
+
+    /**
+     * Turns a refused submission into a field error that says nothing extra.
+     *
+     * `InvalidArgumentException` is a generic PHP exception, and
+     * `BookingService::create()` raises it from more than one place — a service
+     * that resolves to nothing, a start time it cannot read, a provider who does
+     * not offer the service. Only the last of those is a sentence a customer
+     * should be shown, and nothing here can tell them apart, so the message on
+     * the page is a fixed translated one and the original goes to the log where
+     * whoever has to fix it will look.
+     *
+     * @since 1.0.0
+     *
+     * @param  InvalidArgumentException  $rejected  Why the domain refused it.
+     *
+     * @return ValidationException The equivalent 422.
+     */
+    protected function providerRefused( InvalidArgumentException $rejected ): ValidationException
+    {
+        Log::warning( 'A booking from the widget form was refused.', [
+            'exception' => $rejected->getMessage(),
+        ] );
+
+        return ValidationException::withMessages( [
+            'provider_id' => __( 'That appointment could not be booked. Please choose another time.' ),
+        ] );
     }
 
     /**

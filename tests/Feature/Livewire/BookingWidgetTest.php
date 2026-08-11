@@ -5,6 +5,7 @@ declare( strict_types=1 );
 use ArtisanPackUI\Bookings\Livewire\Public\BookingWidget;
 use ArtisanPackUI\Bookings\Models\Booking;
 use ArtisanPackUI\Bookings\Models\Service;
+use ArtisanPackUI\Bookings\Support\WidgetConfirmation;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -103,7 +104,7 @@ describe( 'choosing a time', function (): void {
     it( 'states the times in the browser\'s zone once the browser has said', function (): void {
         [ $service ] = bookableService();
 
-        // 10:00 in Chicago is 16:00 in Berlin on that date.
+        // The schedule opens at 09:00 in Chicago, which is 16:00 in Berlin.
         Livewire::test( BookingWidget::class, [ 'service' => $service->slug ] )
             ->set( 'timezone', 'Europe/Berlin' )
             ->set( 'month', '2026-06' )
@@ -120,6 +121,19 @@ describe( 'choosing a time', function (): void {
             ->call( 'chooseDate', '2026-06-01' )
             ->assertSee( 'America/Chicago' )
             ->assertSee( '10:00 am' );
+    } );
+
+    it( 'honours a timezone the embed passed in, before anything caches one', function (): void {
+        [ $service ] = bookableService();
+
+        // The canonicalisers read `displayTimezone`, which memoises for the
+        // request — so a mount that assigned the argument afterwards would cache
+        // the service's zone and quietly render in it.
+        Livewire::withQueryParams( [ 'bookingDate' => '2026-06-01' ] )
+            ->test( BookingWidget::class, [ 'service' => $service->slug, 'timezone' => 'Europe/Berlin' ] )
+            ->assertSee( 'Europe/Berlin' )
+            ->assertSee( '4:00 pm' )
+            ->assertDontSee( 'America/Chicago' );
     } );
 
     it( 'refuses a timezone the machine has never heard of', function (): void {
@@ -389,6 +403,69 @@ describe( 'intake answers', function (): void {
         expect( Booking::query()->count() )->toBe( 0 );
     } );
 
+    it( 'gives a multi-answer field an array to collect answers into', function (): void {
+        [ $service ] = bookableService();
+
+        $service->forceFill( [
+            'intake_schema' => [
+                'fields' => [
+                    [ 'name' => 'topics', 'type' => 'checkboxes', 'label' => 'Topics', 'options' => [ 'One', 'Two' ] ],
+                    [ 'name' => 'goal', 'type' => 'text', 'label' => 'Your goal' ],
+                ],
+            ],
+        ] )->save();
+
+        // Livewire's grouped-checkbox binding appends to the bound property and
+        // needs it to already be an array; bound to a key that does not exist,
+        // the first box ticked writes a scalar and the validator then refuses
+        // the booking against the `array` rule. A single-answer field must not
+        // be seeded, for the mirror-image reason.
+        Livewire::test( BookingWidget::class, [ 'service' => $service->slug ] )
+            ->assertSet( 'intake.topics', [] )
+            ->assertSet( 'intake.goal', null );
+    } );
+
+    it( 'stores every answer to a multi-answer field', function (): void {
+        [ $service ] = bookableService();
+
+        $service->forceFill( [
+            'intake_schema' => [
+                'fields' => [
+                    [ 'name' => 'topics', 'type' => 'checkboxes', 'label' => 'Topics', 'options' => [ 'One', 'Two', 'Three' ] ],
+                ],
+            ],
+        ] )->save();
+
+        Livewire::test( BookingWidget::class, [ 'service' => $service->slug ] )
+            ->call( 'chooseSlot', bookingStart()->toIso8601String() )
+            ->set( 'customerName', 'Sam Rivera' )
+            ->set( 'customerEmail', 'sam@example.test' )
+            ->set( 'intake.topics', [ 'One', 'Three' ] )
+            ->call( 'book' )
+            ->assertHasNoErrors();
+
+        expect( Booking::query()->sole()->intake_data )->toBe( [ 'topics' => [ 'One', 'Three' ] ] );
+    } );
+
+    it( 'reseeds the multi-answer fields when the service changes', function (): void {
+        $first = Service::factory()->create( [ 'name' => 'First', 'intake_schema' => null ] );
+
+        $second = Service::factory()->create( [
+            'name'          => 'Second',
+            'intake_schema' => [
+                'fields' => [
+                    [ 'name' => 'topics', 'type' => 'multiselect', 'label' => 'Topics', 'options' => [ 'One' ] ],
+                ],
+            ],
+        ] );
+
+        Livewire::test( BookingWidget::class )
+            ->call( 'chooseService', $first->slug )
+            ->assertSet( 'intake', [] )
+            ->call( 'chooseService', $second->slug )
+            ->assertSet( 'intake.topics', [] );
+    } );
+
     it( 'stores the answers it was given', function (): void {
         [ $service ] = bookableService();
 
@@ -477,7 +554,7 @@ describe( 'without JavaScript', function (): void {
 
         $booking = Booking::factory()->for( $service, 'service' )->create();
 
-        session()->put( BookingWidget::CONFIRMATION_KEY, BookingWidget::confirmationFor( $booking, 'America/Chicago' ) );
+        session()->put( WidgetConfirmation::SESSION_KEY, WidgetConfirmation::forBooking( $booking, 'America/Chicago' ) );
 
         Livewire::test( BookingWidget::class, [ 'service' => $service->slug ] )
             ->assertSee( 'Your appointment is booked' )

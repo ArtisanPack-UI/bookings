@@ -49,7 +49,12 @@
         <ol class="flex flex-wrap gap-x-4 gap-y-1 text-sm">
             @foreach ( [ 'service' => __( 'Service' ), 'provider' => __( 'Who' ), 'slot' => __( 'Time' ), 'details' => __( 'Details' ), 'done' => __( 'Confirmed' ) ] as $key => $label )
                 @if ( 'provider' !== $key || $this->offersProviderChoice )
-                    <li @class( [ 'font-semibold' => $step === $key, 'opacity-60' => $step !== $key ] ) @if ( $step === $key ) aria-current="step" @endif>
+                    {{-- Weight and `aria-current` mark the step rather than a
+                         dimmed colour. These labels say where the customer is
+                         in the flow, so they are content: an opacity modifier
+                         would put real text somewhere around 3:1 against the
+                         surface, under the 4.5:1 this widget is built to. --}}
+                    <li @class( [ 'font-semibold' => $step === $key ] ) @if ( $step === $key ) aria-current="step" @endif>
                         {{ $label }}
                     </li>
                 @endif
@@ -116,7 +121,7 @@
                         class="btn btn-block justify-between mb-2"
                     >
                         <span>{{ $option->name }}</span>
-                        <span class="opacity-70">{{ trans_choice( ':count minute|:count minutes', (int) $option->duration, [ 'count' => (int) $option->duration ] ) }}</span>
+                        <span>{{ trans_choice( ':count minute|:count minutes', (int) $option->duration, [ 'count' => (int) $option->duration ] ) }}</span>
                     </button>
                 </form>
             @empty
@@ -207,7 +212,7 @@
                     {{ __( 'Times on :date', [ 'date' => $asDay( $this->date )->translatedFormat( 'l j F' ) ] ) }}
                 </legend>
 
-                <p class="text-sm opacity-70 mb-2">{{ __( 'Times are shown in :timezone.', [ 'timezone' => $zone ] ) }}</p>
+                <p class="text-sm mb-2">{{ __( 'Times are shown in :timezone.', [ 'timezone' => $zone ] ) }}</p>
 
                 @error ( 'slotStart' )
                     <p class="text-error mb-2" role="alert">{{ $message }}</p>
