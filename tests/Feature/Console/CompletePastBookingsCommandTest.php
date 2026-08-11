@@ -5,6 +5,7 @@ declare( strict_types=1 );
 use ArtisanPackUI\Bookings\Enums\BookingActor;
 use ArtisanPackUI\Bookings\Enums\BookingStatus;
 use ArtisanPackUI\Bookings\Events\BookingCompleted;
+use ArtisanPackUI\Bookings\Exceptions\InvalidBookingTransitionException;
 use ArtisanPackUI\Bookings\Models\Booking;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -171,6 +172,60 @@ describe( '--dry-run', function (): void {
 
         Event::assertNotDispatched( BookingCompleted::class );
     } );
+} );
+
+it( 'loses to a cancellation that lands mid-sweep, without overwriting it', function (): void {
+    // The real race, staged end to end: the sweep reads a page of bookings, and
+    // one of them is cancelled before the loop reaches it. The model in hand
+    // still says `confirmed`, so a status check made from memory would sail past
+    // and overwrite the cancellation — telling the customer their appointment
+    // was cancelled and the CRM that it was delivered.
+    //
+    // Completing the first booking is what cancels the second, which puts the
+    // write between the enumeration and the transition exactly where a real
+    // customer's cancellation would land.
+    $first  = pastBooking();
+    $second = pastBooking( '-4 hours', '-3 hours' );
+
+    $completed = [];
+
+    addAction( 'ap.bookings.completed', function ( Booking $booking ) use ( &$completed, $second ): void {
+        $completed[] = $booking->getKey();
+
+        Booking::query()
+            ->whereKey( $second->getKey() )
+            ->update( [ 'status' => BookingStatus::Cancelled->value ] );
+    } );
+
+    $this->artisan( 'bookings:complete-past' )
+        ->expectsOutputToContain( '1 booking(s) completed.' )
+        ->assertSuccessful();
+
+    expect( $first->fresh()->status )->toBe( BookingStatus::Completed )
+        ->and( $second->fresh()->status )->toBe( BookingStatus::Cancelled )
+        ->and( $completed )->toBe( [ $first->getKey() ] );
+} );
+
+it( 'refuses to complete a booking cancelled underneath a stale model', function (): void {
+    // The same guarantee at the service, which is where it is enforced. The
+    // model still reports `confirmed`; the row does not.
+    $booking = pastBooking();
+
+    Booking::query()
+        ->whereKey( $booking->getKey() )
+        ->update( [ 'status' => BookingStatus::Cancelled->value ] );
+
+    $fired = false;
+
+    addAction( 'ap.bookings.completed', function () use ( &$fired ): void {
+        $fired = true;
+    } );
+
+    expect( fn () => bookingService()->complete( $booking, BookingActor::System ) )
+        ->toThrow( InvalidBookingTransitionException::class );
+
+    expect( $booking->fresh()->status )->toBe( BookingStatus::Cancelled )
+        ->and( $fired )->toBeFalse();
 } );
 
 it( 'does not complete a booking that has not finished, under a non-UTC app timezone', function (): void {

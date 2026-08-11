@@ -18,6 +18,7 @@ namespace ArtisanPackUI\Bookings\Console\Commands;
 use ArtisanPackUI\Bookings\Console\Commands\Concerns\PrunesRows;
 use ArtisanPackUI\Bookings\Enums\WebhookDeliveryStatus;
 use ArtisanPackUI\Bookings\Models\WebhookDelivery;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 
 use function __;
@@ -96,9 +97,13 @@ class PruneWebhookDeliveriesCommand extends Command
             return self::SUCCESS;
         }
 
+        $cutoff = $this->pruneCutoff( $days );
+
         $stale = WebhookDelivery::query()
-            ->where( 'created_at', '<', $this->pruneCutoff( $days ) )
+            ->where( 'created_at', '<', $cutoff )
             ->where( 'status', '!=', WebhookDeliveryStatus::Pending->value );
+
+        $this->reportStuck( $cutoff );
 
         if ( $this->option( 'dry-run' ) ) {
             $this->info( __(
@@ -115,5 +120,43 @@ class PruneWebhookDeliveriesCommand extends Command
         ) );
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Says how many pending deliveries have outlived the retention window.
+     *
+     * Exempting them from the prune is deliberate — see the class docblock —
+     * but exempting them silently is not the same thing. A `payload` holds the
+     * customer's name, their email, and their appointment, so a delivery stuck
+     * pending keeps that data indefinitely, for exactly the rows nobody is
+     * watching. That is the retention window quietly not applying, and the whole
+     * argument for keeping the row is that somebody should go and look at it.
+     *
+     * Reported rather than pruned on a longer secondary window, because the row
+     * is evidence of a queue that has stopped working and a second window would
+     * eventually destroy it. Booking erasure still deletes these payloads
+     * directly, so this is the clock-based path only.
+     *
+     * @since 1.0.0
+     *
+     * @param  CarbonImmutable  $cutoff  The retention cutoff.
+     *
+     * @return void
+     */
+    protected function reportStuck( CarbonImmutable $cutoff ): void
+    {
+        $stuck = WebhookDelivery::query()
+            ->where( 'created_at', '<', $cutoff )
+            ->where( 'status', WebhookDeliveryStatus::Pending->value )
+            ->count();
+
+        if ( 0 === $stuck ) {
+            return;
+        }
+
+        $this->warn( __(
+            ':count pending delivery attempt(s) are past the retention window and were kept. Check the queue.',
+            [ 'count' => $stuck ],
+        ) );
     }
 }

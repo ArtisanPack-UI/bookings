@@ -109,7 +109,10 @@ class CompletePastBookingsCommand extends Command
                 $bookings->complete( $booking, BookingActor::System );
             } catch ( InvalidBookingTransitionException ) {
                 // Somebody cancelled it between the page being read and this row
-                // being reached. Their decision wins; the sweep moves on.
+                // being reached. Their decision wins — the service claims the
+                // transition against the row rather than trusting the status on
+                // the model this loop is holding, so the loser finds out here
+                // instead of overwriting them. The sweep moves on.
                 continue;
             }
 

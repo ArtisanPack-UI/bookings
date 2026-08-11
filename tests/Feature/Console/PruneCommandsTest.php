@@ -95,16 +95,33 @@ describe( 'bookings:prune-webhook-deliveries', function (): void {
         expect( WebhookDelivery::query()->pluck( 'id' )->all() )->toBe( [ $kept->getKey() ] );
     } );
 
-    it( 'never removes a delivery that is still pending', function (): void {
+    it( 'never removes a delivery that is still pending, but says it kept it', function (): void {
         // Deleting it makes the delivery stop existing rather than fail, and the
-        // endpoint that should have received the event never hears about it.
+        // endpoint that should have received the event never hears about it. But
+        // a payload holds the customer's name, email, and appointment, so a row
+        // exempted from retention silently is the window quietly not applying —
+        // and the whole reason for keeping it is that somebody should look.
         config()->set( 'artisanpack.bookings.retention.webhook_delivery_days', 30 );
 
         $pending = WebhookDelivery::factory()->create( [ 'status' => WebhookDeliveryStatus::Pending ] );
         bookingRowAgedTo( $pending, '-400 days' );
 
         $this->artisan( 'bookings:prune-webhook-deliveries' )
+            ->expectsOutputToContain( '1 pending delivery attempt(s) are past the retention window and were kept.' )
             ->expectsOutputToContain( '0 webhook delivery attempt(s) removed.' )
+            ->assertSuccessful();
+
+        expect( WebhookDelivery::query()->count() )->toBe( 1 );
+    } );
+
+    it( 'says nothing about pending deliveries that are inside the window', function (): void {
+        config()->set( 'artisanpack.bookings.retention.webhook_delivery_days', 30 );
+
+        $pending = WebhookDelivery::factory()->create( [ 'status' => WebhookDeliveryStatus::Pending ] );
+        bookingRowAgedTo( $pending, '-2 days' );
+
+        $this->artisan( 'bookings:prune-webhook-deliveries' )
+            ->doesntExpectOutputToContain( 'past the retention window and were kept' )
             ->assertSuccessful();
 
         expect( WebhookDelivery::query()->count() )->toBe( 1 );
