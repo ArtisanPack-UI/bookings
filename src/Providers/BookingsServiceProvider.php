@@ -36,6 +36,7 @@ use ArtisanPackUI\Bookings\Contracts\RoundRobinStrategy;
 use ArtisanPackUI\Bookings\Contracts\SlotResolver;
 use ArtisanPackUI\Bookings\Contracts\SmsDriver;
 use ArtisanPackUI\Bookings\Enums\NotificationType;
+use ArtisanPackUI\Bookings\Http\Middleware\RateLimitBookings;
 use ArtisanPackUI\Bookings\Listeners\DispatchBookingWebhooks;
 use ArtisanPackUI\Bookings\Listeners\SendBookingNotifications;
 use ArtisanPackUI\Bookings\MeetingTypes\MeetingTypeRegistry;
@@ -67,6 +68,7 @@ use ArtisanPackUI\Bookings\Support\HookSubscriptions;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use InvalidArgumentException;
 
@@ -339,8 +341,39 @@ class BookingsServiceProvider extends ServiceProvider
 
         $this->invalidateAvailabilityOnWrites();
 
-        // Routes, views, Livewire components, calendar drivers, and the
-        // CMS-framework integration are registered here as each is built.
+        $this->registerPublicRoutes();
+
+        // Views, Livewire components, calendar drivers, and the CMS-framework
+        // integration are registered here as each is built.
+    }
+
+    /**
+     * Mounts the customer-facing API.
+     *
+     * Loaded rather than published, so an upgrade that adds an endpoint takes
+     * effect without an application re-copying a route file — and skipped
+     * entirely when the application has cached its routes, since a cached route
+     * file already contains these and loading them again would register every
+     * one of them twice.
+     *
+     * The `api` group is what makes these stateless: no session, no CSRF token,
+     * and a JSON answer to a failed validation rather than a redirect back to a
+     * page the caller was never on. A widget on a static marketing page has none
+     * of those things to offer.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    protected function registerPublicRoutes(): void
+    {
+        Route::aliasMiddleware( 'bookings.rate-limit', RateLimitBookings::class );
+
+        if ( $this->app->routesAreCached() ) {
+            return;
+        }
+
+        Route::middleware( 'api' )->group( __DIR__ . '/../../routes/public.php' );
     }
 
     /**
