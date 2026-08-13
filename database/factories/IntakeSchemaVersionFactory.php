@@ -19,9 +19,6 @@ use ArtisanPackUI\Bookings\Models\IntakeSchemaVersion;
 use ArtisanPackUI\Bookings\Models\Service;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
-use function array_map;
-use function range;
-
 /**
  * Builds recorded versions of a service's intake form.
  *

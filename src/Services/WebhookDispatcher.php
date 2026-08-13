@@ -26,25 +26,6 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-use function array_filter;
-use function array_is_list;
-use function array_map;
-use function array_values;
-use function config;
-use function hash_equals;
-use function hash_hmac;
-use function is_array;
-use function is_string;
-use function json_encode;
-use function max;
-use function mb_convert_encoding;
-use function mb_strimwidth;
-use function sprintf;
-
-use const JSON_THROW_ON_ERROR;
-use const JSON_UNESCAPED_SLASHES;
-use const JSON_UNESCAPED_UNICODE;
-
 /**
  * Delivers booking events to the endpoints that subscribed to them.
  *

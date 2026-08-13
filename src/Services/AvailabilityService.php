@@ -36,19 +36,6 @@ use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Database\Eloquent\Builder;
 use UnexpectedValueException;
 
-use function applyFilters;
-use function array_values;
-use function get_debug_type;
-use function hash;
-use function intdiv;
-use function is_array;
-use function is_bool;
-use function is_int;
-use function max;
-use function min;
-use function sprintf;
-use function usort;
-
 /**
  * Answers what a service can be booked into, and when.
  *

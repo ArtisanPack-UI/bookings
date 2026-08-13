@@ -42,16 +42,6 @@ use Recurr\Rule;
 use Recurr\Transformer\ArrayTransformer;
 use Recurr\Transformer\ArrayTransformerConfig;
 
-use function array_intersect_key;
-use function array_key_exists;
-use function array_merge;
-use function count;
-use function doAction;
-use function is_string;
-use function max;
-use function sprintf;
-use function trim;
-
 /**
  * The one place a recurring arrangement is decided.
  *

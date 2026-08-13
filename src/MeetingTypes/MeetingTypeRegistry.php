@@ -19,11 +19,6 @@ use ArtisanPackUI\Bookings\Contracts\MeetingType;
 use ArtisanPackUI\Bookings\Contracts\MeetingTypeRegistry as MeetingTypeRegistryContract;
 use UnexpectedValueException;
 
-use function applyFilters;
-use function get_debug_type;
-use function is_array;
-use function sprintf;
-
 /**
  * The registry the package ships, backed by the extension filter.
  *

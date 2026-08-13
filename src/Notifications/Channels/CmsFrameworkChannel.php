@@ -23,19 +23,6 @@ use ArtisanPackUI\Bookings\Notifications\Channels\Concerns\FitsRecipientColumn;
 use Illuminate\Notifications\Notification;
 use RuntimeException;
 
-use function apSendNotification;
-use function apSendNotificationByRole;
-use function array_filter;
-use function array_map;
-use function array_values;
-use function config;
-use function count;
-use function function_exists;
-use function implode;
-use function is_numeric;
-use function is_string;
-use function sprintf;
-
 /**
  * Hands the staff-facing copy to cms-framework's notification centre.
  *

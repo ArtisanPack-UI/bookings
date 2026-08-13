@@ -21,8 +21,6 @@ use ArtisanPackUI\Bookings\Models\CalendarConnection;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 
-use function __;
-
 /**
  * Reads back every two-way Apple calendar.
  *

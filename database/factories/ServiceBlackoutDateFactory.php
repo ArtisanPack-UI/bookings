@@ -21,8 +21,6 @@ use DateTimeInterface;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Carbon;
 
-use function fake;
-
 /**
  * Builds service blackout dates.
  *

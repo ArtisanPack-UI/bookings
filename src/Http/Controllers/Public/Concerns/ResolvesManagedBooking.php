@@ -22,10 +22,6 @@ use Illuminate\Http\Request;
 use RuntimeException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
-use function __;
-use function config;
-use function max;
-
 /**
  * The booking a manage token resolved to, and what its holder may still do.
  *

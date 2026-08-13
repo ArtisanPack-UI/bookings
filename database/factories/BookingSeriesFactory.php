@@ -22,10 +22,6 @@ use ArtisanPackUI\Bookings\Models\ServiceProvider;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Carbon;
 
-use function fake;
-use function now;
-use function sprintf;
-
 /**
  * Builds recurring booking series.
  *

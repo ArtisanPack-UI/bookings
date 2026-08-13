@@ -17,10 +17,6 @@ namespace ArtisanPackUI\Bookings\Http\Requests\Public;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-use function is_string;
-use function sanitizeText;
-use function trim;
-
 /**
  * Validates the one optional thing a customer may say while cancelling.
  *

@@ -25,8 +25,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 use RuntimeException;
 
-use function sprintf;
-
 /**
  * A provider's recurring weekly hours.
  *

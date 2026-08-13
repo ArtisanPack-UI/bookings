@@ -19,9 +19,6 @@ use ArtisanPackUI\Bookings\Models\Webhook;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
-use function fake;
-use function now;
-
 /**
  * Builds outbound webhook endpoints.
  *

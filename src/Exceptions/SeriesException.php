@@ -20,8 +20,6 @@ use ArtisanPackUI\Bookings\Models\Booking;
 use ArtisanPackUI\Bookings\Models\BookingSeries;
 use Throwable;
 
-use function sprintf;
-
 /**
  * The domain refused something asked of a recurring series.
  *

@@ -24,12 +24,6 @@ use Illuminate\Notifications\Notification;
 use Throwable;
 use UnexpectedValueException;
 
-use function get_debug_type;
-use function is_string;
-use function method_exists;
-use function sprintf;
-use function trim;
-
 /**
  * Sends a lifecycle message to the customer's phone.
  *

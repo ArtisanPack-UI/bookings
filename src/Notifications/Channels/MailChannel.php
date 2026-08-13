@@ -21,10 +21,6 @@ use ArtisanPackUI\Bookings\Models\Booking;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\Notification as Notifier;
 
-use function filter_var;
-
-use const FILTER_VALIDATE_EMAIL;
-
 /**
  * Delivers a lifecycle message to the customer by email.
  *

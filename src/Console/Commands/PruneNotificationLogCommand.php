@@ -19,8 +19,6 @@ use ArtisanPackUI\Bookings\Console\Commands\Concerns\PrunesRows;
 use ArtisanPackUI\Bookings\Models\NotificationLog;
 use Illuminate\Console\Command;
 
-use function __;
-
 /**
  * Removes notification log rows past their retention window.
  *

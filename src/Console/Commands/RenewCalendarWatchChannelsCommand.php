@@ -22,8 +22,6 @@ use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 
-use function __;
-
 /**
  * Replaces push registrations before — and after — they lapse.
  *

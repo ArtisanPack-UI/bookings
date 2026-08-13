@@ -21,9 +21,6 @@ use ArtisanPackUI\Bookings\Services\Concerns\MintsOpaqueTokens;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
-use function doAction;
-use function max;
-
 /**
  * The one place a manage token is minted, hashed, and checked.
  *

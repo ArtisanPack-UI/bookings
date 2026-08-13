@@ -19,9 +19,6 @@ use ArtisanPackUI\Bookings\Models\Service;
 use Carbon\CarbonImmutable;
 use Throwable;
 
-use function config;
-use function max;
-
 /**
  * Turns a month or a day into the span of it a customer may actually book.
  *

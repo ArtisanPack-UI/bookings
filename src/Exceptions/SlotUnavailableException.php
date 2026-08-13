@@ -19,8 +19,6 @@ use ArtisanPackUI\Bookings\Models\Service;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 
-use function sprintf;
-
 /**
  * Nobody could take the slot that was asked for.
  *

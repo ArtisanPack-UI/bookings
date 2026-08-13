@@ -20,8 +20,6 @@ use ArtisanPackUI\Bookings\Models\CalendarWatchChannel;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
-use function now;
-
 /**
  * Builds push notification registrations.
  *

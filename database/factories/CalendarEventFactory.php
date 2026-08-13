@@ -21,9 +21,6 @@ use ArtisanPackUI\Bookings\Models\CalendarEvent;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
-use function fake;
-use function now;
-
 /**
  * Builds outbound sync ledger entries.
  *

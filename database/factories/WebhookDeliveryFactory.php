@@ -21,9 +21,6 @@ use ArtisanPackUI\Bookings\Models\WebhookDelivery;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
-use function fake;
-use function now;
-
 /**
  * Builds webhook delivery attempts.
  *

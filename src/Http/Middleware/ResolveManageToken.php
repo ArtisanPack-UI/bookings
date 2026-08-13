@@ -22,10 +22,6 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
-use function __;
-use function is_string;
-use function preg_match;
-
 /**
  * Turns the token in a manage URL into the booking it stands for.
  *

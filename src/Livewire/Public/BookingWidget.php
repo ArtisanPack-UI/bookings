@@ -40,29 +40,6 @@ use Livewire\Attributes\Url;
 use Livewire\Component;
 use Throwable;
 
-use function __;
-use function app;
-use function array_key_exists;
-use function config;
-use function count;
-use function in_array;
-use function is_array;
-use function is_bool;
-use function is_numeric;
-use function is_string;
-use function old;
-use function request;
-use function sanitizeEmail;
-use function sanitizeText;
-use function session;
-use function str_replace;
-use function str_starts_with;
-use function strlen;
-use function substr;
-use function timezone_identifiers_list;
-use function trim;
-use function view;
-
 /**
  * The customer-facing booking flow: service, provider, time, details.
  *

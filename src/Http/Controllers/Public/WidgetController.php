@@ -28,13 +28,6 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
-use function __;
-use function back;
-use function config;
-use function in_array;
-use function is_string;
-use function timezone_identifiers_list;
-
 /**
  * Where the booking widget's form posts when JavaScript never arrived.
  *

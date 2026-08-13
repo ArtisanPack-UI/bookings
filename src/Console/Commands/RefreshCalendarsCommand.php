@@ -20,8 +20,6 @@ use ArtisanPackUI\Bookings\Models\CalendarConnection;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 
-use function __;
-
 /**
  * Re-reads the busy blocks behind every two-way calendar connection.
  *

@@ -26,8 +26,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 use RuntimeException;
 
-use function sprintf;
-
 /**
  * A single-date exception to a provider's weekly schedule.
  *

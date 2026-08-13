@@ -24,18 +24,6 @@ use Illuminate\Http\Response;
 use Illuminate\Routing\Controller;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
-use function __;
-use function config;
-use function explode;
-use function in_array;
-use function is_string;
-use function max;
-use function preg_replace;
-use function sprintf;
-use function str_starts_with;
-use function substr;
-use function trim;
-
 /**
  * The two feeds a calendar client subscribes to.
  *

@@ -15,8 +15,6 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Console\Commands\Concerns;
 
-use function __;
-
 /**
  * What the three calendar sweeps say when they cannot act.
  *

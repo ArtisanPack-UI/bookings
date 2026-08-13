@@ -20,11 +20,6 @@ use Illuminate\Contracts\Database\Eloquent\CastsAttributes;
 use Illuminate\Database\Eloquent\Model;
 use InvalidArgumentException;
 
-use function is_string;
-use function preg_match;
-use function sprintf;
-use function trim;
-
 /**
  * Casts a `TIME` column to a plain `H:i:s` string and back.
  *

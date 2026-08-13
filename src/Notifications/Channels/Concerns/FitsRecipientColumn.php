@@ -15,10 +15,6 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Notifications\Channels\Concerns;
 
-use function mb_strlen;
-use function mb_substr;
-use function sprintf;
-
 /**
  * Keeps a channel's logged recipient inside the column that has to hold it.
  *

@@ -21,9 +21,6 @@ use ArtisanPackUI\Bookings\Models\WebhookDelivery;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 
-use function __;
-use function config;
-
 /**
  * Removes webhook delivery attempts past their retention window.
  *

@@ -17,11 +17,6 @@ namespace ArtisanPackUI\Bookings\Http\Requests\Public;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-use function __;
-use function is_string;
-use function sanitizeText;
-use function trim;
-
 /**
  * Validates the month and provider an availability query names.
  *

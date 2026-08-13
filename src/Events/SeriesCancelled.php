@@ -22,8 +22,6 @@ use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 use InvalidArgumentException;
 
-use function sprintf;
-
 /**
  * Fired when a whole recurring series is called off.
  *

@@ -18,10 +18,6 @@ namespace ArtisanPackUI\Bookings\Console\Commands;
 use ArtisanPackUI\Bookings\Services\ManageTokenService;
 use Illuminate\Console\Command;
 
-use function __;
-use function is_numeric;
-use function max;
-
 /**
  * Rotates every manage token in the system.
  *

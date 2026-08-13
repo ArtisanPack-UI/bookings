@@ -22,19 +22,6 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\LazyCollection;
 use UnexpectedValueException;
 
-use function applyFilters;
-use function array_filter;
-use function array_map;
-use function array_unique;
-use function array_values;
-use function config;
-use function get_debug_type;
-use function is_array;
-use function is_numeric;
-use function max;
-use function rsort;
-use function sprintf;
-
 /**
  * Works out which reminders are due, and sends them.
  *

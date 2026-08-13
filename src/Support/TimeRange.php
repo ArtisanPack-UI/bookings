@@ -20,8 +20,6 @@ use Carbon\CarbonInterface;
 use InvalidArgumentException;
 use JsonSerializable;
 
-use function sprintf;
-
 /**
  * A half-open span of time, `[start, end)`.
  *
