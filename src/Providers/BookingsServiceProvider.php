@@ -41,6 +41,9 @@ use ArtisanPackUI\Bookings\Http\Middleware\RateLimitBookings;
 use ArtisanPackUI\Bookings\Http\Middleware\ResolveManageToken;
 use ArtisanPackUI\Bookings\Listeners\DispatchBookingWebhooks;
 use ArtisanPackUI\Bookings\Listeners\SendBookingNotifications;
+use ArtisanPackUI\Bookings\Livewire\Admin\IntakeSchemaEditor;
+use ArtisanPackUI\Bookings\Livewire\Admin\ServiceEditor;
+use ArtisanPackUI\Bookings\Livewire\Admin\ServicesIndex;
 use ArtisanPackUI\Bookings\Livewire\Public\BookingWidget;
 use ArtisanPackUI\Bookings\Livewire\Public\ManageBooking;
 use ArtisanPackUI\Bookings\MeetingTypes\MeetingTypeRegistry;
@@ -410,6 +413,15 @@ class BookingsServiceProvider extends ServiceProvider
 
         Livewire::component( 'artisanpack-booking-widget', BookingWidget::class );
         Livewire::component( 'artisanpack-manage-booking', ManageBooking::class );
+
+        // The admin surface. Namespaced under `artisanpack-bookings-admin-*`
+        // rather than the bare public prefix, because these are mounted into an
+        // application's own admin shell — which already gates them behind its
+        // authentication — and the longer prefix keeps them clear of the
+        // customer-facing components a page might embed alongside.
+        Livewire::component( 'artisanpack-bookings-admin-services', ServicesIndex::class );
+        Livewire::component( 'artisanpack-bookings-admin-service-editor', ServiceEditor::class );
+        Livewire::component( 'artisanpack-bookings-admin-intake-schema-editor', IntakeSchemaEditor::class );
     }
 
     /**
