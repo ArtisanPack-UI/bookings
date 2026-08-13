@@ -41,7 +41,10 @@ use ArtisanPackUI\Bookings\Http\Middleware\RateLimitBookings;
 use ArtisanPackUI\Bookings\Http\Middleware\ResolveManageToken;
 use ArtisanPackUI\Bookings\Listeners\DispatchBookingWebhooks;
 use ArtisanPackUI\Bookings\Listeners\SendBookingNotifications;
+use ArtisanPackUI\Bookings\Livewire\Admin\AvailabilityEditor;
 use ArtisanPackUI\Bookings\Livewire\Admin\IntakeSchemaEditor;
+use ArtisanPackUI\Bookings\Livewire\Admin\ProviderEditor;
+use ArtisanPackUI\Bookings\Livewire\Admin\ProvidersIndex;
 use ArtisanPackUI\Bookings\Livewire\Admin\ServiceEditor;
 use ArtisanPackUI\Bookings\Livewire\Admin\ServicesIndex;
 use ArtisanPackUI\Bookings\Livewire\Public\BookingWidget;
@@ -422,6 +425,9 @@ class BookingsServiceProvider extends ServiceProvider
         Livewire::component( 'artisanpack-bookings-admin-services', ServicesIndex::class );
         Livewire::component( 'artisanpack-bookings-admin-service-editor', ServiceEditor::class );
         Livewire::component( 'artisanpack-bookings-admin-intake-schema-editor', IntakeSchemaEditor::class );
+        Livewire::component( 'artisanpack-bookings-admin-providers', ProvidersIndex::class );
+        Livewire::component( 'artisanpack-bookings-admin-provider-editor', ProviderEditor::class );
+        Livewire::component( 'artisanpack-bookings-admin-availability-editor', AvailabilityEditor::class );
     }
 
     /**
