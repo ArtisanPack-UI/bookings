@@ -24,16 +24,6 @@ use Illuminate\Notifications\Notification;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Notification as Notifier;
 
-use function array_filter;
-use function array_map;
-use function array_values;
-use function class_exists;
-use function config;
-use function count;
-use function implode;
-use function is_a;
-use function sprintf;
-
 /**
  * Writes a lifecycle message to the admin notifications table.
  *

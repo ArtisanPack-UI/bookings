@@ -26,8 +26,6 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 
-use function date_default_timezone_get;
-
 /**
  * A record of a notification sent about a booking.
  *

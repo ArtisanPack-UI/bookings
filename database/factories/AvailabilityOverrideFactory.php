@@ -22,8 +22,6 @@ use DateTimeInterface;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Carbon;
 
-use function fake;
-
 /**
  * Builds single-date exceptions to a provider's weekly schedule.
  *

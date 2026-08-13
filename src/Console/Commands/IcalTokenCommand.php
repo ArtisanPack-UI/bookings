@@ -19,10 +19,6 @@ use ArtisanPackUI\Bookings\Models\ServiceProvider;
 use ArtisanPackUI\Bookings\Services\IcalTokenService;
 use Illuminate\Console\Command;
 
-use function __;
-use function ctype_digit;
-use function is_string;
-
 /**
  * Issues, rotates, and withdraws a provider's calendar feed token.
  *

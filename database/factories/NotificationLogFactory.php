@@ -23,9 +23,6 @@ use DateTimeInterface;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Carbon;
 
-use function fake;
-use function now;
-
 /**
  * Builds notification log entries.
  *

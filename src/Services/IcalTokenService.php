@@ -19,9 +19,6 @@ use ArtisanPackUI\Bookings\Models\ServiceProvider;
 use ArtisanPackUI\Bookings\Services\Concerns\MintsOpaqueTokens;
 use Illuminate\Database\Eloquent\Builder;
 
-use function doAction;
-use function route;
-
 /**
  * The one place a provider's calendar feed token is minted, hashed, and checked.
  *

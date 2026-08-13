@@ -30,10 +30,6 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Routing\Controller;
 use Illuminate\Validation\ValidationException;
 
-use function __;
-use function array_map;
-use function response;
-
 /**
  * What the public widget may read: services, their providers, their free slots.
  *

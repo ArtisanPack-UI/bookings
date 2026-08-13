@@ -39,22 +39,6 @@ use Livewire\Component;
 use RuntimeException;
 use Throwable;
 
-use function __;
-use function app;
-use function config;
-use function in_array;
-use function is_string;
-use function max;
-use function min;
-use function preg_match;
-use function request;
-use function sanitizeText;
-use function str_replace;
-use function strtolower;
-use function timezone_identifiers_list;
-use function trim;
-use function view;
-
 /**
  * The page behind the link in a customer's confirmation email.
  *

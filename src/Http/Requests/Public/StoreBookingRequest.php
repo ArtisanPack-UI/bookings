@@ -21,17 +21,6 @@ use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Throwable;
 
-use function __;
-use function config;
-use function is_array;
-use function is_bool;
-use function is_numeric;
-use function is_string;
-use function max;
-use function sanitizeEmail;
-use function sanitizeText;
-use function trim;
-
 /**
  * Validates and cleans the one write the public API offers.
  *

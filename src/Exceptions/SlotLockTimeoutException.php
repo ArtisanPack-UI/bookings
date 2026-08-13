@@ -18,8 +18,6 @@ namespace ArtisanPackUI\Bookings\Exceptions;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 
-use function sprintf;
-
 /**
  * The advisory lock on a provider's slot could not be taken in time.
  *

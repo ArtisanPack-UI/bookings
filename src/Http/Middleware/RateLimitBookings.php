@@ -22,17 +22,6 @@ use Illuminate\Http\Request;
 use InvalidArgumentException;
 use Symfony\Component\HttpFoundation\Response;
 
-use function __;
-use function array_key_exists;
-use function array_keys;
-use function config;
-use function implode;
-use function in_array;
-use function is_numeric;
-use function is_string;
-use function sha1;
-use function sprintf;
-
 /**
  * Bounds how often one caller may hit an unauthenticated booking endpoint.
  *

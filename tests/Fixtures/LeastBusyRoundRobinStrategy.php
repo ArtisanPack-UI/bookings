@@ -18,9 +18,6 @@ use ArtisanPackUI\Bookings\Models\Service;
 use ArtisanPackUI\Bookings\Models\ServiceProvider;
 use ArtisanPackUI\Bookings\Support\Slot;
 
-use function array_key_first;
-use function asort;
-
 /**
  * A strategy that hands the slot to whoever has the fewest bookings.
  *

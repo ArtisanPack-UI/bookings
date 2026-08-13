@@ -31,16 +31,6 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 use UnexpectedValueException;
 
-use function applyFilters;
-use function array_key_exists;
-use function array_unique;
-use function array_values;
-use function config;
-use function get_debug_type;
-use function is_array;
-use function is_string;
-use function sprintf;
-
 /**
  * Sends one lifecycle message about a booking, over every channel that applies.
  *

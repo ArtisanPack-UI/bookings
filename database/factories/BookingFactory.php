@@ -26,9 +26,6 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Database\Eloquent\Factories\Sequence;
 use Illuminate\Support\Carbon;
 
-use function fake;
-use function now;
-
 /**
  * Builds bookings.
  *

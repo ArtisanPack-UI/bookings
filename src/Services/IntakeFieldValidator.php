@@ -22,20 +22,6 @@ use Illuminate\Contracts\Validation\Factory as ValidationFactory;
 use Illuminate\Validation\Rule;
 use UnexpectedValueException;
 
-use function applyFilters;
-use function array_key_exists;
-use function array_values;
-use function filter_var;
-use function get_debug_type;
-use function in_array;
-use function is_array;
-use function is_bool;
-use function is_float;
-use function is_int;
-use function is_string;
-use function sprintf;
-use function trim;
-
 /**
  * Checks a customer's intake answers against the form they were asked.
  *

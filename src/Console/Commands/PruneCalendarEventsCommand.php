@@ -20,8 +20,6 @@ use ArtisanPackUI\Bookings\Models\Booking;
 use ArtisanPackUI\Bookings\Models\CalendarEvent;
 use Illuminate\Console\Command;
 
-use function __;
-
 /**
  * Removes the external-event mappings for bookings that are long over.
  *

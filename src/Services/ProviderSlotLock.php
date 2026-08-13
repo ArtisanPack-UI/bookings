@@ -28,14 +28,6 @@ use Illuminate\Database\ConnectionResolverInterface;
 use Illuminate\Database\QueryException;
 use RuntimeException;
 
-use function hash;
-use function hexdec;
-use function in_array;
-use function max;
-use function min;
-use function sprintf;
-use function substr;
-
 /**
  * Serialises everybody who wants the same provider at the same moment.
  *

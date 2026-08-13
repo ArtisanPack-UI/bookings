@@ -15,15 +15,6 @@ use Livewire\LivewireServiceProvider;
 use Orchestra\Testbench\TestCase as BaseTestCase;
 use Throwable;
 
-use function class_basename;
-use function class_exists;
-use function config;
-use function env;
-use function filter_var;
-use function sprintf;
-
-use const FILTER_VALIDATE_BOOLEAN;
-
 /**
  * Base Test Case
  *

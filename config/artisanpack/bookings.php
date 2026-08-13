@@ -345,9 +345,20 @@ return [
     | Mint one with "php artisan bookings:ical-token {provider}"; there is no
     | setting for it, because a token is not configuration.
     |
+    | "manage_url" is the address of your self-serve page, with "{token}" where
+    | the customer's manage token goes — for example
+    | "https://example.com/bookings/manage/{token}". It is what the confirmation
+    | email links to, and the package cannot work it out on its own: the
+    | self-serve screen is the ManageBooking Livewire component, which you mount
+    | on a route of your own choosing, and this package's own "manage/{token}"
+    | endpoint answers JSON, which is a fine API and a useless thing to put in
+    | an email. Left unset, the confirmation carries no link at all rather than
+    | one that goes nowhere.
+    |
     */
     'public' => [
         'route_prefix' => 'bookings',
+        'manage_url'   => env( 'ARTISANPACK_BOOKINGS_MANAGE_URL' ),
         'rate_limits'  => [
             'post'         => 5,
             'manage_get'   => 20,

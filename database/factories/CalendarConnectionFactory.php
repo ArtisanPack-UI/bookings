@@ -22,10 +22,6 @@ use ArtisanPackUI\Bookings\Models\ServiceProvider;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
-use function fake;
-use function now;
-use function sprintf;
-
 /**
  * Builds connections to external calendars.
  *

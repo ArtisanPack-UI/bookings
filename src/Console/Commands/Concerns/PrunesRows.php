@@ -19,11 +19,6 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
-use function config;
-use function count;
-use function is_numeric;
-use function max;
-
 /**
  * The bits every `bookings:prune-*` command does the same way.
  *

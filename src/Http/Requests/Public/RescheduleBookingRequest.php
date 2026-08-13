@@ -20,13 +20,6 @@ use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Throwable;
 
-use function __;
-use function config;
-use function is_string;
-use function max;
-use function sanitizeText;
-use function trim;
-
 /**
  * Validates the time a customer wants to move their appointment to.
  *

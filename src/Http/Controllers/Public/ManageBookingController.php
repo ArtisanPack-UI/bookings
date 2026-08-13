@@ -32,9 +32,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 
-use function __;
-use function response;
-
 /**
  * What the customer can do with the link in their confirmation email.
  *

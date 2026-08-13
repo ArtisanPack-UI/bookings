@@ -25,8 +25,6 @@ use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
 
-use function __;
-
 /**
  * Closes out confirmed bookings whose end time has passed.
  *

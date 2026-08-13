@@ -17,8 +17,6 @@ namespace ArtisanPackUI\Bookings\Notifications;
 
 use ArtisanPackUI\Bookings\Enums\NotificationType;
 
-use function __;
-
 /**
  * Tells the customer their appointment is booked.
  *
@@ -63,5 +61,33 @@ class BookingConfirmation extends BookingNotification
     protected function openingLine(): string
     {
         return __( 'Your appointment is confirmed. Here are the details.' );
+    }
+
+    /**
+     * Gets the subject line the staff copy would use unfiltered.
+     *
+     * @since 1.0.0
+     *
+     * @return string The staff subject.
+     */
+    protected function adminSubject(): string
+    {
+        return __( 'New booking: :name on :date (:number)', [
+            'name'   => $this->booking->customer_name,
+            'date'   => $this->booking->startTimeForProvider()->format( 'j F' ),
+            'number' => $this->booking->booking_number,
+        ] );
+    }
+
+    /**
+     * Gets the first line of the staff copy.
+     *
+     * @since 1.0.0
+     *
+     * @return string The staff opening line.
+     */
+    protected function adminOpeningLine(): string
+    {
+        return __( 'A new booking has been made. Here are the details.' );
     }
 }

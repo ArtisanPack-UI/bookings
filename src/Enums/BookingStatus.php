@@ -15,9 +15,6 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Enums;
 
-use function array_map;
-use function in_array;
-
 /**
  * Where a booking sits in its lifecycle.
  *

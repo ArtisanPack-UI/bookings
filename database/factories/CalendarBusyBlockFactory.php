@@ -22,8 +22,6 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
-use function fake;
-
 /**
  * Builds spans of external busy time.
  *

@@ -18,8 +18,6 @@ namespace ArtisanPackUI\Bookings\Models;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 use InvalidArgumentException;
 
-use function sprintf;
-
 /**
  * The pairing of a provider with a service they offer.
  *

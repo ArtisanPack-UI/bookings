@@ -31,9 +31,6 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
-use function array_key_exists;
-use function strtoupper;
-
 /**
  * One appointment.
  *
@@ -375,6 +372,34 @@ class Booking extends Model
     public function startTimeForCustomer(): Carbon
     {
         return $this->start_time->copy()->setTimezone( $this->customer_timezone );
+    }
+
+    /**
+     * Gets the start time rendered in the provider's working timezone.
+     *
+     * The zone staff read the diary in, which is the provider's and not the
+     * customer's: an administrator scanning the morning's appointments needs
+     * them in the order and at the times the provider will actually work them,
+     * and a booking taken from Auckland shown at its Auckland clock face reads
+     * as belonging to a different day.
+     *
+     * Falls back to the application's zone when the booking has no provider
+     * attached — an unassigned booking still has to be shown to somebody, and
+     * the application's zone is the only other one the installation has stated.
+     *
+     * @since 1.0.0
+     *
+     * @return Carbon The start time in the provider's zone.
+     */
+    public function startTimeForProvider(): Carbon
+    {
+        $timezone = $this->provider?->timezone;
+
+        if ( ! is_string( $timezone ) || '' === $timezone ) {
+            $timezone = (string) config( 'app.timezone', 'UTC' );
+        }
+
+        return $this->start_time->copy()->setTimezone( $timezone );
     }
 
     /**

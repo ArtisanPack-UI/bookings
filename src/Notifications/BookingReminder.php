@@ -17,8 +17,6 @@ namespace ArtisanPackUI\Bookings\Notifications;
 
 use ArtisanPackUI\Bookings\Enums\NotificationType;
 
-use function __;
-
 /**
  * Reminds the customer that their appointment is coming up.
  *
@@ -63,5 +61,33 @@ class BookingReminder extends BookingNotification
     protected function openingLine(): string
     {
         return __( 'This is a reminder about your upcoming appointment.' );
+    }
+
+    /**
+     * Gets the subject line the staff copy would use unfiltered.
+     *
+     * @since 1.0.0
+     *
+     * @return string The staff subject.
+     */
+    protected function adminSubject(): string
+    {
+        return __( 'Upcoming booking: :name on :date (:number)', [
+            'name'   => $this->booking->customer_name,
+            'date'   => $this->booking->startTimeForProvider()->format( 'j F' ),
+            'number' => $this->booking->booking_number,
+        ] );
+    }
+
+    /**
+     * Gets the first line of the staff copy.
+     *
+     * @since 1.0.0
+     *
+     * @return string The staff opening line.
+     */
+    protected function adminOpeningLine(): string
+    {
+        return __( 'This is a reminder about an upcoming appointment on the diary.' );
     }
 }

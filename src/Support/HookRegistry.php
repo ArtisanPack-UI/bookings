@@ -15,9 +15,6 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Support;
 
-use function array_filter;
-use function array_keys;
-
 /**
  * The one list of every hook this package owns.
  *

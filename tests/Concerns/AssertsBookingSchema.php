@@ -16,15 +16,6 @@ namespace Tests\Concerns;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-use function array_merge;
-use function array_values;
-use function collect;
-use function expect;
-use function hash;
-use function now;
-use function sprintf;
-use function uniqid;
-
 /**
  * Asserts the initial migration set produced the schema the plan describes.
  *

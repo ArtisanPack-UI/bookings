@@ -18,8 +18,6 @@ namespace ArtisanPackUI\Bookings\Console\Commands;
 use ArtisanPackUI\Bookings\Services\ReminderScheduler;
 use Illuminate\Console\Command;
 
-use function __;
-
 /**
  * Sends every booking reminder that has come due.
  *

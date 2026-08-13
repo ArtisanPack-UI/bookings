@@ -17,8 +17,6 @@ namespace ArtisanPackUI\Bookings\Notifications;
 
 use ArtisanPackUI\Bookings\Enums\NotificationType;
 
-use function __;
-
 /**
  * Records that the customer did not attend.
  *
@@ -63,5 +61,33 @@ class BookingNoShow extends BookingNotification
     protected function openingLine(): string
     {
         return __( 'You were marked as not having attended the appointment below.' );
+    }
+
+    /**
+     * Gets the subject line the staff copy would use unfiltered.
+     *
+     * @since 1.0.0
+     *
+     * @return string The staff subject.
+     */
+    protected function adminSubject(): string
+    {
+        return __( 'No-show: :name on :date (:number)', [
+            'name'   => $this->booking->customer_name,
+            'date'   => $this->booking->startTimeForProvider()->format( 'j F' ),
+            'number' => $this->booking->booking_number,
+        ] );
+    }
+
+    /**
+     * Gets the first line of the staff copy.
+     *
+     * @since 1.0.0
+     *
+     * @return string The staff opening line.
+     */
+    protected function adminOpeningLine(): string
+    {
+        return __( 'This customer was marked as not having attended.' );
     }
 }

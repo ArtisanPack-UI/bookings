@@ -19,10 +19,6 @@ use ArtisanPackUI\Bookings\Models\Booking;
 use ArtisanPackUI\Bookings\Models\CalendarConnection;
 use ArtisanPackUI\Bookings\Support\TimeRange;
 
-use function array_key_exists;
-use function count;
-use function sprintf;
-
 /**
  * A calendar that lives in an array.
  *

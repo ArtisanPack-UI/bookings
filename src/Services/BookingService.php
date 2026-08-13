@@ -43,17 +43,6 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use InvalidArgumentException;
 use UnexpectedValueException;
 
-use function applyFilters;
-use function array_filter;
-use function array_merge;
-use function array_values;
-use function doAction;
-use function get_debug_type;
-use function is_array;
-use function max;
-use function sprintf;
-use function trim;
-
 /**
  * The one place a booking's life is decided.
  *

@@ -18,8 +18,6 @@ namespace ArtisanPackUI\Bookings\Http\Controllers\Public\Concerns;
 use ArtisanPackUI\Bookings\Models\Service;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
-use function __;
-
 /**
  * One answer to "which service is this, and may the public book it".
  *

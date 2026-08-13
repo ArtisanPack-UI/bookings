@@ -17,9 +17,6 @@ namespace ArtisanPackUI\Bookings\MeetingTypes;
 
 use ArtisanPackUI\Bookings\Contracts\MeetingType;
 
-use function __;
-use function is_string;
-
 /**
  * A meeting type described entirely by its data.
  *

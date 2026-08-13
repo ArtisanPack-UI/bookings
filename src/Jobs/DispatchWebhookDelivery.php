@@ -23,9 +23,6 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Carbon;
 
-use function ceil;
-use function max;
-
 /**
  * Makes one attempt at a queued webhook delivery, and books the next one.
  *

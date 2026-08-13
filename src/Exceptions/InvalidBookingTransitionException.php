@@ -18,8 +18,6 @@ namespace ArtisanPackUI\Bookings\Exceptions;
 use ArtisanPackUI\Bookings\Enums\BookingStatus;
 use ArtisanPackUI\Bookings\Models\Booking;
 
-use function sprintf;
-
 /**
  * A booking was asked to move somewhere it cannot go from where it is.
  *

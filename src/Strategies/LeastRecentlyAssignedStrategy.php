@@ -20,8 +20,6 @@ use ArtisanPackUI\Bookings\Models\Service;
 use ArtisanPackUI\Bookings\Models\ServiceProvider;
 use ArtisanPackUI\Bookings\Support\Slot;
 
-use function usort;
-
 /**
  * Gives the slot to whoever has gone longest without one.
  *

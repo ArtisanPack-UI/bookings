@@ -25,16 +25,6 @@ use Illuminate\Support\Collection;
 use Sabre\VObject\Component\VCalendar;
 use Sabre\VObject\Component\VEvent;
 
-use function __;
-use function config;
-use function implode;
-use function is_string;
-use function parse_url;
-use function sha1;
-use function sprintf;
-
-use const PHP_URL_HOST;
-
 /**
  * Turns bookings into a subscribable calendar, and into the stamp that says
  * whether it has changed.

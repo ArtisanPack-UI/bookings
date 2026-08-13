@@ -79,18 +79,6 @@ use Illuminate\Support\ServiceProvider;
 use InvalidArgumentException;
 use Livewire\Livewire;
 
-use function __;
-use function apRegisterNotification;
-use function array_key_exists;
-use function array_values;
-use function class_exists;
-use function config;
-use function function_exists;
-use function is_a;
-use function is_string;
-use function sprintf;
-use function trim;
-
 /**
  * Service provider for the Bookings package.
  *
