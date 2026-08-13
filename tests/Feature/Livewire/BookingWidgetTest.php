@@ -374,7 +374,8 @@ describe( 'booking', function (): void {
             ->set( 'customerName', 'Sam Rivera' )
             ->set( 'customerEmail', 'sam@example.test' )
             ->call( 'book' )
-            ->assertHasErrors( 'slotStart' );
+            ->assertHasErrors( 'slotStart' )
+            ->assertSee( 'Too many requests.' );
 
         expect( Booking::query()->count() )->toBe( 0 );
     } );

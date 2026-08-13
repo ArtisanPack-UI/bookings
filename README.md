@@ -84,9 +84,9 @@ and `BOOKING_PRUNE_DAYS`.
 
 Every public route is reachable without credentials, so each one carries a
 bucket. The limits are named rather than numeric — `bookings.rate-limit:post`
-rather than `throttle:5,1` — and live under `public.rate_limits`, so an
-installation raises them for its own traffic in one place instead of at each
-route:
+rather than `throttle:5,1` — and live under
+`config( 'artisanpack.bookings.public.rate_limits' )`, so an installation raises
+them for its own traffic in one place instead of at each route:
 
 | Bucket | Default (per minute) | Keyed by | Guards |
 | --- | --- | --- | --- |
@@ -106,12 +106,12 @@ fetched from everywhere at once.
 The address-keyed buckets are only as truthful as `Request::ip()`. Behind a
 load balancer, a CDN, or any reverse proxy, an application that has not told
 Laravel which proxies to trust sees every request as coming from the proxy — so
-`Request::ip()` collapses to `127.0.0.1`, every customer in the world shares the
-one `post` bucket, and the fifth booking of the minute is refused for all of
-them. Configure Laravel's trusted proxies before putting these routes in front
+`Request::ip()` returns the proxy's own address (often `127.0.0.1`), every
+customer in the world shares the one `post` bucket, and the fifth booking of the
+minute is refused for all of them. Configure Laravel's trusted proxies before putting these routes in front
 of real traffic.
 
-In Laravel 11 and 12 that is done in `bootstrap/app.php`:
+In Laravel 11, 12, and 13 that is done in `bootstrap/app.php`:
 
 ```php
 use Illuminate\Foundation\Configuration\Middleware;

@@ -415,21 +415,21 @@ class BookingWidget extends Component
      */
     public function book(): void
     {
-        $service = $this->service;
-
-        if ( null === $service ) {
-            $this->addError( 'serviceSlug', __( 'Choose a service before booking.' ) );
+        // Counted before anything the request controls, the way `handle()`
+        // counts a routed POST before its controller runs. Resolving the service
+        // is a database read keyed by a slug the caller supplies, so spending the
+        // bucket first is what stops a caller dodging the shared `post` allowance
+        // with a slug — or any other input — that resolves to nothing.
+        if ( ! app( RateLimitBookings::class )->consume( 'post', request() ) ) {
+            $this->addError( 'slotStart', __( 'Too many requests. Please wait a moment and try again.' ) );
 
             return;
         }
 
-        // Counted before the input is validated, the way `handle()` counts a
-        // routed POST before its controller runs and the way the manage page's
-        // own writes spend the bucket before their checks. A submission that
-        // fails the rules is still a request against the one shared `post`
-        // allowance, so a caller cannot dodge the limit by sending garbage.
-        if ( ! app( RateLimitBookings::class )->consume( 'post', request() ) ) {
-            $this->addError( 'slotStart', __( 'Too many requests. Please wait a moment and try again.' ) );
+        $service = $this->service;
+
+        if ( null === $service ) {
+            $this->addError( 'serviceSlug', __( 'Choose a service before booking.' ) );
 
             return;
         }
