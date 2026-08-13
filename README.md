@@ -409,6 +409,69 @@ booking with the new plain token — the only moment it can be read — so an
 application with mail wired up can re-send as the rotation runs. Pass `--force`
 to skip the confirmation prompt and `--chunk` to tune the query size.
 
+### Self-serve management page
+
+Those endpoints are the machine-facing half of the manage link, and a customer
+should not have to be one. Mount the page on a route carrying the
+`bookings.manage-token` middleware and drop the component on it:
+
+```php
+use Illuminate\Support\Facades\Route;
+
+Route::get( '/bookings/manage/{token}', fn () => view( 'bookings.manage' ) )
+    ->middleware( [
+        'bookings.rate-limit:manage_get',
+        'bookings.rate-limit:manage_token',
+        'bookings.manage-token',
+    ] )
+    ->name( 'bookings.manage' );
+```
+
+Give it the same two limiters `GET api/bookings/manage/{token}` carries, in that
+order — they bound different abuses, one per address and one per token, and the
+resolver is declared last so a guess is counted before it costs a lookup. A page
+mounted behind the resolver alone is a weaker door onto the same booking than the
+endpoint it replaces.
+
+```blade
+<livewire:artisanpack-manage-booking />
+```
+
+It shows the appointment, cancels it behind a confirmation step with an optional
+reason, and moves it to another slot on the same service and provider. The token
+is read from the route — pass it explicitly with `:token="$token"` where the
+route names it something else — and is `#[Locked]`, so a modified client cannot
+point the page at a booking whose token it has guessed.
+
+The booking is re-resolved from that token on every request rather than held
+across them, so a page left open on a phone reflects a cancellation made from
+anywhere else instead of acting on a copy from before it. Which buttons are drawn
+comes from the same policy the endpoints enforce — `cancellation.allowed`,
+`cancellation.min_advance_minutes`, and whether the service is still active — so
+the page never offers something the write behind it would refuse. A withdrawn
+service stops the reschedule and leaves the cancel, which is the part a customer
+whose service has been retired most needs.
+
+Both writes go through `BookingService` with `actor: customer`, exactly as the
+endpoints do, and the slots on offer are resolved through `SlotResolver` — so
+`ap.bookings.availableSlots` and `ap.bookings.slotBookable` decide what a customer
+may pick here too, and a slot a subscriber removed cannot be booked by sending its
+instant anyway. Both actions spend the same `public.rate_limits.post` bucket as
+`POST api/bookings`.
+
+One thing to know before mounting it anywhere unusual: Livewire serialises a
+component's public properties into the page, so the plain manage token is in the
+rendered markup as well as in the URL. On the route above that is the same secret
+in two places on one page. It is worth weighing where the token was deliberately
+kept out of the response — a `:token="$token"` mount behind a POST, say — or where
+something is recording the DOM, since session replay and error reporters capture
+markup that URL-stripping rules never touch.
+
+Like the widget, the markup is plain HTML with daisyUI class names and publishes
+with `php artisan vendor:publish --tag=bookings-views`. Unlike the widget, it
+needs Livewire: its writes have no plain-form route to post to, and the JSON
+endpoints above are what a bespoke page should be built on instead.
+
 ### iCal feeds
 
 Two subscribable calendars, so a provider can watch their diary from Apple

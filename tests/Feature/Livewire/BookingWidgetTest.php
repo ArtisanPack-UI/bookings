@@ -151,8 +151,14 @@ describe( 'choosing a time', function (): void {
             ->set( 'month', '2026-06' )
             ->call( 'shiftMonth', 1 )
             ->assertSet( 'month', '2026-07' )
+            // The heading too, not only the property: everything dated is
+            // computed and memoised, so a shift that forgot to invalidate them
+            // moves the property and redraws the month just left — a calendar
+            // that takes two clicks to move once.
+            ->assertSee( 'July 2026' )
             ->call( 'shiftMonth', -2 )
-            ->assertSet( 'month', '2026-05' );
+            ->assertSet( 'month', '2026-05' )
+            ->assertSee( 'May 2026' );
     } );
 
     it( 'clamps a month shift a client sent from outside the template', function (): void {
@@ -573,5 +579,19 @@ describe( 'without JavaScript', function (): void {
             ->call( 'chooseSlot', bookingStart()->toIso8601String() )
             ->assertHasErrors( 'customerEmail' )
             ->assertSee( 'That email address is not valid.' );
+    } );
+} );
+
+describe( 'the timezone script', function (): void {
+    it( 'hands Alpine an expression rather than a declaration', function (): void {
+        [ $service ] = bookableService();
+
+        $html = Livewire::test( BookingWidget::class, [ 'service' => $service->slug ] )->html();
+
+        // See the note on the same case in ManageBookingTest: Alpine compiles
+        // this block as an expression, so a top-level declaration is a
+        // SyntaxError that silently leaves the widget quoting every slot in the
+        // service's zone.
+        expect( browserTimezoneScript( $html ) )->toStartWith( '(' );
     } );
 } );

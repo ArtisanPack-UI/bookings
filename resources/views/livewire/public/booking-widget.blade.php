@@ -476,10 +476,20 @@
     // so the slot list and the stored booking both use the clock the customer is
     // actually reading. Without it the times stay in the service's zone, which
     // the template says out loud rather than leaving to be guessed.
-    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    //
+    // Wrapped in an expression, and on Livewire 3 it has to be: that version
+    // hands this block straight to Alpine.evaluate(), which compiles it as an
+    // expression rather than as a statement list — so a bare const at the top is
+    // a SyntaxError, the
+    // block never runs, and the widget silently offers every slot in the
+    // service's zone to a customer in another one. Livewire 4 wraps the block
+    // itself; the package supports both, so the wrapper stays.
+    ( function () {
+        const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-    if ( zone && zone !== $wire.timezone ) {
-        $wire.set( 'timezone', zone );
-    }
+        if ( zone && zone !== $wire.timezone ) {
+            $wire.set( 'timezone', zone );
+        }
+    } )()
 </script>
 @endscript

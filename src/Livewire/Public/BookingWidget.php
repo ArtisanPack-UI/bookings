@@ -403,6 +403,12 @@ class BookingWidget extends Component
 
         $this->month = $this->browsedMonth->addMonths( $months )->format( 'Y-m' );
 
+        // The calendar heading and the day list are computed and memoised for the
+        // request, and `browsedMonth` was read a line above to work the new month
+        // out — so without this the render that follows draws the month just left,
+        // and the customer clicks "next" twice to move once.
+        unset( $this->browsedMonth, $this->slotsByDay, $this->slotsOnDate );
+
         $this->forgetChoicesBelow( 'provider' );
     }
 

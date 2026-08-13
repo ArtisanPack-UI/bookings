@@ -42,6 +42,7 @@ use ArtisanPackUI\Bookings\Http\Middleware\ResolveManageToken;
 use ArtisanPackUI\Bookings\Listeners\DispatchBookingWebhooks;
 use ArtisanPackUI\Bookings\Listeners\SendBookingNotifications;
 use ArtisanPackUI\Bookings\Livewire\Public\BookingWidget;
+use ArtisanPackUI\Bookings\Livewire\Public\ManageBooking;
 use ArtisanPackUI\Bookings\MeetingTypes\MeetingTypeRegistry;
 use ArtisanPackUI\Bookings\Models\AvailabilityOverride;
 use ArtisanPackUI\Bookings\Models\AvailabilitySchedule;
@@ -403,10 +404,11 @@ class BookingsServiceProvider extends ServiceProvider
      * whole surface a headless installation needs, and requiring Livewire for
      * them would put a front-end framework in a queue worker's dependency tree.
      *
-     * The alias is `artisanpack-booking-widget` rather than a namespaced name,
-     * because it is written by hand into somebody else's marketing page —
+     * The aliases are `artisanpack-booking-widget` and
+     * `artisanpack-manage-booking` rather than namespaced names, because they are
+     * written by hand into somebody else's page —
      * `<livewire:artisanpack-booking-widget />` — and the prefix is what keeps
-     * that name from colliding with a component the host application already has.
+     * them from colliding with a component the host application already has.
      *
      * @since 1.0.0
      *
@@ -419,6 +421,7 @@ class BookingsServiceProvider extends ServiceProvider
         }
 
         Livewire::component( 'artisanpack-booking-widget', BookingWidget::class );
+        Livewire::component( 'artisanpack-manage-booking', ManageBooking::class );
     }
 
     /**
