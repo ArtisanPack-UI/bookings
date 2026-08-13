@@ -305,8 +305,7 @@ describe( 'the messages themselves', function (): void {
             'end_time'          => '2026-06-01 21:30:00',
         ] );
 
-        $mail = ( new BookingConfirmation( $booking ) )->toMail( null );
-        $body = implode( "\n", $mail->introLines );
+        $body = (string) ( new BookingConfirmation( $booking ) )->toMail( null )->render();
 
         // 21:00 UTC on 1 June is 09:00 the next morning in Auckland, so getting
         // this wrong moves the appointment a day as well as twelve hours.
