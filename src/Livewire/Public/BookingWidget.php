@@ -423,6 +423,17 @@ class BookingWidget extends Component
             return;
         }
 
+        // Counted before the input is validated, the way `handle()` counts a
+        // routed POST before its controller runs and the way the manage page's
+        // own writes spend the bucket before their checks. A submission that
+        // fails the rules is still a request against the one shared `post`
+        // allowance, so a caller cannot dodge the limit by sending garbage.
+        if ( ! app( RateLimitBookings::class )->consume( 'post', request() ) ) {
+            $this->addError( 'slotStart', __( 'Too many requests. Please wait a moment and try again.' ) );
+
+            return;
+        }
+
         // Cleaned before the rules run rather than after, for the reason
         // StoreBookingRequest cleans first: what the rules pass judgement on has
         // to be what will actually be stored, so a name whose markup strips to
@@ -431,12 +442,6 @@ class BookingWidget extends Component
         $this->scrubCustomerInput();
 
         $this->validate();
-
-        if ( ! app( RateLimitBookings::class )->consume( 'post', request() ) ) {
-            $this->addError( 'slotStart', __( 'Too many requests. Please wait a moment and try again.' ) );
-
-            return;
-        }
 
         $slot = $this->chosenSlot();
 

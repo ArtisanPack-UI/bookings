@@ -353,6 +353,32 @@ describe( 'booking', function (): void {
         expect( Booking::query()->count() )->toBe( 1 );
     } );
 
+    it( 'counts a submission that fails validation against the post bucket', function (): void {
+        config()->set( 'artisanpack.bookings.public.rate_limits.post', 1 );
+
+        [ $service ] = bookableService();
+
+        // A malformed submission spends the shared `post` allowance the same way
+        // the routed POST does, so the limit cannot be dodged with garbage.
+        Livewire::test( BookingWidget::class, [ 'service' => $service->slug ] )
+            ->call( 'chooseSlot', bookingStart()->toIso8601String() )
+            ->set( 'customerName', '' )
+            ->set( 'customerEmail', 'sam@example.test' )
+            ->call( 'book' )
+            ->assertHasErrors( 'customerName' );
+
+        // The bucket is now empty, so an otherwise valid booking is refused
+        // rather than written.
+        Livewire::test( BookingWidget::class, [ 'service' => $service->slug ] )
+            ->call( 'chooseSlot', bookingStart( '11:00' )->toIso8601String() )
+            ->set( 'customerName', 'Sam Rivera' )
+            ->set( 'customerEmail', 'sam@example.test' )
+            ->call( 'book' )
+            ->assertHasErrors( 'slotStart' );
+
+        expect( Booking::query()->count() )->toBe( 0 );
+    } );
+
     it( 'clears the form for a second booking', function (): void {
         [ $service ] = bookableService();
 
