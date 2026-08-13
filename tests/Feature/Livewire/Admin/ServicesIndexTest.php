@@ -21,8 +21,12 @@ describe( 'listing services', function (): void {
     } );
 
     it( 'filters the list by name', function (): void {
-        Service::factory()->create( [ 'name' => 'Consultation' ] );
-        Service::factory()->create( [ 'name' => 'Massage' ] );
+        // Slugs pinned explicitly: the factory derives its slug from its own
+        // randomly chosen name — one of which is "Initial Consultation" — so an
+        // unpinned Massage row can be handed a slug containing "cons" that the
+        // slug search then matches, making this assertion flaky.
+        Service::factory()->create( [ 'name' => 'Consultation', 'slug' => 'consultation' ] );
+        Service::factory()->create( [ 'name' => 'Massage', 'slug' => 'massage' ] );
 
         Livewire::test( ServicesIndex::class )
             ->set( 'search', 'Cons' )
