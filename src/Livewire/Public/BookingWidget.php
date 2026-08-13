@@ -415,6 +415,17 @@ class BookingWidget extends Component
      */
     public function book(): void
     {
+        // Counted before anything the request controls, the way `handle()`
+        // counts a routed POST before its controller runs. Resolving the service
+        // is a database read keyed by a slug the caller supplies, so spending the
+        // bucket first is what stops a caller dodging the shared `post` allowance
+        // with a slug — or any other input — that resolves to nothing.
+        if ( ! app( RateLimitBookings::class )->consume( 'post', request() ) ) {
+            $this->addError( 'slotStart', __( 'Too many requests. Please wait a moment and try again.' ) );
+
+            return;
+        }
+
         $service = $this->service;
 
         if ( null === $service ) {
@@ -431,12 +442,6 @@ class BookingWidget extends Component
         $this->scrubCustomerInput();
 
         $this->validate();
-
-        if ( ! app( RateLimitBookings::class )->consume( 'post', request() ) ) {
-            $this->addError( 'slotStart', __( 'Too many requests. Please wait a moment and try again.' ) );
-
-            return;
-        }
 
         $slot = $this->chosenSlot();
 

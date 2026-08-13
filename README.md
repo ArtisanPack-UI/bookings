@@ -80,6 +80,54 @@ Environment variables cover the settings most likely to differ per environment:
 `BOOKING_GOOGLE_ENABLED`, `BOOKING_MICROSOFT_ENABLED`, `BOOKING_APPLE_ENABLED`,
 and `BOOKING_PRUNE_DAYS`.
 
+## Rate limiting
+
+Every public route is reachable without credentials, so each one carries a
+bucket. The limits are named rather than numeric — `bookings.rate-limit:post`
+rather than `throttle:5,1` — and live under
+`config( 'artisanpack.bookings.public.rate_limits' )`, so an installation raises
+them for its own traffic in one place instead of at each route:
+
+| Bucket | Default (per minute) | Keyed by | Guards |
+| --- | --- | --- | --- |
+| `post` | 5 | address | `POST api/bookings`, the widget, and the self-serve cancel / reschedule |
+| `manage_get` | 20 | address | The manage page read |
+| `manage_token` | 60 | manage token | The manage read and the customer feed |
+| `ical` | 30 | address | The provider and customer calendar feeds |
+| `ical_token` | 30 | feed token | The provider calendar feed |
+
+The reads that carry a link's whole credential are guarded twice — once per
+address, once per token — because the two bound different abuses: a machine
+grinding through guesses, and a link that has escaped into the world being
+fetched from everywhere at once.
+
+### Trusted proxies
+
+The address-keyed buckets are only as truthful as `Request::ip()`. Behind a
+load balancer, a CDN, or any reverse proxy, an application that has not told
+Laravel which proxies to trust sees every request as coming from the proxy — so
+`Request::ip()` returns the proxy's own address (often `127.0.0.1`), every
+customer in the world shares the one `post` bucket, and the fifth booking of the
+minute is refused for all of them. Configure Laravel's trusted proxies before putting these routes in front
+of real traffic.
+
+In Laravel 11, 12, and 13 that is done in `bootstrap/app.php`:
+
+```php
+use Illuminate\Foundation\Configuration\Middleware;
+
+->withMiddleware( function ( Middleware $middleware ): void {
+    $middleware->trustProxies( at: [
+        '192.0.2.10', // the load balancer or CDN address requests actually arrive from
+    ] );
+} )
+```
+
+Trust only the proxies you operate. `at: '*'` trusts whatever sets
+`X-Forwarded-For`, which hands every caller the ability to name their own
+address and slip the per-address buckets — set it only when something you
+control terminates every request before this application reaches it.
+
 ## Multi-site
 
 Site scoping is configured once for the whole ecosystem, in
