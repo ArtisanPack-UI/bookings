@@ -346,6 +346,59 @@ describe( 'rescheduling', function (): void {
             ->toBe( bookingStart()->toIso8601String() );
     } );
 
+    it( 'refuses a time beyond the window bookings are taken in', function (): void {
+        // A fortnight, against a diary sitting a week out.
+        config()->set( 'artisanpack.bookings.booking_window.max_advance_minutes', 60 * 24 * 3 );
+
+        [ $booking, $token ] = manageableBooking();
+
+        // The endpoint enforces this through RescheduleBookingRequest, and there
+        // is no request object on this side — so a client setting the property by
+        // hand must still be refused, not merely offered nothing.
+        Livewire::test( ManageBooking::class, [ 'token' => $token ] )
+            ->call( 'startReschedule' )
+            ->assertSee( 'There are no appointments available this month.' )
+            ->call( 'chooseSlot', bookingStart( '11:00' )->toIso8601String() )
+            ->call( 'reschedule' )
+            ->assertHasErrors( 'slotStart' )
+            ->assertSee( 'That appointment time is not available.' );
+
+        expect( $booking->refresh()->start_time->toIso8601String() )
+            ->toBe( bookingStart()->toIso8601String() );
+    } );
+
+    it( 'refuses a time too soon to be booked', function (): void {
+        [ $booking, $token ] = manageableBooking();
+
+        // Everything inside the next fortnight is off the table, which puts the
+        // whole of the 1 June diary out of reach.
+        config()->set( 'artisanpack.bookings.booking_window.min_advance_minutes', 60 * 24 * 14 );
+
+        Livewire::test( ManageBooking::class, [ 'token' => $token ] )
+            ->call( 'startReschedule' )
+            ->call( 'chooseSlot', bookingStart( '11:00' )->toIso8601String() )
+            ->call( 'reschedule' )
+            ->assertHasErrors( 'slotStart' );
+
+        expect( $booking->refresh()->start_time->toIso8601String() )
+            ->toBe( bookingStart()->toIso8601String() );
+    } );
+
+    it( 'takes nothing at all when the window is shut', function (): void {
+        config()->set( 'artisanpack.bookings.booking_window.max_advance_minutes', 0 );
+
+        [ $booking, $token ] = manageableBooking();
+
+        Livewire::test( ManageBooking::class, [ 'token' => $token ] )
+            ->call( 'startReschedule' )
+            ->call( 'chooseSlot', bookingStart( '11:00' )->toIso8601String() )
+            ->call( 'reschedule' )
+            ->assertHasErrors( 'slotStart' );
+
+        expect( $booking->refresh()->start_time->toIso8601String() )
+            ->toBe( bookingStart()->toIso8601String() );
+    } );
+
     it( 'refuses a move to the time the booking already has', function (): void {
         [ , $token ] = manageableBooking();
 

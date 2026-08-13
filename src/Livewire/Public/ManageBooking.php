@@ -25,6 +25,7 @@ use ArtisanPackUI\Bookings\Http\Controllers\Public\Concerns\ResolvesManagedBooki
 use ArtisanPackUI\Bookings\Http\Middleware\RateLimitBookings;
 use ArtisanPackUI\Bookings\Http\Middleware\ResolveManageToken;
 use ArtisanPackUI\Bookings\Models\Booking;
+use ArtisanPackUI\Bookings\Models\Service;
 use ArtisanPackUI\Bookings\Services\BookingService;
 use ArtisanPackUI\Bookings\Services\ManageTokenService;
 use ArtisanPackUI\Bookings\Support\BookingWindow;
@@ -888,11 +889,23 @@ class ManageBooking extends Component
      * so a window cut to the local day would refuse a late slot the API would
      * have taken.
      *
+     * That is why the booking window is enforced separately here rather than by
+     * resolving inside it. On the endpoint this mirrors, `booking_window`'s
+     * bounds are enforced by `RescheduleBookingRequest` before the controller
+     * resolves anything — and there is no request object on this side, so
+     * without this check a client setting `$slotStart` by hand could move an
+     * appointment to a free instant years beyond the diary the installation
+     * takes bookings in. The bounds are read through `BookingWindow::day()`
+     * rather than restated from config, so the two cannot drift and
+     * `max_advance_minutes` of zero stays the zero-length window it is
+     * everywhere else.
+     *
      * @since 1.0.0
      *
      * @param  CarbonImmutable  $start  The instant the slot would begin.
      *
-     * @return Slot|null The slot, or null when nothing is free then.
+     * @return Slot|null The slot, or null when nothing is free then, or when the
+     *                   instant is outside the window bookings are taken in.
      */
     protected function slotAt( CarbonImmutable $start ): ?Slot
     {
@@ -900,6 +913,10 @@ class ManageBooking extends Component
         $service = $booking?->service;
 
         if ( null === $booking || null === $service ) {
+            return null;
+        }
+
+        if ( ! $this->withinBookingWindow( $service, $start ) ) {
             return null;
         }
 
@@ -912,6 +929,36 @@ class ManageBooking extends Component
         }
 
         return null;
+    }
+
+    /**
+     * Determines whether an instant is inside the diary bookings are taken in.
+     *
+     * Asked of the clipped day the instant falls on rather than of the config
+     * directly. `BookingWindow` is what the widget, the API, and the plain form
+     * all clip through, and a fourth reading of `min_advance_minutes` and
+     * `max_advance_minutes` here is how a page comes to refuse a time the
+     * endpoint would take — or, worse, take one it would refuse.
+     *
+     * @since 1.0.0
+     *
+     * @param  Service  $service  The service being booked.
+     * @param  CarbonImmutable  $start  The instant being asked about.
+     *
+     * @return bool True when a booking may start then.
+     */
+    protected function withinBookingWindow( Service $service, CarbonImmutable $start ): bool
+    {
+        $zone    = BookingWindow::timezoneFor( $service );
+        $allowed = BookingWindow::day( $service, $start->setTimezone( $zone )->format( 'Y-m-d' ), $zone );
+
+        if ( null === $allowed ) {
+            return false;
+        }
+
+        // `greaterThan` rather than `greaterThanOrEqualTo` at the far end, because
+        // `RescheduleBookingRequest` takes an instant exactly at the limit.
+        return ! $start->lessThan( $allowed->start ) && ! $start->greaterThan( $allowed->end );
     }
 
     /**

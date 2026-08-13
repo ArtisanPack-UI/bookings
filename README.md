@@ -460,12 +460,14 @@ instant anyway. Both actions spend the same `public.rate_limits.post` bucket as
 `POST api/bookings`.
 
 One thing to know before mounting it anywhere unusual: Livewire serialises a
-component's public properties into the page, so the plain manage token is in the
-rendered markup as well as in the URL. On the route above that is the same secret
-in two places on one page. It is worth weighing where the token was deliberately
-kept out of the response — a `:token="$token"` mount behind a POST, say — or where
-something is recording the DOM, since session replay and error reporters capture
-markup that URL-stripping rules never touch.
+component's public properties into the page, so **the plain manage token is in the
+rendered markup and in every update payload, whichever way it was passed in**. On
+the route above that is the same secret in two places on one page. Passing it as
+`:token="$token"` — from a POST body, a session value, anywhere but the URL —
+keeps it out of the *address*, and does not keep it out of the *response*: there
+is no mounting style that does. Weigh that where something records the DOM, since
+session replay and error reporters capture markup that referrer policies and
+URL-stripping rules never touch.
 
 Like the widget, the markup is plain HTML with daisyUI class names and publishes
 with `php artisan vendor:publish --tag=bookings-views`. Unlike the widget, it
