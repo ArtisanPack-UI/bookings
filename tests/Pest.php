@@ -636,6 +636,33 @@ function defineEngineSensitiveIcalStampTests(): void
 }
 
 /**
+ * Gets the body of the script that reports the browser's timezone.
+ *
+ * @since 1.0.0
+ *
+ * @param  string  $html  The rendered component.
+ *
+ * @return string The script body, with its comments and blank lines removed.
+ */
+function browserTimezoneScript( string $html ): string
+{
+    expect( $html )->toContain( 'resolvedOptions' );
+
+    // The block is carried entity-escaped inside `wire:effects`, with its
+    // newlines and slashes JSON-escaped, so it is unwound before it is read.
+    $html = str_replace( [ '\\n', '\\/' ], [ "\n", '/' ], html_entity_decode( $html, ENT_QUOTES ) );
+
+    preg_match( '/<script>(.*?)<\\/script>/s', $html, $matches );
+
+    $lines = array_filter(
+        array_map( 'trim', explode( "\n", $matches[1] ?? '' ) ),
+        static fn ( string $line ): bool => '' !== $line && ! str_starts_with( $line, '//' ),
+    );
+
+    return implode( "\n", $lines );
+}
+
+/**
  * Gets the booking service out of the container.
  *
  * @since 1.0.0

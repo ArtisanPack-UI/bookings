@@ -5,6 +5,7 @@ declare( strict_types=1 );
 use ArtisanPackUI\Bookings\Bookings;
 use ArtisanPackUI\Bookings\Facades\Bookings as BookingsFacade;
 use ArtisanPackUI\Bookings\Livewire\Public\BookingWidget;
+use ArtisanPackUI\Bookings\Livewire\Public\ManageBooking;
 use ArtisanPackUI\Bookings\Providers\BookingsServiceProvider;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -45,11 +46,16 @@ it( 'publishes the views under the bookings-views tag', function (): void {
 } );
 
 it( 'resolves the package views under the bookings namespace', function (): void {
-    expect( view()->exists( 'bookings::livewire.public.booking-widget' ) )->toBeTrue();
+    expect( view()->exists( 'bookings::livewire.public.booking-widget' ) )->toBeTrue()
+        ->and( view()->exists( 'bookings::livewire.public.manage-booking' ) )->toBeTrue();
 } );
 
 it( 'registers the booking widget under the name an embed writes by hand', function (): void {
     expect( Livewire::new( 'artisanpack-booking-widget' ) )->toBeInstanceOf( BookingWidget::class );
+} );
+
+it( 'registers the manage page under the name a host route writes by hand', function (): void {
+    expect( Livewire::new( 'artisanpack-manage-booking' ) )->toBeInstanceOf( ManageBooking::class );
 } );
 
 it( 'mounts the widget form target in the web group', function (): void {
