@@ -24,8 +24,20 @@ describe( 'listing bookings', function (): void {
     } );
 
     it( 'filters by customer name', function (): void {
-        Booking::factory()->create( [ 'customer_name' => 'Ada Lovelace' ] );
-        Booking::factory()->create( [ 'customer_name' => 'Alan Turing' ] );
+        // Email and booking number are pinned, not left to the factory: the
+        // search runs across all three columns, so a random `safeEmail()` or
+        // `BK-…` on the row that must NOT match can contain "ada" by chance and
+        // fail `assertDontSee` on that seed alone.
+        Booking::factory()->create( [
+            'customer_name'  => 'Ada Lovelace',
+            'customer_email' => 'ada@example.test',
+            'booking_number' => 'BK-LOVELACE01',
+        ] );
+        Booking::factory()->create( [
+            'customer_name'  => 'Alan Turing',
+            'customer_email' => 'turing@example.test',
+            'booking_number' => 'BK-TURING0001',
+        ] );
 
         Livewire::test( BookingsIndex::class )
             ->set( 'search', 'Ada' )
