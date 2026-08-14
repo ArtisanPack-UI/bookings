@@ -50,6 +50,8 @@ use ArtisanPackUI\Bookings\Livewire\Admin\BookingsIndex;
 use ArtisanPackUI\Bookings\Livewire\Admin\IntakeSchemaEditor;
 use ArtisanPackUI\Bookings\Livewire\Admin\ProviderEditor;
 use ArtisanPackUI\Bookings\Livewire\Admin\ProvidersIndex;
+use ArtisanPackUI\Bookings\Livewire\Admin\SeriesEditor;
+use ArtisanPackUI\Bookings\Livewire\Admin\SeriesIndex;
 use ArtisanPackUI\Bookings\Livewire\Admin\ServiceEditor;
 use ArtisanPackUI\Bookings\Livewire\Admin\ServicesIndex;
 use ArtisanPackUI\Bookings\Livewire\Public\BookingWidget;
@@ -438,6 +440,8 @@ class BookingsServiceProvider extends ServiceProvider
         Livewire::component( 'artisanpack-bookings-admin-booking-create', BookingCreate::class );
         Livewire::component( 'artisanpack-bookings-admin-booking-detail', BookingDetail::class );
         Livewire::component( 'artisanpack-bookings-admin-booking-calendar', BookingCalendar::class );
+        Livewire::component( 'artisanpack-bookings-admin-series', SeriesIndex::class );
+        Livewire::component( 'artisanpack-bookings-admin-series-editor', SeriesEditor::class );
     }
 
     /**
