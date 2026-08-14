@@ -42,6 +42,7 @@ use ArtisanPackUI\Bookings\Http\Middleware\ResolveManageToken;
 use ArtisanPackUI\Bookings\Listeners\DispatchBookingWebhooks;
 use ArtisanPackUI\Bookings\Listeners\SendBookingNotifications;
 use ArtisanPackUI\Bookings\Livewire\Admin\AvailabilityEditor;
+use ArtisanPackUI\Bookings\Livewire\Admin\BlackoutDatesIndex;
 use ArtisanPackUI\Bookings\Livewire\Admin\IntakeSchemaEditor;
 use ArtisanPackUI\Bookings\Livewire\Admin\ProviderEditor;
 use ArtisanPackUI\Bookings\Livewire\Admin\ProvidersIndex;
@@ -428,6 +429,7 @@ class BookingsServiceProvider extends ServiceProvider
         Livewire::component( 'artisanpack-bookings-admin-providers', ProvidersIndex::class );
         Livewire::component( 'artisanpack-bookings-admin-provider-editor', ProviderEditor::class );
         Livewire::component( 'artisanpack-bookings-admin-availability-editor', AvailabilityEditor::class );
+        Livewire::component( 'artisanpack-bookings-admin-blackout-dates', BlackoutDatesIndex::class );
     }
 
     /**
