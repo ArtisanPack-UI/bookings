@@ -65,6 +65,28 @@ enum BookingStatus: string
     {
         return in_array( $this, self::active(), true );
     }
+
+    /**
+     * Gets a human, translatable label for the status.
+     *
+     * The `value` is the machine string the column and the unique index agree
+     * on; this is what a person reads. Kept here rather than in each view so a
+     * list, a calendar, and a detail page all name a status the same way.
+     *
+     * @since 1.0.0
+     *
+     * @return string The label for display.
+     */
+    public function label(): string
+    {
+        return match ( $this ) {
+            self::Requested => __( 'Requested' ),
+            self::Confirmed => __( 'Confirmed' ),
+            self::Cancelled => __( 'Cancelled' ),
+            self::Completed => __( 'Completed' ),
+            self::NoShow    => __( 'No-show' ),
+        };
+    }
     case Requested = 'requested';
 
     case Confirmed = 'confirmed';
