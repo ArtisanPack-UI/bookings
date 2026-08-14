@@ -214,11 +214,12 @@ describe( 'the form lifecycle', function (): void {
 
     it( 'clears the provider when the service changes', function (): void {
         [ $service, $providers ] = bookableService();
+        [ $other ]               = bookableService();
 
         Livewire::test( BookingCreate::class )
             ->set( 'serviceId', $service->getKey() )
             ->set( 'providerId', $providers[0]->getKey() )
-            ->set( 'serviceId', $service->getKey() )
+            ->set( 'serviceId', $other->getKey() )
             ->assertSet( 'providerId', null );
     } );
 
@@ -315,6 +316,46 @@ describe( 'notifying the customer', function (): void {
         Notifier::assertNothingSent();
 
         expect( NotificationLog::query()->where( 'type', NotificationType::Confirmation->value )->count() )->toBe( 0 );
+    } );
+
+    it( 'stops suppressing once a suppressed write has failed', function (): void {
+        Notifier::fake();
+
+        [ $service, $providers ] = bookableService();
+
+        // The 10:00 slot is taken, so the first save — with notifications off —
+        // throws inside the suppressing filter. If the `finally` did not remove
+        // it, the second booking's confirmation would be silenced too.
+        Booking::factory()->confirmed()->create( [
+            'service_id'  => $service->getKey(),
+            'provider_id' => $providers[0]->getKey(),
+            'start_time'  => bookingStart(),
+            'end_time'    => bookingStart( '11:00' ),
+        ] );
+
+        $component = Livewire::test( BookingCreate::class )
+            ->set( 'serviceId', $service->getKey() )
+            ->set( 'providerId', $providers[0]->getKey() )
+            ->set( 'startTime', '2026-06-01T10:00' )
+            ->set( 'timezone', 'America/Chicago' )
+            ->set( 'customerName', 'Sam Rivera' )
+            ->set( 'customerEmail', 'sam@example.test' )
+            ->set( 'notifyCustomer', false )
+            ->call( 'save' )
+            ->assertHasErrors( [ 'startTime' ] );
+
+        Notifier::assertNothingSent();
+
+        // A second booking in the same component, notifications on, on a free
+        // slot. Its confirmation must send — proving the earlier suppression was
+        // cleaned up rather than left registered.
+        $component
+            ->set( 'startTime', '2026-06-01T11:00' )
+            ->set( 'notifyCustomer', true )
+            ->call( 'save' )
+            ->assertHasNoErrors();
+
+        Notifier::assertSentOnDemandTimes( BookingConfirmation::class, 1 );
     } );
 } );
 

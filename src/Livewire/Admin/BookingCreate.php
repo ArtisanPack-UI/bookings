@@ -16,6 +16,7 @@ declare( strict_types=1 );
 namespace ArtisanPackUI\Bookings\Livewire\Admin;
 
 use ArtisanPackUI\Bookings\Enums\BookingAssignmentStrategy;
+use ArtisanPackUI\Bookings\Enums\NotificationType;
 use ArtisanPackUI\Bookings\Exceptions\IntakeValidationException;
 use ArtisanPackUI\Bookings\Exceptions\SlotLockTimeoutException;
 use ArtisanPackUI\Bookings\Exceptions\SlotUnavailableException;
@@ -195,7 +196,11 @@ class BookingCreate extends Component
             return;
         }
 
-        if ( ! Service::query()->whereKey( $serviceId )->exists() ) {
+        // Gated on `active()`, the same list the form offers. A retired id has no
+        // providers and no intake fields to seed, and would fail at save anyway,
+        // so preselecting it only hands the administrator a form that cannot be
+        // submitted.
+        if ( ! Service::query()->active()->whereKey( $serviceId )->exists() ) {
             return;
         }
 
@@ -428,7 +433,7 @@ class BookingCreate extends Component
             return null;
         }
 
-        foreach ( $this->services() as $service ) {
+        foreach ( $this->services as $service ) {
             if ( (int) $service->getKey() === $this->serviceId ) {
                 return $service;
             }
@@ -450,7 +455,7 @@ class BookingCreate extends Component
             return null;
         }
 
-        foreach ( $this->providers() as $provider ) {
+        foreach ( $this->providers as $provider ) {
             if ( (int) $provider->getKey() === $this->providerId ) {
                 return $provider;
             }
@@ -521,7 +526,14 @@ class BookingCreate extends Component
             return $write();
         }
 
-        $suppress = static fn ( array $channels ): array => [];
+        // Only the confirmation is silenced. The filter fires for every kind of
+        // notification, and "do not notify the customer" is about the booking's
+        // own confirmation email — not a cancellation or a reschedule a listener
+        // might send in the same request. Every other type passes its channels
+        // through untouched. The type arrives as its string value, not the enum.
+        $suppress = static fn ( array $channels, string $type ): array => NotificationType::Confirmation->value === $type
+            ? []
+            : $channels;
 
         // Registered last so it has the final word: a subscriber that added a
         // channel earlier in the chain does not get to put the send back.
@@ -566,7 +578,7 @@ class BookingCreate extends Component
      */
     protected function seedMultiAnswerIntake(): void
     {
-        foreach ( $this->intakeFields() as $field ) {
+        foreach ( $this->intakeFields as $field ) {
             if ( ! in_array( $field['type'], [ 'multiselect', 'checkboxes' ], true ) ) {
                 continue;
             }

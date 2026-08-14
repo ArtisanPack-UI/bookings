@@ -48,7 +48,12 @@
 
             <label class="space-y-1">
                 <span class="font-medium">{{ __( 'Timezone' ) }}</span>
-                <input type="text" class="input input-bordered w-full" wire:model.live="timezone" placeholder="{{ __( 'Defaults to the provider timezone' ) }}" />
+                <input type="text" list="artisanpack-bookings-timezones" class="input input-bordered w-full" wire:model.live="timezone" placeholder="{{ __( 'Defaults to the provider timezone' ) }}" />
+                <datalist id="artisanpack-bookings-timezones">
+                    @foreach ( timezone_identifiers_list() as $zone )
+                        <option value="{{ $zone }}"></option>
+                    @endforeach
+                </datalist>
                 @error( 'timezone' ) <span class="text-sm text-error">{{ $message }}</span> @enderror
             </label>
         </div>
