@@ -121,6 +121,30 @@ describe( 'editing the whole series', function (): void {
         expect( $series->fresh()->rrule )->toBe( 'FREQ=WEEKLY;COUNT=2' );
     } );
 
+    it( 'reflects the edited series in the render rather than a cached copy', function (): void {
+        [ $service ] = bookableService();
+
+        $series = seriesService()->create( recurringCustomer( [ 'service' => $service ] ) );
+
+        Livewire::test( SeriesEditor::class, [ 'seriesId' => $series->id ] )
+            ->set( 'customerName', 'Renamed Customer' )
+            ->call( 'save' )
+            ->assertHasNoErrors()
+            ->assertSee( 'Renamed Customer' );
+    } );
+
+    it( 'refuses an unknown scope with a validation error rather than crashing', function (): void {
+        [ $service ] = bookableService();
+
+        $series = seriesService()->create( recurringCustomer( [ 'service' => $service ] ) );
+
+        Livewire::test( SeriesEditor::class, [ 'seriesId' => $series->id ] )
+            ->set( 'scope', 'not-a-scope' )
+            ->call( 'save' )
+            ->assertHasErrors( 'scope' )
+            ->assertNotDispatched( 'bookings-series-saved' );
+    } );
+
     it( 'refuses to save when nothing has changed', function (): void {
         [ $service ] = bookableService();
 

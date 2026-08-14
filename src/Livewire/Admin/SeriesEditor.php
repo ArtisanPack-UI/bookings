@@ -306,7 +306,18 @@ class SeriesEditor extends Component
      */
     public function save(): void
     {
-        $scope  = SeriesEditScope::from( $this->scope );
+        // `scope` is an unlocked public property, so a client can send any
+        // string. `from()` would throw a `\ValueError` — which extends `\Error`,
+        // not `\Exception`, so nothing below would catch it — where a validation
+        // message is the honest answer to an unknown scope.
+        $scope = SeriesEditScope::tryFrom( $this->scope );
+
+        if ( ! $scope instanceof SeriesEditScope ) {
+            $this->addError( 'scope', __( 'Choose how much of the series this change applies to.' ) );
+
+            return;
+        }
+
         $series = $this->series();
 
         if ( SeriesEditScope::All !== $scope && null === $this->occurrenceId ) {
@@ -351,6 +362,12 @@ class SeriesEditor extends Component
 
         $this->resetErrorBag();
 
+        // The edit rewrote the row — or bounded it and split the rest onto a new
+        // series — so the memoised instance now holds pre-edit attributes. Drop
+        // it, so the render that follows reads the rule, start, and bounds back
+        // as they now stand rather than as they were.
+        $this->seriesModel = null;
+
         $this->dispatch( 'bookings-series-saved', seriesId: $this->seriesId );
     }
 
@@ -372,6 +389,10 @@ class SeriesEditor extends Component
         }
 
         $this->resetErrorBag();
+
+        // The row now carries `cancelled_at`, so the memoised instance would
+        // render the status badge as still active. Drop it and read it back.
+        $this->seriesModel = null;
 
         $this->dispatch( 'bookings-series-cancelled', seriesId: $this->seriesId );
     }
