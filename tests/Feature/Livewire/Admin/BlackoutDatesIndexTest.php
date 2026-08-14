@@ -50,6 +50,15 @@ describe( 'listing blackouts', function (): void {
         Livewire::test( BlackoutDatesIndex::class )
             ->assertSee( 'No blackout dates yet.' );
     } );
+
+    it( 'says the search matched nothing rather than that none exist', function (): void {
+        ServiceBlackoutDate::factory()->siteWide()->create( [ 'reason' => 'Public holiday' ] );
+
+        Livewire::test( BlackoutDatesIndex::class )
+            ->set( 'search', 'no-such-reason' )
+            ->assertSee( 'No blackout dates match that reason.' )
+            ->assertDontSee( 'No blackout dates yet.' );
+    } );
 } );
 
 describe( 'creating a blackout', function (): void {
@@ -166,6 +175,27 @@ describe( 'validating the form', function (): void {
             ->assertHasErrors( [ 'serviceId' ] );
 
         expect( ServiceBlackoutDate::query()->count() )->toBe( 0 );
+    } );
+
+    it( 'accepts a service with a populated site when no site is in context', function (): void {
+        // With no site in context the scope is inert and every service is
+        // visible, so the dropdown offers this site-5 service. The exists rule
+        // has to stay unconstrained to match — pinning it to `site_id IS NULL`
+        // would reject the very service it just offered.
+        scopeToSite( 5 );
+        $service = Service::factory()->create();
+
+        scopeToSite( null );
+
+        Livewire::test( BlackoutDatesIndex::class )
+            ->call( 'create' )
+            ->set( 'serviceId', $service->id )
+            ->set( 'startsOn', '2026-06-01' )
+            ->set( 'endsOn', '2026-06-01' )
+            ->call( 'save' )
+            ->assertHasNoErrors();
+
+        expect( ServiceBlackoutDate::query()->firstOrFail()->service_id )->toBe( $service->id );
     } );
 } );
 

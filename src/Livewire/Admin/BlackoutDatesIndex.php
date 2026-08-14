@@ -307,7 +307,10 @@ class BlackoutDatesIndex extends Component
     {
         return view( 'bookings::livewire.admin.blackout-dates-index', [
             'blackouts' => $this->blackouts(),
-            'services'  => $this->services(),
+            // The dropdown the service list feeds only exists while the form is
+            // open, so the query is skipped on the search, pagination, and delete
+            // round trips that never render it.
+            'services'  => $this->showForm ? $this->services() : [],
         ] );
     }
 
@@ -336,9 +339,12 @@ class BlackoutDatesIndex extends Component
     /**
      * Gets the validation rules the form is checked against.
      *
-     * The service is validated back against the site's own services rather than
-     * the whole table, so a closure cannot be pinned across a tenant boundary to
-     * a service the site does not own. The end date may equal the start — a
+     * The service is validated the same way the site scope filters: when a site
+     * is in context the id must be one that site owns, so a closure cannot be
+     * pinned across a tenant boundary; when no site is in context the scope is
+     * inert and every service is visible, so the rule is left unconstrained to
+     * match — pinning it to `site_id IS NULL` instead would reject the very
+     * services the dropdown offered. The end date may equal the start — a
      * one-day closure is a range that opens and closes on the same day — but
      * never precede it.
      *
@@ -350,11 +356,17 @@ class BlackoutDatesIndex extends Component
     {
         $siteId = BelongsToSiteScope::currentSiteId();
 
+        $serviceExists = Rule::exists( 'services', 'id' );
+
+        if ( null !== $siteId ) {
+            $serviceExists->where( 'site_id', $siteId );
+        }
+
         return [
             'serviceId' => [
                 'nullable',
                 'integer',
-                Rule::exists( 'services', 'id' )->where( 'site_id', $siteId ),
+                $serviceExists,
             ],
             'startsOn'  => [ 'required', 'date' ],
             'endsOn'    => [ 'required', 'date', 'after_or_equal:startsOn' ],

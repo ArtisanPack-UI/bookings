@@ -44,30 +44,44 @@
             <div class="grid gap-4 sm:grid-cols-2">
                 <label class="space-y-1 sm:col-span-2">
                     <span class="block text-sm font-medium">{{ __( 'Service' ) }}</span>
-                    <select class="select select-bordered w-full" wire:model="serviceId">
+                    <select
+                        class="select select-bordered w-full"
+                        wire:model="serviceId"
+                        @error( 'serviceId' ) aria-invalid="true" aria-describedby="blackout-serviceId-error" @enderror
+                    >
                         <option value="">{{ __( 'All services (site-wide closure)' ) }}</option>
                         @foreach ( $services as $id => $name )
                             <option value="{{ $id }}">{{ $name }}</option>
                         @endforeach
                     </select>
                     @error( 'serviceId' )
-                        <span class="text-sm text-error">{{ $message }}</span>
+                        <span id="blackout-serviceId-error" class="text-sm text-error">{{ $message }}</span>
                     @enderror
                 </label>
 
                 <label class="space-y-1">
                     <span class="block text-sm font-medium">{{ __( 'Start date' ) }}</span>
-                    <input type="date" class="input input-bordered w-full" wire:model="startsOn" />
+                    <input
+                        type="date"
+                        class="input input-bordered w-full"
+                        wire:model="startsOn"
+                        @error( 'startsOn' ) aria-invalid="true" aria-describedby="blackout-startsOn-error" @enderror
+                    />
                     @error( 'startsOn' )
-                        <span class="text-sm text-error">{{ $message }}</span>
+                        <span id="blackout-startsOn-error" class="text-sm text-error">{{ $message }}</span>
                     @enderror
                 </label>
 
                 <label class="space-y-1">
                     <span class="block text-sm font-medium">{{ __( 'End date' ) }}</span>
-                    <input type="date" class="input input-bordered w-full" wire:model="endsOn" />
+                    <input
+                        type="date"
+                        class="input input-bordered w-full"
+                        wire:model="endsOn"
+                        @error( 'endsOn' ) aria-invalid="true" aria-describedby="blackout-endsOn-error" @enderror
+                    />
                     @error( 'endsOn' )
-                        <span class="text-sm text-error">{{ $message }}</span>
+                        <span id="blackout-endsOn-error" class="text-sm text-error">{{ $message }}</span>
                     @enderror
                 </label>
 
@@ -78,9 +92,10 @@
                         class="input input-bordered w-full"
                         wire:model="reason"
                         placeholder="{{ __( 'e.g. Public holiday' ) }}"
+                        @error( 'reason' ) aria-invalid="true" aria-describedby="blackout-reason-error" @enderror
                     />
                     @error( 'reason' )
-                        <span class="text-sm text-error">{{ $message }}</span>
+                        <span id="blackout-reason-error" class="text-sm text-error">{{ $message }}</span>
                     @enderror
                 </label>
             </div>
@@ -98,7 +113,11 @@
 
     @if ( 0 === $blackouts->total() )
         <p class="rounded-box border border-dashed p-6 text-center opacity-70">
-            {{ __( 'No blackout dates yet. Add one to close a service for a holiday or an off-week.' ) }}
+            @if ( '' !== trim( $search ) )
+                {{ __( 'No blackout dates match that reason.' ) }}
+            @else
+                {{ __( 'No blackout dates yet. Add one to close a service for a holiday or an off-week.' ) }}
+            @endif
         </p>
     @else
         <table class="table w-full">
