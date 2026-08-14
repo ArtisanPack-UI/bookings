@@ -105,8 +105,6 @@ describe( 'replaying a delivery', function (): void {
     } );
 
     it( 'cannot replay a delivery whose endpoint has been deleted', function (): void {
-        Queue::fake();
-
         $webhook  = Webhook::factory()->create();
         $delivery = WebhookDelivery::factory()->for( $webhook )->dead()->create();
 
@@ -114,8 +112,6 @@ describe( 'replaying a delivery', function (): void {
 
         Livewire::test( WebhookDeliveries::class )
             ->call( 'replay', $delivery->id );
-
-        Queue::assertNothingPushed();
     } )->throws( ModelNotFoundException::class );
 
     it( 'refuses to replay onto a disabled endpoint', function (): void {
@@ -131,6 +127,34 @@ describe( 'replaying a delivery', function (): void {
         Queue::assertNothingPushed();
 
         expect( WebhookDelivery::query()->where( 'webhook_id', $webhook->id )->count() )->toBe( 1 );
+    } );
+
+    it( 'refuses to replay a delivery the consumer already accepted', function (): void {
+        Queue::fake();
+
+        $webhook  = Webhook::factory()->create();
+        $delivery = WebhookDelivery::factory()->for( $webhook )->success()->create();
+
+        Livewire::test( WebhookDeliveries::class )
+            ->call( 'replay', $delivery->id )
+            ->assertDispatched( 'bookings-webhook-delivery-replay-refused', deliveryId: $delivery->id );
+
+        Queue::assertNothingPushed();
+
+        expect( WebhookDelivery::query()->where( 'webhook_id', $webhook->id )->count() )->toBe( 1 );
+    } );
+
+    it( 'refuses to replay a delivery still pending its first attempt', function (): void {
+        Queue::fake();
+
+        $webhook  = Webhook::factory()->create();
+        $delivery = WebhookDelivery::factory()->for( $webhook )->pending()->create();
+
+        Livewire::test( WebhookDeliveries::class )
+            ->call( 'replay', $delivery->id )
+            ->assertDispatched( 'bookings-webhook-delivery-replay-refused', deliveryId: $delivery->id );
+
+        Queue::assertNothingPushed();
     } );
 } );
 

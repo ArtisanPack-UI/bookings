@@ -108,7 +108,7 @@ class Settings extends Component
                 'title' => __( 'Retention' ),
                 'rows'  => [
                     [ 'label' => __( 'Notification log (days)' ), 'value' => $this->text( config( 'artisanpack.bookings.retention.notification_log_days' ) ) ],
-                    [ 'label' => __( 'Webhook deliveries (days)' ), 'value' => $this->text( config( 'artisanpack.bookings.retention.webhook_delivery_days' ) ) ],
+                    [ 'label' => __( 'Webhook deliveries (days)' ), 'value' => $this->text( config( 'artisanpack.bookings.retention.webhook_delivery_days' ) ?? config( 'artisanpack.bookings.webhooks.delivery_retention_days' ) ) ],
                     [ 'label' => __( 'Calendar events (days)' ), 'value' => $this->text( config( 'artisanpack.bookings.retention.calendar_events_ttl_days' ) ) ],
                 ],
             ],

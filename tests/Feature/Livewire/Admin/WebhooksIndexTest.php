@@ -35,13 +35,23 @@ describe( 'listing webhooks', function (): void {
             ->assertDontSee( 'Live endpoint' );
     } );
 
-    it( 'searches by name and URL', function (): void {
-        Webhook::factory()->create( [ 'name' => 'Billing sync', 'url' => 'https://billing.example.test/hook' ] );
-        Webhook::factory()->create( [ 'name' => 'Analytics', 'url' => 'https://analytics.example.test/hook' ] );
+    it( 'searches by name', function (): void {
+        Webhook::factory()->create( [ 'name' => 'Billing sync', 'url' => 'https://one.example.test/hook' ] );
+        Webhook::factory()->create( [ 'name' => 'Analytics', 'url' => 'https://two.example.test/hook' ] );
 
         Livewire::test( WebhooksIndex::class )
             ->set( 'search', 'billing' )
             ->assertSee( 'Billing sync' )
+            ->assertDontSee( 'Analytics' );
+    } );
+
+    it( 'searches by URL when the name does not match', function (): void {
+        Webhook::factory()->create( [ 'name' => 'Ledger feed', 'url' => 'https://billing.example.test/hook' ] );
+        Webhook::factory()->create( [ 'name' => 'Analytics', 'url' => 'https://two.example.test/hook' ] );
+
+        Livewire::test( WebhooksIndex::class )
+            ->set( 'search', 'billing' )
+            ->assertSee( 'Ledger feed' )
             ->assertDontSee( 'Analytics' );
     } );
 

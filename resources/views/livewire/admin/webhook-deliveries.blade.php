@@ -100,14 +100,16 @@
                                     {{ $expandedId === $delivery->id ? __( 'Hide payload' ) : __( 'Payload' ) }}
                                 </button>
 
-                                <button
-                                    type="button"
-                                    class="btn btn-sm btn-primary"
-                                    wire:click="replay( {{ $delivery->id }} )"
-                                    wire:confirm="{{ __( 'Send this event to the endpoint again?' ) }}"
-                                >
-                                    {{ __( 'Replay' ) }}
-                                </button>
+                                @if ( in_array( $delivery->status->value, [ 'failed', 'dead' ], true ) )
+                                    <button
+                                        type="button"
+                                        class="btn btn-sm btn-primary"
+                                        wire:click="replay( {{ $delivery->id }} )"
+                                        wire:confirm="{{ __( 'Send this event to the endpoint again?' ) }}"
+                                    >
+                                        {{ __( 'Replay' ) }}
+                                    </button>
+                                @endif
                             </div>
                         </td>
                     </tr>

@@ -49,4 +49,22 @@ describe( 'reading the settings surface', function (): void {
             ->assertSee( 'Manage URL' )
             ->assertSee( '—' );
     } );
+
+    it( 'falls back to the webhook retention window when the override is unset', function (): void {
+        config()->set( 'artisanpack.bookings.retention.webhook_delivery_days', null );
+        config()->set( 'artisanpack.bookings.webhooks.delivery_retention_days', 30 );
+
+        Livewire::test( Settings::class )
+            ->assertSee( 'Webhook deliveries (days)' )
+            ->assertSee( '30' );
+    } );
+
+    it( 'shows an explicit webhook retention override rather than the fallback', function (): void {
+        config()->set( 'artisanpack.bookings.retention.webhook_delivery_days', 14 );
+        config()->set( 'artisanpack.bookings.webhooks.delivery_retention_days', 30 );
+
+        Livewire::test( Settings::class )
+            ->assertSee( 'Webhook deliveries (days)' )
+            ->assertSee( '14' );
+    } );
 } );

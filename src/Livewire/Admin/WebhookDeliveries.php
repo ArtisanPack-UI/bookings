@@ -15,6 +15,7 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Livewire\Admin;
 
+use ArtisanPackUI\Bookings\Enums\WebhookDeliveryStatus;
 use ArtisanPackUI\Bookings\Models\Webhook;
 use ArtisanPackUI\Bookings\Models\WebhookDelivery;
 use ArtisanPackUI\Bookings\Services\WebhookDispatcher;
@@ -148,6 +149,13 @@ class WebhookDeliveries extends Component
      * die on arrival: disabling an endpoint is how an operator says stop sending
      * to it, and honouring a replay would be sending to it.
      *
+     * Only a failed or dead attempt is replayable. Replay is a recovery action,
+     * and a delivery the consumer already accepted has nothing to recover — re-
+     * sending it would hand a non-idempotent consumer the same event twice. A
+     * pending attempt is still on its way, so replaying it duplicates a delivery
+     * that has not finished. The guard is enforced here rather than only in the
+     * markup so a direct action call cannot get around the hidden button.
+     *
      * @since 1.0.0
      *
      * @param  WebhookDispatcher  $dispatcher  The delivery dispatcher.
@@ -161,6 +169,12 @@ class WebhookDeliveries extends Component
             ->whereHas( 'webhook' )
             ->whereKey( $deliveryId )
             ->firstOrFail();
+
+        if ( ! in_array( $delivery->status, [ WebhookDeliveryStatus::Failed, WebhookDeliveryStatus::Dead ], true ) ) {
+            $this->dispatch( 'bookings-webhook-delivery-replay-refused', deliveryId: $deliveryId );
+
+            return;
+        }
 
         $webhook = Webhook::query()->findOrFail( $delivery->webhook_id );
 
