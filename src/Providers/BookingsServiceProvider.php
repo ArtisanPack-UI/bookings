@@ -47,13 +47,18 @@ use ArtisanPackUI\Bookings\Livewire\Admin\BookingCalendar;
 use ArtisanPackUI\Bookings\Livewire\Admin\BookingCreate;
 use ArtisanPackUI\Bookings\Livewire\Admin\BookingDetail;
 use ArtisanPackUI\Bookings\Livewire\Admin\BookingsIndex;
+use ArtisanPackUI\Bookings\Livewire\Admin\CalendarConnectionsIndex;
 use ArtisanPackUI\Bookings\Livewire\Admin\IntakeSchemaEditor;
+use ArtisanPackUI\Bookings\Livewire\Admin\NotificationsLog;
 use ArtisanPackUI\Bookings\Livewire\Admin\ProviderEditor;
 use ArtisanPackUI\Bookings\Livewire\Admin\ProvidersIndex;
 use ArtisanPackUI\Bookings\Livewire\Admin\SeriesEditor;
 use ArtisanPackUI\Bookings\Livewire\Admin\SeriesIndex;
 use ArtisanPackUI\Bookings\Livewire\Admin\ServiceEditor;
 use ArtisanPackUI\Bookings\Livewire\Admin\ServicesIndex;
+use ArtisanPackUI\Bookings\Livewire\Admin\Settings;
+use ArtisanPackUI\Bookings\Livewire\Admin\WebhookDeliveries;
+use ArtisanPackUI\Bookings\Livewire\Admin\WebhooksIndex;
 use ArtisanPackUI\Bookings\Livewire\Public\BookingWidget;
 use ArtisanPackUI\Bookings\Livewire\Public\ManageBooking;
 use ArtisanPackUI\Bookings\MeetingTypes\MeetingTypeRegistry;
@@ -442,6 +447,11 @@ class BookingsServiceProvider extends ServiceProvider
         Livewire::component( 'artisanpack-bookings-admin-booking-calendar', BookingCalendar::class );
         Livewire::component( 'artisanpack-bookings-admin-series', SeriesIndex::class );
         Livewire::component( 'artisanpack-bookings-admin-series-editor', SeriesEditor::class );
+        Livewire::component( 'artisanpack-bookings-admin-calendar-connections', CalendarConnectionsIndex::class );
+        Livewire::component( 'artisanpack-bookings-admin-webhooks', WebhooksIndex::class );
+        Livewire::component( 'artisanpack-bookings-admin-webhook-deliveries', WebhookDeliveries::class );
+        Livewire::component( 'artisanpack-bookings-admin-notifications-log', NotificationsLog::class );
+        Livewire::component( 'artisanpack-bookings-admin-settings', Settings::class );
     }
 
     /**
