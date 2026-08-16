@@ -1034,6 +1034,7 @@ Actions fire; filters transform a value and must return one.
 | `ap.bookings.calendarSync.pushed` | action | `(Booking $booking, string $providerSlug, string $externalEventId)` |
 | `ap.bookings.calendarSync.pullReceived` | action | `(array $payload, string $providerSlug)` |
 | `ap.bookings.calendarSync.eventPayload` | filter | `(array $payload, Booking $booking, string $providerSlug)` |
+| `ap.bookings.calendarSync.connectionDisabled` | action | `(CalendarConnection $connection, string $reason)` |
 | `ap.bookings.availableProviders` | filter | `(array $providers, Service $service, CarbonImmutable $start)` |
 | `ap.bookings.roundRobin.selectProvider` | filter | `(?ServiceProvider $selected, array $candidates, Booking $draft)` |
 | `ap.bookings.intakeSchema` | filter | `(array $schema, Service $service, int $version)` |

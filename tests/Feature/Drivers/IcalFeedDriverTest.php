@@ -51,7 +51,7 @@ describe( 'writing', function (): void {
             ->toBe( app( IcalFeedService::class )->uid( $booking ) );
     } );
 
-    it( 'fires pushing with the booking and provider slug, and pushed with the external id too', function (): void {
+    it( 'fires pushed with the external id, and leaves pushing to the orchestrator', function (): void {
         $booking = Booking::factory()->create();
         $seen    = [];
 
@@ -64,7 +64,7 @@ describe( 'writing', function (): void {
 
         $externalId = icalDriver()->createEvent( new CalendarConnection(), $booking );
 
-        expect( $seen['pushing'] )->toBe( [ $booking->getKey(), 'ical' ] )
+        expect( $seen )->not->toHaveKey( 'pushing' )
             ->and( $seen['pushed'] )->toBe( [ $booking->getKey(), 'ical', $externalId ] );
     } );
 
