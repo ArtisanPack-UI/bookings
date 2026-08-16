@@ -54,7 +54,7 @@ function registerCalendarDriver( CalendarSyncDriver $driver ): void
  */
 function recordingCalendarDriver(): CalendarSyncDriver
 {
-    return new class implements CalendarSyncDriver {
+    return new class() implements CalendarSyncDriver {
         public array $created = [];
 
         public array $updated = [];
@@ -94,7 +94,7 @@ function recordingCalendarDriver(): CalendarSyncDriver
  */
 function throwingCalendarDriver(): CalendarSyncDriver
 {
-    return new class implements CalendarSyncDriver {
+    return new class() implements CalendarSyncDriver {
         public int $attempts = 0;
 
         public function driver(): CalendarDriver
