@@ -175,29 +175,32 @@ final class HookRegistry
         'ap.bookings.icalTokenRevoked'     => [ 'type' => 'action', 'issues' => '#82' ],
 
         /*
-        | Calendar sync — #39, #40, #41, #43, #44. Pending: no sync surface yet.
+        | Calendar sync — #39, #40, #41, #43, #44.
         |
         | calendarSync.providers          ( array<string, CalendarSyncDriver> $drivers ): array<string, CalendarSyncDriver>
-        | calendarSync.pushing            ( Booking $booking, CalendarConnection $connection )
-        | calendarSync.pushed             ( CalendarEvent $event, CalendarConnection $connection )
+        | calendarSync.pushing            ( Booking $booking, string $externalEventId )
+        | calendarSync.pushed             ( Booking $booking, string $externalEventId )
+        |                                 The read-only iCal driver (#39) fires both with the
+        |                                 booking and its external identifier — it has no
+        |                                 persisted CalendarConnection or CalendarEvent, because
+        |                                 an outbound feed is addressed by a provider token, not a
+        |                                 connection row. A connection-based driver (#40/#43/#44)
+        |                                 has both in hand when it fires these.
         | calendarSync.pullReceived       ( array $payload, CalendarConnection $connection )
-        | calendarSync.eventPayload       ( array $payload, Booking $booking, CalendarConnection $connection ): array
+        | calendarSync.eventPayload       ( array $payload, Booking $booking ): array
         | calendarSync.connectionDisabled ( CalendarConnection $connection, string $reason )
         */
         'ap.bookings.calendarSync.providers' => [
-            'type'    => 'filter',
-            'issues'  => '#39',
-            'pending' => true,
+            'type'   => 'filter',
+            'issues' => '#39',
         ],
         'ap.bookings.calendarSync.pushing' => [
-            'type'    => 'action',
-            'issues'  => '#39, #40, #41, #43, #44',
-            'pending' => true,
+            'type'   => 'action',
+            'issues' => '#39, #40, #41, #43, #44',
         ],
         'ap.bookings.calendarSync.pushed' => [
-            'type'    => 'action',
-            'issues'  => '#39, #40, #41, #43, #44',
-            'pending' => true,
+            'type'   => 'action',
+            'issues' => '#39, #40, #41, #43, #44',
         ],
         'ap.bookings.calendarSync.pullReceived' => [
             'type'    => 'action',
@@ -205,9 +208,8 @@ final class HookRegistry
             'pending' => true,
         ],
         'ap.bookings.calendarSync.eventPayload' => [
-            'type'    => 'filter',
-            'issues'  => '#39, #40, #43, #44',
-            'pending' => true,
+            'type'   => 'filter',
+            'issues' => '#39, #40, #43, #44',
         ],
         'ap.bookings.calendarSync.connectionDisabled' => [
             'type'    => 'action',

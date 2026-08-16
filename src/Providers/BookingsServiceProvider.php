@@ -21,6 +21,7 @@ declare( strict_types=1 );
 namespace ArtisanPackUI\Bookings\Providers;
 
 use ArtisanPackUI\Bookings\Bookings;
+use ArtisanPackUI\Bookings\Calendar\CalendarDriverRegistry;
 use ArtisanPackUI\Bookings\Console\Commands\CompletePastBookingsCommand;
 use ArtisanPackUI\Bookings\Console\Commands\IcalTokenCommand;
 use ArtisanPackUI\Bookings\Console\Commands\PollAppleCalendarsCommand;
@@ -31,11 +32,13 @@ use ArtisanPackUI\Bookings\Console\Commands\RefreshCalendarsCommand;
 use ArtisanPackUI\Bookings\Console\Commands\ReissueDetachedManageTokensCommand;
 use ArtisanPackUI\Bookings\Console\Commands\RenewCalendarWatchChannelsCommand;
 use ArtisanPackUI\Bookings\Console\Commands\SendBookingRemindersCommand;
+use ArtisanPackUI\Bookings\Contracts\CalendarDriverRegistry as CalendarDriverRegistryContract;
 use ArtisanPackUI\Bookings\Contracts\MeetingTypeRegistry as MeetingTypeRegistryContract;
 use ArtisanPackUI\Bookings\Contracts\NotificationChannel;
 use ArtisanPackUI\Bookings\Contracts\RoundRobinStrategy;
 use ArtisanPackUI\Bookings\Contracts\SlotResolver;
 use ArtisanPackUI\Bookings\Contracts\SmsDriver;
+use ArtisanPackUI\Bookings\Drivers\Calendar\IcalFeedDriver;
 use ArtisanPackUI\Bookings\Enums\NotificationType;
 use ArtisanPackUI\Bookings\Http\Middleware\AuthorizeBookingsAdmin;
 use ArtisanPackUI\Bookings\Http\Middleware\RateLimitBookings;
@@ -181,6 +184,20 @@ class BookingsServiceProvider extends ServiceProvider
         // PHP-side registration, silently, at the call site most likely to be
         // written by someone reaching for the shipped implementation.
         $this->app->alias( MeetingTypeRegistryContract::class, MeetingTypeRegistry::class );
+
+        // A singleton for the same reason the meeting type registry is one: a
+        // driver registered in PHP — rather than through the
+        // `ap.bookings.calendarSync.providers` filter — has to still be there
+        // when the next caller resolves the registry. The filter runs on every
+        // read, so late registration through hooks works either way.
+        $this->app->singleton( CalendarDriverRegistryContract::class, function ( $app ): CalendarDriverRegistry {
+            return new CalendarDriverRegistry( $app->make( IcalFeedDriver::class ) );
+        } );
+
+        // Without the alias the concrete class stays unbound and the container
+        // auto-builds a second registry for anyone type-hinting the shipped
+        // implementation, losing every PHP-side registration.
+        $this->app->alias( CalendarDriverRegistryContract::class, CalendarDriverRegistry::class );
 
         // A singleton because the resolver holds the availability cache stamps,
         // and the model events that bump them resolve it out of the container —

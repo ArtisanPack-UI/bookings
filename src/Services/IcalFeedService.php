@@ -266,6 +266,62 @@ class IcalFeedService
     }
 
     /**
+     * Gets the globally unique identifier one booking keeps forever.
+     *
+     * Built from `booking_number`, which is unique across the installation and
+     * never changes — so rescheduling moves the event a subscriber already has
+     * rather than leaving the old time behind and adding a second one. The host
+     * half comes from `app.url` per RFC 5545's guidance that a UID be unique
+     * beyond the system that minted it.
+     *
+     * Public because the iCal sync driver returns it as a booking's external
+     * event identifier, and a pushed event and a subscribed one have to describe
+     * the same booking under the same UID for a reschedule to move it.
+     *
+     * @since 1.0.0
+     *
+     * @param  Booking  $booking  The booking being serialised.
+     *
+     * @return string The event's UID.
+     */
+    public function uid( Booking $booking ): string
+    {
+        $host = parse_url( (string) config( 'app.url', 'localhost' ), PHP_URL_HOST );
+
+        return sprintf(
+            '%s@%s',
+            $booking->booking_number,
+            is_string( $host ) && '' !== $host ? $host : 'artisanpack-bookings',
+        );
+    }
+
+    /**
+     * Gets the `STATUS` a booking's event carries.
+     *
+     * A booking nobody has approved yet is `TENTATIVE`, which is what a provider
+     * wants to see in the week view: the hour is spoken for, and it is not yet a
+     * commitment.
+     *
+     * Public for the same reason {@see self::uid()} is: the iCal sync driver
+     * builds its outbound event from this mapping, so a pushed event and a
+     * subscribed one give the same booking the same `STATUS`.
+     *
+     * @since 1.0.0
+     *
+     * @param  Booking  $booking  The booking being serialised.
+     *
+     * @return string The RFC 5545 status value.
+     */
+    public function status( Booking $booking ): string
+    {
+        return match ( $booking->status ) {
+            BookingStatus::Requested => 'TENTATIVE',
+            BookingStatus::Cancelled => 'CANCELLED',
+            default                  => 'CONFIRMED',
+        };
+    }
+
+    /**
      * Builds an empty calendar with the headers a subscriber reads.
      *
      * `X-WR-CALNAME` and `X-WR-TIMEZONE` are not RFC 5545 — they are Apple's,
@@ -339,54 +395,6 @@ class IcalFeedService
         }
 
         $event->add( 'DESCRIPTION', $this->description( $booking, $includeCustomer ) );
-    }
-
-    /**
-     * Gets the globally unique identifier one booking keeps forever.
-     *
-     * Built from `booking_number`, which is unique across the installation and
-     * never changes — so rescheduling moves the event a subscriber already has
-     * rather than leaving the old time behind and adding a second one. The host
-     * half comes from `app.url` per RFC 5545's guidance that a UID be unique
-     * beyond the system that minted it.
-     *
-     * @since 1.0.0
-     *
-     * @param  Booking  $booking  The booking being serialised.
-     *
-     * @return string The event's UID.
-     */
-    protected function uid( Booking $booking ): string
-    {
-        $host = parse_url( (string) config( 'app.url', 'localhost' ), PHP_URL_HOST );
-
-        return sprintf(
-            '%s@%s',
-            $booking->booking_number,
-            is_string( $host ) && '' !== $host ? $host : 'artisanpack-bookings',
-        );
-    }
-
-    /**
-     * Gets the `STATUS` a booking's event carries.
-     *
-     * A booking nobody has approved yet is `TENTATIVE`, which is what a provider
-     * wants to see in the week view: the hour is spoken for, and it is not yet a
-     * commitment.
-     *
-     * @since 1.0.0
-     *
-     * @param  Booking  $booking  The booking being serialised.
-     *
-     * @return string The RFC 5545 status value.
-     */
-    protected function status( Booking $booking ): string
-    {
-        return match ( $booking->status ) {
-            BookingStatus::Requested => 'TENTATIVE',
-            BookingStatus::Cancelled => 'CANCELLED',
-            default                  => 'CONFIRMED',
-        };
     }
 
     /**
