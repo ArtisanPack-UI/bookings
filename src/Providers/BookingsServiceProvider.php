@@ -33,11 +33,13 @@ use ArtisanPackUI\Bookings\Console\Commands\ReissueDetachedManageTokensCommand;
 use ArtisanPackUI\Bookings\Console\Commands\RenewCalendarWatchChannelsCommand;
 use ArtisanPackUI\Bookings\Console\Commands\SendBookingRemindersCommand;
 use ArtisanPackUI\Bookings\Contracts\CalendarDriverRegistry as CalendarDriverRegistryContract;
+use ArtisanPackUI\Bookings\Contracts\GoogleTokenProvider;
 use ArtisanPackUI\Bookings\Contracts\MeetingTypeRegistry as MeetingTypeRegistryContract;
 use ArtisanPackUI\Bookings\Contracts\NotificationChannel;
 use ArtisanPackUI\Bookings\Contracts\RoundRobinStrategy;
 use ArtisanPackUI\Bookings\Contracts\SlotResolver;
 use ArtisanPackUI\Bookings\Contracts\SmsDriver;
+use ArtisanPackUI\Bookings\Drivers\Calendar\GoogleCalendarDriver;
 use ArtisanPackUI\Bookings\Drivers\Calendar\IcalFeedDriver;
 use ArtisanPackUI\Bookings\Enums\NotificationType;
 use ArtisanPackUI\Bookings\Http\Middleware\AuthorizeBookingsAdmin;
@@ -93,7 +95,9 @@ use ArtisanPackUI\Bookings\Services\SeriesService;
 use ArtisanPackUI\Bookings\Services\WebhookDispatcher;
 use ArtisanPackUI\Bookings\Strategies\LeastRecentlyAssignedStrategy;
 use ArtisanPackUI\Bookings\Support\AdminNav;
+use ArtisanPackUI\Bookings\Support\Google\OAuthGoogleTokenProvider;
 use ArtisanPackUI\Bookings\Support\HookSubscriptions;
+use ArtisanPackUI\Google\Facades\Google;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\View\View as ViewContract;
 use Illuminate\Database\Eloquent\Model;
@@ -198,6 +202,16 @@ class BookingsServiceProvider extends ServiceProvider
         // auto-builds a second registry for anyone type-hinting the shipped
         // implementation, losing every PHP-side registration.
         $this->app->alias( CalendarDriverRegistryContract::class, CalendarDriverRegistry::class );
+
+        // The Google driver ships here but runs on `artisanpack-ui/google`'s
+        // OAuth, so the token seam is bound to it only when that package is
+        // installed. The driver itself is registered — in boot, behind the same
+        // condition — into the providers filter, so nothing here resolves on an
+        // installation that lacks the package.
+        if ( class_exists( Google::class ) ) {
+            $this->app->singleton( GoogleTokenProvider::class, OAuthGoogleTokenProvider::class );
+            $this->app->singleton( GoogleCalendarDriver::class );
+        }
 
         // A singleton because the resolver holds the availability cache stamps,
         // and the model events that bump them resolve it out of the container —
@@ -398,7 +412,37 @@ class BookingsServiceProvider extends ServiceProvider
 
         $this->registerCmsAdminNav();
 
-        // Calendar drivers are registered here as each is built.
+        $this->registerCalendarDrivers();
+    }
+
+    /**
+     * Registers the built calendar drivers into the providers filter.
+     *
+     * The read-only iCal driver is seeded on the registry directly; every driver
+     * that talks to a real external calendar arrives here instead, through
+     * `ap.bookings.calendarSync.providers`, so an application can still displace
+     * one by registering its own. Google is added only when it is switched on in
+     * config and `artisanpack-ui/google` is installed to authorise it — the same
+     * gate the token binding sits behind — so a connection on an uninstalled or
+     * disabled driver simply finds nothing to sync it.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    protected function registerCalendarDrivers(): void
+    {
+        $drivers = (array) config( 'artisanpack.bookings.calendar.drivers', [] );
+
+        $googleEnabled = (bool) ( $drivers['google']['enabled'] ?? false );
+
+        if ( $googleEnabled && $this->app->bound( GoogleTokenProvider::class ) ) {
+            addFilter( 'ap.bookings.calendarSync.providers', function ( array $providers ): array {
+                $providers[] = $this->app->make( GoogleCalendarDriver::class );
+
+                return $providers;
+            } );
+        }
     }
 
     /**

@@ -178,16 +178,15 @@ final class HookRegistry
         | Calendar sync — #39, #40, #41, #43, #44.
         |
         | calendarSync.providers          ( array<string, CalendarSyncDriver> $drivers ): array<string, CalendarSyncDriver>
-        | calendarSync.pushing            ( Booking $booking, string $externalEventId )
-        | calendarSync.pushed             ( Booking $booking, string $externalEventId )
-        |                                 The read-only iCal driver (#39) fires both with the
-        |                                 booking and its external identifier — it has no
-        |                                 persisted CalendarConnection or CalendarEvent, because
-        |                                 an outbound feed is addressed by a provider token, not a
-        |                                 connection row. A connection-based driver (#40/#43/#44)
-        |                                 has both in hand when it fires these.
-        | calendarSync.pullReceived       ( array $payload, CalendarConnection $connection )
-        | calendarSync.eventPayload       ( array $payload, Booking $booking ): array
+        | calendarSync.pushing            ( Booking $booking, string $providerSlug )
+        | calendarSync.pushed             ( Booking $booking, string $providerSlug, string $externalEventId )
+        |                                 Every driver fires both with the booking and its own
+        |                                 provider slug — 'ical' (#39), 'google' (#40), and so on
+        |                                 — so one consumer callback reads the same arguments
+        |                                 whichever calendar the push went to. pushed carries the
+        |                                 external identifier the write landed under as well.
+        | calendarSync.pullReceived       ( array $payload, string $providerSlug )
+        | calendarSync.eventPayload       ( array $payload, Booking $booking, string $providerSlug ): array
         | calendarSync.connectionDisabled ( CalendarConnection $connection, string $reason )
         */
         'ap.bookings.calendarSync.providers' => [
@@ -203,9 +202,8 @@ final class HookRegistry
             'issues' => '#39, #40, #41, #43, #44',
         ],
         'ap.bookings.calendarSync.pullReceived' => [
-            'type'    => 'action',
-            'issues'  => '#40, #43, #44',
-            'pending' => true,
+            'type'   => 'action',
+            'issues' => '#40, #43, #44',
         ],
         'ap.bookings.calendarSync.eventPayload' => [
             'type'   => 'filter',

@@ -1030,9 +1030,10 @@ Actions fire; filters transform a value and must return one.
 | `ap.bookings.icalTokenIssued` | action | `(ServiceProvider $provider, string $plainToken)` |
 | `ap.bookings.icalTokenRevoked` | action | `(ServiceProvider $provider)` |
 | `ap.bookings.calendarSync.providers` | filter | `(array $drivers)` |
-| `ap.bookings.calendarSync.pushing` | action | `(Booking $booking, string $externalEventId)` |
-| `ap.bookings.calendarSync.pushed` | action | `(Booking $booking, string $externalEventId)` |
-| `ap.bookings.calendarSync.eventPayload` | filter | `(array $payload, Booking $booking)` |
+| `ap.bookings.calendarSync.pushing` | action | `(Booking $booking, string $providerSlug)` |
+| `ap.bookings.calendarSync.pushed` | action | `(Booking $booking, string $providerSlug, string $externalEventId)` |
+| `ap.bookings.calendarSync.pullReceived` | action | `(array $payload, string $providerSlug)` |
+| `ap.bookings.calendarSync.eventPayload` | filter | `(array $payload, Booking $booking, string $providerSlug)` |
 | `ap.bookings.availableProviders` | filter | `(array $providers, Service $service, CarbonImmutable $start)` |
 | `ap.bookings.roundRobin.selectProvider` | filter | `(?ServiceProvider $selected, array $candidates, Booking $draft)` |
 | `ap.bookings.intakeSchema` | filter | `(array $schema, Service $service, int $version)` |
