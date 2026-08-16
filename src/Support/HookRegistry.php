@@ -186,6 +186,14 @@ final class HookRegistry
         |                                 whichever calendar the push went to. pushed carries the
         |                                 external identifier the write landed under as well.
         | calendarSync.pullReceived       ( array $payload, string $providerSlug )
+        |                                 $payload is the external calendar's raw change
+        |                                 feed, PERSONAL DATA that is not this package's —
+        |                                 event titles and descriptions, organiser and
+        |                                 attendee email addresses, the provider's private
+        |                                 diary. It is handed over before normalisation so a
+        |                                 subscriber can see what the calendar actually sent.
+        |                                 Do not log it, and treat anything drawn from it as
+        |                                 third-party data.
         | calendarSync.eventPayload       ( array $payload, Booking $booking, string $providerSlug ): array
         | calendarSync.connectionDisabled ( CalendarConnection $connection, string $reason )
         */

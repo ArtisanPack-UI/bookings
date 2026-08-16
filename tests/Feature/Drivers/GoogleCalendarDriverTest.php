@@ -407,6 +407,21 @@ describe( 'incremental sync', function (): void {
             && str_contains( urldecode( $request->url() ), '2026-07-31' ) );
     } );
 
+    it( 'treats a 404 as a failure without discarding the cursor', function (): void {
+        Http::fake( [ 'https://www.googleapis.com/*' => Http::response( [], 404 ) ] );
+
+        $connection = CalendarConnection::factory()->google()->twoWay()->create( [ 'sync_token' => 'token-here' ] );
+
+        expect( fn (): mixed => googleDriver()->incrementalSync( $connection ) )
+            ->toThrow( CalendarSyncException::class );
+
+        // A 404 is the calendar being gone, not the token being stale — the
+        // cursor must survive so a reconnect can resume from it.
+        expect( $connection->fresh()->sync_token )->toBe( 'token-here' );
+
+        Http::assertSentCount( 1 );
+    } );
+
     it( 'does a full read straight away when there is no token yet', function (): void {
         CarbonImmutable::setTestNow( '2026-06-01T00:00:00Z' );
 

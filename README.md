@@ -1081,6 +1081,13 @@ a subscriber that delivers the new subscription URL is not being helpful, it is
 the only thing standing between the provider and a feed that has silently stopped
 updating.
 
+`ap.bookings.calendarSync.pullReceived` carries the external calendar's raw change
+feed — personal data that is not this package's. The payload holds event titles
+and descriptions, organiser and attendee email addresses, and the shape of the
+provider's private diary, handed over before normalisation so a subscriber can see
+what the calendar actually sent. Do not log it, and treat anything drawn from it as
+third-party data subject to the same handling as any other personal information.
+
 `ap.bookings.intakeSchema` runs against the version a booking was captured with
 rather than the service's current form, and its output is never written back. A
 subscriber is describing how a form should be read, not editing the record of

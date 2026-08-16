@@ -18,6 +18,7 @@ namespace ArtisanPackUI\Bookings\Support\Google;
 use ArtisanPackUI\Bookings\Contracts\GoogleTokenProvider;
 use ArtisanPackUI\Bookings\Exceptions\CalendarSyncException;
 use ArtisanPackUI\Bookings\Models\CalendarConnection;
+use ArtisanPackUI\Google\Exceptions\TokenRefreshException;
 use ArtisanPackUI\Google\Facades\Google;
 use ArtisanPackUI\Google\Models\GoogleConnection;
 
@@ -53,8 +54,9 @@ class OAuthGoogleTokenProvider implements GoogleTokenProvider
      *                                          the token is drawn from.
      *
      * @throws CalendarSyncException When the connection carries no Google link,
-     *                               or the link no longer resolves to a stored
-     *                               Google connection.
+     *                               the link no longer resolves to a stored
+     *                               Google connection, or the grant cannot be
+     *                               refreshed into a usable token.
      *
      * @return string The bearer token to authorise Google Calendar API calls.
      */
@@ -79,6 +81,18 @@ class OAuthGoogleTokenProvider implements GoogleTokenProvider
             ) );
         }
 
-        return Google::tokens()->getValidAccessToken( $googleConnection );
+        // A revoked or unrefreshable grant surfaces as a TokenRefreshException.
+        // Rethrow it as the sync exception the driver's callers already handle,
+        // so a dead OAuth link is counted against the connection like any other
+        // sync failure rather than escaping as a Google-package exception.
+        try {
+            return Google::tokens()->getValidAccessToken( $googleConnection );
+        } catch ( TokenRefreshException $unrefreshable ) {
+            throw new CalendarSyncException( sprintf(
+                'Could not obtain a Google access token for calendar connection %d: %s',
+                $connection->getKey(),
+                $unrefreshable->getMessage(),
+            ), 0, $unrefreshable );
+        }
     }
 }

@@ -364,7 +364,7 @@ class GoogleCalendarDriver implements CalendarSyncDriver
      */
     public function renewSubscription( CalendarWatchChannel $channel, string $callbackUrl ): CalendarWatchChannel
     {
-        $connection = $channel->connection;
+        $connection = $channel->connection()->first();
 
         if ( ! $connection instanceof CalendarConnection ) {
             throw new CalendarSyncException( sprintf(
@@ -419,8 +419,9 @@ class GoogleCalendarDriver implements CalendarSyncDriver
             return;
         }
 
-        $pageToken = null;
-        $pages     = 0;
+        $pageToken     = null;
+        $pages         = 0;
+        $nextSyncToken = null;
 
         do {
             $params   = array_filter( [
@@ -433,7 +434,12 @@ class GoogleCalendarDriver implements CalendarSyncDriver
             $response = $this->send( $connection, fn ( PendingRequest $http ): Response => $http
                 ->get( $this->eventsUrl( $connection ), $params ) );
 
-            if ( $this->isGone( $response ) ) {
+            // Only a 410 means the token itself is too stale to resume from. A
+            // 404 is the calendar being gone — deleted, or access revoked — and
+            // clearing the cursor for that would throw away a good token over a
+            // problem the cursor did not cause, then fail the resync on the same
+            // missing calendar anyway. Let it fall through to the failure path.
+            if ( 410 === $response->status() ) {
                 $this->clearSyncToken( $connection );
                 $this->fullResync( $connection );
 
@@ -451,10 +457,10 @@ class GoogleCalendarDriver implements CalendarSyncDriver
             $this->ingestPage( $connection, (array) $response->json() );
 
             $pageToken     = $response->json( 'nextPageToken' );
-            $nextSyncToken = $response->json( 'nextSyncToken' );
+            $nextSyncToken = $response->json( 'nextSyncToken' ) ?? $nextSyncToken;
         } while ( is_string( $pageToken ) && '' !== $pageToken && ++$pages < self::MAX_PAGES );
 
-        $this->saveSyncToken( $connection, is_string( $nextSyncToken ?? null ) ? $nextSyncToken : $syncToken );
+        $this->saveSyncToken( $connection, is_string( $nextSyncToken ) ? $nextSyncToken : $syncToken );
     }
 
     /**
