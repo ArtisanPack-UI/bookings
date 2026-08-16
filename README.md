@@ -921,6 +921,43 @@ on it. Those ship in `artisanpack-ui/google`, `artisanpack-ui/microsoft`, and
 `artisanpack-ui/apple`; until one is installed the sweeps report what they found
 and warn that nothing was synced.
 
+### Admin surface
+
+The staff-facing screens are mounted as routes under `admin.route_prefix`
+(`bookings-admin/…` by default), one per screen — the bookings list and
+calendar, services and their intake schemas, providers and their schedules,
+blackout dates, recurring series, calendar connections, webhooks, the
+notification log, and settings. They are named `artisanpack.bookings.admin.*`, so
+link to them with `route()` rather than a hard-coded path:
+
+```php
+route( 'artisanpack.bookings.admin.bookings' );   // the list
+route( 'artisanpack.bookings.admin.settings' );   // general config
+```
+
+Every screen sits behind the `bookings.admin` gate, which authorizes against the
+ability named by `admin.gate` (`bookings.manage`). The package defines no default
+ability on purpose: `Gate::authorize()` against an undefined ability denies, so
+mounting the admin without wiring the gate is a locked door, not an open one.
+Define it against whatever "staff" means to your application:
+
+```php
+Gate::define( 'bookings.manage', fn ( User $user ) => $user->isStaff() );
+```
+
+Each screen renders inside a layout chosen for you: `cms::admin.layouts.app` when
+`artisanpack-ui/cms-framework` is installed, and the package's own
+`bookings::admin.layouts.app` when it is not. Publish the standalone layout with
+`php artisan vendor:publish --tag=bookings-views` and edit the copy under
+`resources/views/vendor/bookings/admin/layouts/app.blade.php` to wrap the screens
+in your own chrome.
+
+With cms-framework installed, the screens also register themselves in its admin
+navigation through the `ap.cmsFramework.admin.menu` filter — a single **Bookings**
+section with every screen beneath it, each gated by the same `bookings.manage`
+ability. Turn that off with `admin.auto_register_cms_nav` when you would rather
+place the screens in the shell's menu yourself.
+
 ## Extending
 
 ### Contracts
