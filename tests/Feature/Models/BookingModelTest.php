@@ -7,7 +7,9 @@ use ArtisanPackUI\Bookings\Enums\BookingStatus;
 use ArtisanPackUI\Bookings\Models\Booking;
 use ArtisanPackUI\Bookings\Models\BookingSeries;
 use ArtisanPackUI\Bookings\Models\IntakeSchemaVersion;
+use ArtisanPackUI\Bookings\Models\NotificationLog;
 use ArtisanPackUI\Bookings\Models\Service;
+use ArtisanPackUI\Bookings\Models\WebhookDelivery;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -420,5 +422,109 @@ describe( 'booking erasure', function (): void {
 
         expect( Booking::piiErased()->get()->modelKeys() )->toBe( [ $erased->id ] )
             ->and( Booking::notPiiErased()->get()->modelKeys() )->toBe( [ $intact->id ] );
+    } );
+
+    it( 'scrubs the personal columns and marks the row when erased', function (): void {
+        $booking = Booking::factory()->create( [
+            'customer_name'  => 'Ada Lovelace',
+            'customer_email' => 'ada@example.test',
+            'customer_phone' => '+15551234567',
+            'intake_data'    => [ 'goal' => 'Learn to book.' ],
+            'notes'          => 'Called ahead.',
+        ] );
+
+        $booking->erasePersonalData();
+
+        $fresh = $booking->fresh();
+
+        expect( $fresh->isPiiErased() )->toBeTrue()
+            ->and( $fresh->customer_name )->toBe( Booking::PII_PLACEHOLDER )
+            ->and( $fresh->customer_name )->not->toBe( 'Ada Lovelace' )
+            ->and( $fresh->customer_email )->not->toBe( 'ada@example.test' )
+            ->and( $fresh->customer_phone )->toBeNull()
+            ->and( $fresh->intake_data )->toBeNull()
+            ->and( $fresh->notes )->toBeNull()
+            ->and( $fresh->pii_erased_at )->not->toBeNull();
+    } );
+
+    it( 'leaves an already-erased booking untouched', function (): void {
+        $booking = Booking::factory()->erased()->create();
+
+        $markedAt = $booking->pii_erased_at;
+
+        $booking->erasePersonalData();
+
+        expect( $booking->fresh()->pii_erased_at->equalTo( $markedAt ) )->toBeTrue();
+    } );
+
+    it( 'redacts the customer-facing notification log but keeps staff rows', function (): void {
+        // The log is the second place the customer's address lands — in
+        // `recipient` and, when a send fails, quoted back inside `error`. Staff
+        // sends record an internal notifiable reference on the `database`
+        // channel, so erasure leaves those as the record of who was told.
+        $booking = Booking::factory()->create();
+
+        $mail = NotificationLog::factory()->for( $booking )->failed()->create( [
+            'channel'   => 'mail',
+            'recipient' => 'ada@example.test',
+        ] );
+        $sms = NotificationLog::factory()->for( $booking )->create( [
+            'channel'   => 'sms',
+            'recipient' => '+15551234567',
+        ] );
+        $staff = NotificationLog::factory()->for( $booking )->create( [
+            'channel'   => 'database',
+            'recipient' => 'App\\Models\\User:12',
+        ] );
+
+        $booking->erasePersonalData();
+
+        expect( $mail->fresh()->recipient )->toBe( Booking::PII_PLACEHOLDER )
+            ->and( $mail->fresh()->error )->toBeNull()
+            ->and( $sms->fresh()->recipient )->toBe( Booking::PII_PLACEHOLDER )
+            ->and( $staff->fresh()->recipient )->toBe( 'App\\Models\\User:12' );
+    } );
+
+    it( 'deletes the webhook deliveries that carry a copy of the booking', function (): void {
+        // A delivery payload is a whole copy of the booking, name and all, and
+        // there is no redacting inside stored JSON — so erasure deletes the
+        // booking's own deliveries and leaves everyone else's.
+        $booking = Booking::factory()->create();
+        $other   = Booking::factory()->create();
+
+        $mine = WebhookDelivery::factory()->create( [
+            'payload' => [ 'event' => 'booking.created', 'data' => [ 'booking' => [ 'id' => $booking->id ] ] ],
+        ] );
+        $theirs = WebhookDelivery::factory()->create( [
+            'payload' => [ 'event' => 'booking.created', 'data' => [ 'booking' => [ 'id' => $other->id ] ] ],
+        ] );
+
+        $booking->erasePersonalData();
+
+        expect( WebhookDelivery::query()->whereKey( $mine->id )->exists() )->toBeFalse()
+            ->and( WebhookDelivery::query()->whereKey( $theirs->id )->exists() )->toBeTrue();
+    } );
+
+    it( 'redacts the series only once its last intact occurrence is erased', function (): void {
+        // The series is the template future occurrences are built from, so it
+        // holds the customer's name too — but redacting it while a sibling
+        // occurrence is still live would poison every occurrence made after.
+        $series = BookingSeries::factory()->create( [
+            'customer_name'  => 'Ada Lovelace',
+            'customer_email' => 'ada@example.test',
+        ] );
+
+        $first  = Booking::factory()->for( $series, 'series' )->create();
+        $second = Booking::factory()->for( $series, 'series' )->create();
+
+        $first->erasePersonalData();
+
+        expect( $series->fresh()->isPiiErased() )->toBeFalse();
+
+        $second->erasePersonalData();
+
+        expect( $series->fresh()->isPiiErased() )->toBeTrue()
+            ->and( $series->fresh()->customer_name )->toBe( BookingSeries::PII_PLACEHOLDER )
+            ->and( $series->fresh()->customer_email )->not->toBe( 'ada@example.test' );
     } );
 } );

@@ -25,6 +25,7 @@ use ArtisanPackUI\Bookings\Events\BookingCancelled;
 use ArtisanPackUI\Bookings\Events\BookingCompleted;
 use ArtisanPackUI\Bookings\Events\BookingConfirmed;
 use ArtisanPackUI\Bookings\Events\BookingNoShow;
+use ArtisanPackUI\Bookings\Events\BookingReassigned;
 use ArtisanPackUI\Bookings\Events\BookingRequested;
 use ArtisanPackUI\Bookings\Events\BookingRescheduled;
 use ArtisanPackUI\Bookings\Exceptions\InvalidBookingTransitionException;
@@ -319,6 +320,95 @@ class BookingService
     }
 
     /**
+     * Moves a booking to a different provider at the same time.
+     *
+     * The provider is chosen the way creation chooses one: the service's bookable
+     * providers, minus the one holding the booking now, narrowed to those free at
+     * the booking's instant, run through `ap.bookings.availableProviders`, and
+     * picked from by the round-robin rota via `ap.bookings.roundRobin.selectProvider`.
+     * Both hooks fire once per booking, so a bulk reassign over N bookings fires
+     * each N times rather than once for the batch.
+     *
+     * The time never moves — this is "someone else takes this appointment", not a
+     * reschedule — so the length and the slot are the booking's own. The write is
+     * guarded by the same advisory lock and unique index creation is, and a
+     * provider who loses the slot to a race is dropped and the next candidate
+     * tried, so a reassign either lands on a genuinely free provider or reports
+     * that none was free.
+     *
+     * Once the move lands, `ap.bookings.reassigned` fires and
+     * {@see BookingReassigned} is dispatched, both carrying the provider the
+     * booking left — the row no longer remembers it — so a listener can undo what
+     * it set up for the old provider and stand the new one up. A change of time
+     * without a change of provider is {@see self::reschedule()}'s to announce, not
+     * this; the two never announce each other's kind of move.
+     *
+     * @since 1.0.0
+     *
+     * @param  Booking  $booking  The booking to hand to another provider.
+     * @param  BookingActor  $actor  Who reassigned it.
+     *
+     * @throws InvalidArgumentException When the booking has no service to resolve
+     *                                  providers against.
+     * @throws InvalidBookingTransitionException When the booking is not holding a
+     *                                           slot to reassign.
+     * @throws SlotUnavailableException When no other provider is free at the time.
+     *
+     * @return Booking The booking, now on its new provider.
+     */
+    public function reassign( Booking $booking, BookingActor $actor = BookingActor::System ): Booking
+    {
+        if ( ! $booking->occupiesSlot() ) {
+            throw InvalidBookingTransitionException::cannotReschedule( $booking );
+        }
+
+        $service = $booking->service;
+
+        if ( ! $service instanceof Service ) {
+            throw new InvalidArgumentException( 'A booking with no service cannot be reassigned.' );
+        }
+
+        $start              = CarbonImmutable::instance( $booking->start_time )->utc();
+        $previousProviderId = null === $booking->provider_id ? null : (int) $booking->provider_id;
+
+        $candidates = $service->bookableProviders();
+
+        if ( $booking->provider instanceof ServiceProvider ) {
+            $candidates = $this->without( $candidates, $booking->provider );
+        }
+
+        $available = $this->filterAvailableProviders(
+            $this->providersFreeAt( $service, $candidates, $start ),
+            $service,
+            $start,
+        );
+
+        $requested  = new Slot( new TimeRange( $start, CarbonImmutable::instance( $booking->end_time )->utc() ) );
+        $reassigned = null;
+
+        while ( [] !== $available && null === $reassigned ) {
+            $provider = $this->chooseProvider( $available, $service, $requested, $booking, BookingAssignmentStrategy::RoundRobin );
+
+            if ( null === $provider ) {
+                break;
+            }
+
+            $reassigned = $this->moveToProvider( $booking, $service, $provider, $start );
+            $available  = $this->without( $available, $provider );
+        }
+
+        if ( null === $reassigned ) {
+            throw SlotUnavailableException::for( $service, $start );
+        }
+
+        doAction( 'ap.bookings.reassigned', $reassigned, $previousProviderId );
+
+        BookingReassigned::dispatch( $reassigned, $previousProviderId, $actor );
+
+        return $reassigned;
+    }
+
+    /**
      * Cancels a booking, freeing the slot it was holding.
      *
      * @since 1.0.0
@@ -531,6 +621,75 @@ class BookingService
                         'round_robin_last_assigned_at' => $booking->freshTimestamp(),
                     ] )->save();
                 }
+
+                return $booking;
+            },
+        );
+    }
+
+    /**
+     * Hands an existing booking to a provider under that provider's slot lock.
+     *
+     * The mirror of {@see self::attempt()} for a booking that already exists:
+     * where creation inserts a row, this rewrites one booking's `provider_id`,
+     * but both take the day lock so the clash check is decisive and both credit
+     * the round-robin rota inside the lock so a provider is only pushed to the
+     * back for work whose write committed. The `assignment_strategy` column is
+     * rewritten to `RoundRobin` alongside the provider, because that column
+     * records how the booking got the provider it now has and the rota is what
+     * chose this one. The time is untouched — a reassign keeps the appointment
+     * where it is.
+     *
+     * Availability is re-read inside the lock, exactly as {@see self::attempt()}
+     * does it: the candidate list was built before the lock was held, so a
+     * provider who stopped being free at the instant in that window — an override
+     * added, a blackout drawn — must be caught here rather than have the booking
+     * land on a diary that no longer covers the time. The clash check is a
+     * separate question, and both have to pass.
+     *
+     * @since 1.0.0
+     *
+     * @param  Booking  $booking  The booking being moved.
+     * @param  Service  $service  The service being booked, for the availability re-read.
+     * @param  ServiceProvider  $provider  The provider taking it.
+     * @param  CarbonImmutable  $start  The instant the booking begins.
+     *
+     * @return Booking|null The booking, or null when this provider lost the slot.
+     */
+    protected function moveToProvider( Booking $booking, Service $service, ServiceProvider $provider, CarbonImmutable $start ): ?Booking
+    {
+        $providerId = (int) $provider->getKey();
+        $end        = CarbonImmutable::instance( $booking->end_time )->utc();
+
+        return $this->lock->withSlotLock(
+            $providerId,
+            $start,
+            $provider->timezone,
+            function () use ( $booking, $service, $provider, $providerId, $start, $end ): ?Booking {
+                if ( null === $this->slotAt( $service, $provider, $start ) ) {
+                    return null;
+                }
+
+                if ( $this->clashes( $providerId, $start, $end, $booking ) ) {
+                    return null;
+                }
+
+                try {
+                    $this->connection()->transaction( static function () use ( $booking, $providerId ): void {
+                        $booking->forceFill( [
+                            'provider_id'         => $providerId,
+                            'assignment_strategy' => BookingAssignmentStrategy::RoundRobin,
+                        ] )->save();
+                    } );
+                } catch ( UniqueConstraintViolationException ) {
+                    $booking->refresh();
+
+                    return null;
+                }
+
+                $provider->forceFill( [
+                    'round_robin_last_assigned_at' => $booking->freshTimestamp(),
+                ] )->save();
 
                 return $booking;
             },

@@ -10,6 +10,7 @@ use ArtisanPackUI\Bookings\Events\BookingCancelled;
 use ArtisanPackUI\Bookings\Events\BookingCompleted;
 use ArtisanPackUI\Bookings\Events\BookingConfirmed;
 use ArtisanPackUI\Bookings\Events\BookingNoShow;
+use ArtisanPackUI\Bookings\Events\BookingReassigned;
 use ArtisanPackUI\Bookings\Events\BookingRequested;
 use ArtisanPackUI\Bookings\Events\BookingRescheduled;
 use ArtisanPackUI\Bookings\Exceptions\IntakeValidationException;
@@ -27,6 +28,7 @@ uses( TestsWithSqlite::class, RefreshDatabase::class );
 
 afterEach( function (): void {
     removeAllActions( 'ap.bookings.creating' );
+    removeAllActions( 'ap.bookings.reassigned' );
     removeAllFilters( 'ap.bookings.availableProviders' );
     removeAllFilters( 'ap.bookings.roundRobin.selectProvider' );
 } );
@@ -646,6 +648,120 @@ describe( 'lifecycle', function (): void {
         expect( fn () => bookingService()->reschedule( $booking, bookingStart( '14:00' ) ) )
             ->toThrow( InvalidBookingTransitionException::class );
         expect( fn () => bookingService()->confirm( $booking ) )
+            ->toThrow( InvalidBookingTransitionException::class );
+    } );
+} );
+
+describe( 'reassign', function (): void {
+    it( 'moves a booking to another provider free at the same time', function (): void {
+        [ $service, $providers ] = bookableService( 2 );
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        $original = $booking->provider_id;
+
+        $reassigned = bookingService()->reassign( $booking );
+
+        $others = array_values( array_filter(
+            $providers,
+            static fn ( ServiceProvider $provider ): bool => $provider->id !== $original,
+        ) );
+
+        expect( $reassigned->provider_id )->not->toBe( $original )
+            ->and( $reassigned->provider_id )->toBe( $others[0]->id )
+            ->and( $reassigned->assignment_strategy )->toBe( BookingAssignmentStrategy::RoundRobin )
+            ->and( $reassigned->start_time->equalTo( bookingStart() ) )->toBeTrue()
+            ->and( $booking->fresh()->provider_id )->toBe( $others[0]->id );
+    } );
+
+    it( 'announces the reassignment with the provider it left', function (): void {
+        Event::fake( [ BookingReassigned::class ] );
+
+        [ $service ] = bookableService( 2 );
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        $original = (int) $booking->provider_id;
+
+        $ran = false;
+
+        addAction( 'ap.bookings.reassigned', function ( $reassigned, $previousProviderId ) use ( &$ran, $original ): void {
+            $ran = ( $previousProviderId === $original );
+        } );
+
+        bookingService()->reassign( $booking, BookingActor::Admin );
+
+        expect( $ran )->toBeTrue();
+
+        Event::assertDispatched(
+            BookingReassigned::class,
+            static fn ( BookingReassigned $event ): bool => $event->previousProviderId === $original
+                && BookingActor::Admin === $event->actor,
+        );
+    } );
+
+    it( 'fires the availability hooks once for the booking it reassigns', function (): void {
+        [ $service ] = bookableService( 2 );
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        $available  = 0;
+        $roundRobin = 0;
+
+        addFilter( 'ap.bookings.availableProviders', function ( array $providers ) use ( &$available ): array {
+            $available++;
+
+            return $providers;
+        } );
+
+        addFilter( 'ap.bookings.roundRobin.selectProvider', function ( $selected ) use ( &$roundRobin ) {
+            $roundRobin++;
+
+            return $selected;
+        } );
+
+        bookingService()->reassign( $booking );
+
+        expect( $available )->toBe( 1 )
+            ->and( $roundRobin )->toBe( 1 );
+    } );
+
+    it( 'refuses to reassign when no other provider is free', function (): void {
+        [ $service ] = bookableService( 1 );
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        $original = $booking->provider_id;
+
+        expect( fn () => bookingService()->reassign( $booking ) )
+            ->toThrow( SlotUnavailableException::class );
+
+        expect( $booking->fresh()->provider_id )->toBe( $original );
+    } );
+
+    it( 'refuses to reassign a booking that no longer holds a slot', function (): void {
+        [ $service ] = bookableService( 2 );
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        bookingService()->cancel( $booking, BookingActor::Admin );
+
+        expect( fn () => bookingService()->reassign( $booking->fresh() ) )
             ->toThrow( InvalidBookingTransitionException::class );
     } );
 } );

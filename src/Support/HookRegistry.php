@@ -85,6 +85,7 @@ final class HookRegistry
         | cancelled    ( Booking $booking )
         | completed    ( Booking $booking )
         | noShow       ( Booking $booking )
+        | reassigned   ( Booking $booking, ?int $previousProviderId )
         */
         'ap.bookings.creating'     => [ 'type' => 'action', 'issues' => '#13' ],
         'ap.bookings.created'      => [ 'type' => 'action', 'issues' => '#13' ],
@@ -95,6 +96,7 @@ final class HookRegistry
         'ap.bookings.cancelled'    => [ 'type' => 'action', 'issues' => '#13' ],
         'ap.bookings.completed'    => [ 'type' => 'action', 'issues' => '#13, #22' ],
         'ap.bookings.noShow'       => [ 'type' => 'action', 'issues' => '#13, #33' ],
+        'ap.bookings.reassigned'   => [ 'type' => 'action', 'issues' => '#13, #37' ],
 
         /*
         | Availability — #12, #42.
