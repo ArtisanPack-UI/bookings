@@ -227,6 +227,7 @@ class IcalFeedDriver implements CalendarSyncDriver
             'ap.bookings.calendarSync.eventPayload',
             $this->payloadFor( $booking ),
             $booking,
+            $this->driver()->value,
         );
 
         if ( ! is_array( $payload ) ) {
@@ -252,11 +253,11 @@ class IcalFeedDriver implements CalendarSyncDriver
     {
         $externalEventId = $this->feed->uid( $booking );
 
-        doAction( 'ap.bookings.calendarSync.pushing', $booking, $externalEventId );
+        doAction( 'ap.bookings.calendarSync.pushing', $booking, $this->driver()->value );
 
         $this->buildEvent( $booking );
 
-        doAction( 'ap.bookings.calendarSync.pushed', $booking, $externalEventId );
+        doAction( 'ap.bookings.calendarSync.pushed', $booking, $this->driver()->value, $externalEventId );
 
         return $externalEventId;
     }

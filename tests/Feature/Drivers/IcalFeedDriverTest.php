@@ -51,21 +51,36 @@ describe( 'writing', function (): void {
             ->toBe( app( IcalFeedService::class )->uid( $booking ) );
     } );
 
-    it( 'fires pushing and pushed with the booking and its external id', function (): void {
+    it( 'fires pushing with the booking and provider slug, and pushed with the external id too', function (): void {
         $booking = Booking::factory()->create();
         $seen    = [];
 
-        addAction( 'ap.bookings.calendarSync.pushing', function ( Booking $pushed, string $id ) use ( &$seen ): void {
-            $seen['pushing'] = [ $pushed->getKey(), $id ];
+        addAction( 'ap.bookings.calendarSync.pushing', function ( Booking $pushed, string $slug ) use ( &$seen ): void {
+            $seen['pushing'] = [ $pushed->getKey(), $slug ];
         } );
-        addAction( 'ap.bookings.calendarSync.pushed', function ( Booking $pushed, string $id ) use ( &$seen ): void {
-            $seen['pushed'] = [ $pushed->getKey(), $id ];
+        addAction( 'ap.bookings.calendarSync.pushed', function ( Booking $pushed, string $slug, string $id ) use ( &$seen ): void {
+            $seen['pushed'] = [ $pushed->getKey(), $slug, $id ];
         } );
 
         $externalId = icalDriver()->createEvent( new CalendarConnection(), $booking );
 
-        expect( $seen['pushing'] )->toBe( [ $booking->getKey(), $externalId ] )
-            ->and( $seen['pushed'] )->toBe( [ $booking->getKey(), $externalId ] );
+        expect( $seen['pushing'] )->toBe( [ $booking->getKey(), 'ical' ] )
+            ->and( $seen['pushed'] )->toBe( [ $booking->getKey(), 'ical', $externalId ] );
+    } );
+
+    it( 'passes the provider slug to the eventPayload filter', function (): void {
+        $booking = Booking::factory()->create();
+        $seen    = null;
+
+        addFilter( 'ap.bookings.calendarSync.eventPayload', function ( array $payload, Booking $for, string $slug ) use ( &$seen ): array {
+            $seen = $slug;
+
+            return $payload;
+        } );
+
+        icalDriver()->buildEvent( $booking );
+
+        expect( $seen )->toBe( 'ical' );
     } );
 
     it( 'never pushes to an external calendar, so deleting is a no-op', function (): void {

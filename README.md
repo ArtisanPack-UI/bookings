@@ -1030,9 +1030,10 @@ Actions fire; filters transform a value and must return one.
 | `ap.bookings.icalTokenIssued` | action | `(ServiceProvider $provider, string $plainToken)` |
 | `ap.bookings.icalTokenRevoked` | action | `(ServiceProvider $provider)` |
 | `ap.bookings.calendarSync.providers` | filter | `(array $drivers)` |
-| `ap.bookings.calendarSync.pushing` | action | `(Booking $booking, string $externalEventId)` |
-| `ap.bookings.calendarSync.pushed` | action | `(Booking $booking, string $externalEventId)` |
-| `ap.bookings.calendarSync.eventPayload` | filter | `(array $payload, Booking $booking)` |
+| `ap.bookings.calendarSync.pushing` | action | `(Booking $booking, string $providerSlug)` |
+| `ap.bookings.calendarSync.pushed` | action | `(Booking $booking, string $providerSlug, string $externalEventId)` |
+| `ap.bookings.calendarSync.pullReceived` | action | `(array $payload, string $providerSlug)` |
+| `ap.bookings.calendarSync.eventPayload` | filter | `(array $payload, Booking $booking, string $providerSlug)` |
 | `ap.bookings.availableProviders` | filter | `(array $providers, Service $service, CarbonImmutable $start)` |
 | `ap.bookings.roundRobin.selectProvider` | filter | `(?ServiceProvider $selected, array $candidates, Booking $draft)` |
 | `ap.bookings.intakeSchema` | filter | `(array $schema, Service $service, int $version)` |
@@ -1079,6 +1080,13 @@ issue, and by the time it does the provider's previous token is already dead —
 a subscriber that delivers the new subscription URL is not being helpful, it is
 the only thing standing between the provider and a feed that has silently stopped
 updating.
+
+`ap.bookings.calendarSync.pullReceived` carries the external calendar's raw change
+feed — personal data that is not this package's. The payload holds event titles
+and descriptions, organiser and attendee email addresses, and the shape of the
+provider's private diary, handed over before normalisation so a subscriber can see
+what the calendar actually sent. Do not log it, and treat anything drawn from it as
+third-party data subject to the same handling as any other personal information.
 
 `ap.bookings.intakeSchema` runs against the version a booking was captured with
 rather than the service's current form, and its output is never written back. A
