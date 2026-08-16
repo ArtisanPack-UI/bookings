@@ -37,6 +37,7 @@ use ArtisanPackUI\Bookings\Contracts\RoundRobinStrategy;
 use ArtisanPackUI\Bookings\Contracts\SlotResolver;
 use ArtisanPackUI\Bookings\Contracts\SmsDriver;
 use ArtisanPackUI\Bookings\Enums\NotificationType;
+use ArtisanPackUI\Bookings\Http\Middleware\AuthorizeBookingsAdmin;
 use ArtisanPackUI\Bookings\Http\Middleware\RateLimitBookings;
 use ArtisanPackUI\Bookings\Http\Middleware\ResolveManageToken;
 use ArtisanPackUI\Bookings\Listeners\DispatchBookingWebhooks;
@@ -88,11 +89,14 @@ use ArtisanPackUI\Bookings\Services\ReminderScheduler;
 use ArtisanPackUI\Bookings\Services\SeriesService;
 use ArtisanPackUI\Bookings\Services\WebhookDispatcher;
 use ArtisanPackUI\Bookings\Strategies\LeastRecentlyAssignedStrategy;
+use ArtisanPackUI\Bookings\Support\AdminNav;
 use ArtisanPackUI\Bookings\Support\HookSubscriptions;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\View\View as ViewContract;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 use InvalidArgumentException;
 use Livewire\Livewire;
@@ -373,8 +377,11 @@ class BookingsServiceProvider extends ServiceProvider
 
         $this->registerLivewireComponents();
 
-        // Calendar drivers and the CMS-framework integration are registered here
-        // as each is built.
+        $this->registerAdminRoutes();
+
+        $this->registerCmsAdminNav();
+
+        // Calendar drivers are registered here as each is built.
     }
 
     /**
@@ -486,6 +493,65 @@ class BookingsServiceProvider extends ServiceProvider
         // The widget's plain-HTML form target, which needs the session and the
         // CSRF token the `api` group deliberately does without.
         Route::middleware( 'web' )->group( __DIR__ . '/../../routes/widget.php' );
+    }
+
+    /**
+     * Mounts the staff-facing admin screens.
+     *
+     * The routes are registered whether or not cms-framework is installed — the
+     * package's admin surface stands alone, and cms-framework changes only the
+     * chrome the screens render inside. That layout choice is answered here once,
+     * through a view composer that shares `$bookingsAdminLayout` with every admin
+     * page: cms-framework's shell when it is present, the package's own layout
+     * when it is not. A page therefore extends a single variable and carries no
+     * branch of its own, and the two worlds cannot render a page the other's
+     * chrome was written for.
+     *
+     * The `bookings.admin` alias is registered before the cached-routes guard so
+     * an application whose routes are cached — where this file is not loaded, but
+     * a cached admin route still names the middleware — can still resolve it, the
+     * same shape `registerPublicRoutes()` uses for its own aliases.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    protected function registerAdminRoutes(): void
+    {
+        Route::aliasMiddleware( 'bookings.admin', AuthorizeBookingsAdmin::class );
+
+        View::composer( 'bookings::admin.pages.*', static function ( ViewContract $view ): void {
+            $view->with(
+                'bookingsAdminLayout',
+                HookSubscriptions::isInstalled( 'cms-framework' )
+                    ? 'cms::admin.layouts.app'
+                    : 'bookings::admin.layouts.app',
+            );
+        } );
+
+        if ( $this->app->routesAreCached() ) {
+            return;
+        }
+
+        Route::group( [], __DIR__ . '/../../routes/admin.php' );
+    }
+
+    /**
+     * Adds the bookings entries to cms-framework's admin navigation.
+     *
+     * The whole decision — whether the application still wants the auto
+     * registration, and whether cms-framework is even here to receive it — lives
+     * in {@see AdminNav::subscribeToCmsMenu()}, beside the entries themselves, so
+     * the shell menu and the standalone sidebar read one list and cannot disagree
+     * about what the package offers.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    protected function registerCmsAdminNav(): void
+    {
+        AdminNav::subscribeToCmsMenu();
     }
 
     /**
