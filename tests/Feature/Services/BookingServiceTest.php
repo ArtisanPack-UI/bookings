@@ -10,6 +10,7 @@ use ArtisanPackUI\Bookings\Events\BookingCancelled;
 use ArtisanPackUI\Bookings\Events\BookingCompleted;
 use ArtisanPackUI\Bookings\Events\BookingConfirmed;
 use ArtisanPackUI\Bookings\Events\BookingNoShow;
+use ArtisanPackUI\Bookings\Events\BookingReassigned;
 use ArtisanPackUI\Bookings\Events\BookingRequested;
 use ArtisanPackUI\Bookings\Events\BookingRescheduled;
 use ArtisanPackUI\Bookings\Exceptions\IntakeValidationException;
@@ -27,6 +28,7 @@ uses( TestsWithSqlite::class, RefreshDatabase::class );
 
 afterEach( function (): void {
     removeAllActions( 'ap.bookings.creating' );
+    removeAllActions( 'ap.bookings.reassigned' );
     removeAllFilters( 'ap.bookings.availableProviders' );
     removeAllFilters( 'ap.bookings.roundRobin.selectProvider' );
 } );
@@ -673,6 +675,35 @@ describe( 'reassign', function (): void {
             ->and( $reassigned->assignment_strategy )->toBe( BookingAssignmentStrategy::RoundRobin )
             ->and( $reassigned->start_time->equalTo( bookingStart() ) )->toBeTrue()
             ->and( $booking->fresh()->provider_id )->toBe( $others[0]->id );
+    } );
+
+    it( 'announces the reassignment with the provider it left', function (): void {
+        Event::fake( [ BookingReassigned::class ] );
+
+        [ $service ] = bookableService( 2 );
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        $original = (int) $booking->provider_id;
+
+        $ran = false;
+
+        addAction( 'ap.bookings.reassigned', function ( $reassigned, $previousProviderId ) use ( &$ran, $original ): void {
+            $ran = ( $previousProviderId === $original );
+        } );
+
+        bookingService()->reassign( $booking, BookingActor::Admin );
+
+        expect( $ran )->toBeTrue();
+
+        Event::assertDispatched(
+            BookingReassigned::class,
+            static fn ( BookingReassigned $event ): bool => $event->previousProviderId === $original
+                && BookingActor::Admin === $event->actor,
+        );
     } );
 
     it( 'fires the availability hooks once for the booking it reassigns', function (): void {

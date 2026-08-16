@@ -73,6 +73,20 @@ class BookingSeries extends Model
     use SoftDeletes;
 
     /**
+     * The value the personal columns hold once a series has been erased.
+     *
+     * A fixed placeholder rather than a null, for the same reason the column is
+     * NOT NULL — {@see self::isPiiErased()} is what marks the row erased, not an
+     * empty field. Kept equal to {@see Booking::PII_PLACEHOLDER} so a series and
+     * its occurrences read the same once erased.
+     *
+     * @since 1.0.0
+     *
+     * @var string
+     */
+    public const PII_PLACEHOLDER = '[erased]';
+
+    /**
      * The table associated with the model.
      *
      * Named explicitly because "series" is its own plural, and a convention
@@ -223,6 +237,38 @@ class BookingSeries extends Model
     public function isCancelled(): bool
     {
         return null !== $this->cancelled_at;
+    }
+
+    /**
+     * Overwrites the series' template personal data in place, marking it erased.
+     *
+     * The series row is the template every occurrence is materialised from, so it
+     * carries the customer's name, email, and phone the same way a booking does.
+     * This redacts them to the shape {@see BookingSeriesFactory::erased()}
+     * produces and stamps `pii_erased_at` in the same write. It does not touch the
+     * occurrences — those are erased as their own rows — and it is
+     * {@see Booking::erasePersonalData()}, not this, that decides when a series
+     * has no intact occurrence left to keep it populated for.
+     *
+     * A series already erased is left as it is, so this is safe to call more than
+     * once.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    public function erasePersonalData(): void
+    {
+        if ( $this->isPiiErased() ) {
+            return;
+        }
+
+        $this->forceFill( [
+            'customer_name'  => self::PII_PLACEHOLDER,
+            'customer_email' => 'erased@example.invalid',
+            'customer_phone' => null,
+            'pii_erased_at'  => $this->freshTimestamp(),
+        ] )->save();
     }
 
     /**

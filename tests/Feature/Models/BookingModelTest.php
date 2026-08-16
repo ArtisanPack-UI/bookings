@@ -9,6 +9,7 @@ use ArtisanPackUI\Bookings\Models\BookingSeries;
 use ArtisanPackUI\Bookings\Models\IntakeSchemaVersion;
 use ArtisanPackUI\Bookings\Models\NotificationLog;
 use ArtisanPackUI\Bookings\Models\Service;
+use ArtisanPackUI\Bookings\Models\WebhookDelivery;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -482,5 +483,48 @@ describe( 'booking erasure', function (): void {
             ->and( $mail->fresh()->error )->toBeNull()
             ->and( $sms->fresh()->recipient )->toBe( Booking::PII_PLACEHOLDER )
             ->and( $staff->fresh()->recipient )->toBe( 'App\\Models\\User:12' );
+    } );
+
+    it( 'deletes the webhook deliveries that carry a copy of the booking', function (): void {
+        // A delivery payload is a whole copy of the booking, name and all, and
+        // there is no redacting inside stored JSON — so erasure deletes the
+        // booking's own deliveries and leaves everyone else's.
+        $booking = Booking::factory()->create();
+        $other   = Booking::factory()->create();
+
+        $mine = WebhookDelivery::factory()->create( [
+            'payload' => [ 'event' => 'booking.created', 'data' => [ 'booking' => [ 'id' => $booking->id ] ] ],
+        ] );
+        $theirs = WebhookDelivery::factory()->create( [
+            'payload' => [ 'event' => 'booking.created', 'data' => [ 'booking' => [ 'id' => $other->id ] ] ],
+        ] );
+
+        $booking->erasePersonalData();
+
+        expect( WebhookDelivery::query()->whereKey( $mine->id )->exists() )->toBeFalse()
+            ->and( WebhookDelivery::query()->whereKey( $theirs->id )->exists() )->toBeTrue();
+    } );
+
+    it( 'redacts the series only once its last intact occurrence is erased', function (): void {
+        // The series is the template future occurrences are built from, so it
+        // holds the customer's name too — but redacting it while a sibling
+        // occurrence is still live would poison every occurrence made after.
+        $series = BookingSeries::factory()->create( [
+            'customer_name'  => 'Ada Lovelace',
+            'customer_email' => 'ada@example.test',
+        ] );
+
+        $first  = Booking::factory()->for( $series, 'series' )->create();
+        $second = Booking::factory()->for( $series, 'series' )->create();
+
+        $first->erasePersonalData();
+
+        expect( $series->fresh()->isPiiErased() )->toBeFalse();
+
+        $second->erasePersonalData();
+
+        expect( $series->fresh()->isPiiErased() )->toBeTrue()
+            ->and( $series->fresh()->customer_name )->toBe( BookingSeries::PII_PLACEHOLDER )
+            ->and( $series->fresh()->customer_email )->not->toBe( 'ada@example.test' );
     } );
 } );

@@ -387,13 +387,25 @@ class Booking extends Model
      * {@see self::isPiiErased()} reading that marker is the only thing that tells
      * an erased row from a real one once the placeholders make it look populated.
      *
-     * The notification log is the second place the customer's contact details
-     * land, so it is erased in the same transaction — otherwise a redacted
-     * booking would sit beside a log row still holding the address it was sent
-     * to and the transport error that quoted it back. Only the customer-facing
-     * channels are touched: staff sends record an internal notifiable reference
-     * rather than an address, so {@see NotificationLog}'s erasure contract keeps
-     * the `database` channel's rows intact as the record of who was told.
+     * The same transaction erases the copies of that data the booking's history
+     * scattered elsewhere, because a booking that reads `[erased]` while a copy
+     * of the name sits in the next table is not erased at all:
+     *
+     * - The notification log is the second place the contact details land — in
+     *   `recipient`, and, when a send failed, quoted back inside `error`. Only
+     *   the customer-facing channels are touched: staff sends record an internal
+     *   notifiable reference rather than an address, so {@see NotificationLog}'s
+     *   erasure contract keeps the `database` channel's rows intact as the record
+     *   of who was told.
+     * - Webhook deliveries hold a whole copy of the booking, name and email and
+     *   all, inside a JSON payload that cannot be usefully redacted in place —
+     *   so {@see WebhookDelivery}'s contract is to delete the booking's rows
+     *   rather than rewrite them, which is what happens here.
+     * - The series a recurring booking belongs to is the template its occurrences
+     *   are built from, so it carries the same customer data. It is redacted only
+     *   once this is the last occurrence still holding intact data: redacting it
+     *   while a sibling occurrence is live would blank the name every future
+     *   occurrence is materialised with.
      *
      * Erasure is not a state transition and fires no lifecycle hook. A booking
      * already erased is left as it is, so running it a second time neither
@@ -425,6 +437,15 @@ class Booking extends Model
                     'recipient' => self::PII_PLACEHOLDER,
                     'error'     => null,
                 ] );
+
+            // Deliveries carry no booking_id column; each is tied to a booking
+            // only by the id inside its payload, which is where the customer copy
+            // sits too.
+            WebhookDelivery::query()
+                ->where( 'payload->data->booking->id', $this->getKey() )
+                ->delete();
+
+            $this->eraseSeriesIfLastOccurrence();
         } );
     }
 
@@ -496,6 +517,38 @@ class Booking extends Model
         return $query
             ->whereNotNull( $this->qualifyColumn( 'series_id' ) )
             ->whereNull( $this->qualifyColumn( 'detached_from_series_at' ) );
+    }
+
+    /**
+     * Erases the parent series once no occupied-by-real-data occurrence remains.
+     *
+     * Called from within {@see self::erasePersonalData()}'s transaction, after
+     * this booking has been marked erased. A standalone booking has no series and
+     * nothing to do here; a series is only redacted when every other occurrence
+     * of it is already erased, so an ongoing series keeps the template its future
+     * occurrences need until the last of them has been erased too.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    protected function eraseSeriesIfLastOccurrence(): void
+    {
+        $series = $this->series;
+
+        if ( ! $series instanceof BookingSeries || $series->isPiiErased() ) {
+            return;
+        }
+
+        $intactSiblingExists = static::query()
+            ->where( 'series_id', $series->getKey() )
+            ->whereKeyNot( $this->getKey() )
+            ->notPiiErased()
+            ->exists();
+
+        if ( ! $intactSiblingExists ) {
+            $series->erasePersonalData();
+        }
     }
 
     /**

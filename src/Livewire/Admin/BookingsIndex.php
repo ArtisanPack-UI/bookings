@@ -49,11 +49,12 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * `cancelled` and dispatches {@see \ArtisanPackUI\Bookings\Events\BookingCancelled}
  * for every booking, so a subscriber counting cancellations sees N of them; bulk
  * reassign fires the provider-selection filters `ap.bookings.availableProviders`
- * and `ap.bookings.roundRobin.selectProvider` once for each booking it moves.
- * Reassignment is deliberately silent otherwise — it registers no lifecycle hook
- * or event of its own, per the hook contract this work was cut against. Erasure
- * is not a lifecycle change and fires nothing; it overwrites the personal columns
- * in place and marks the row erased.
+ * and `ap.bookings.roundRobin.selectProvider` while choosing, then fires
+ * `ap.bookings.reassigned` and dispatches
+ * {@see \ArtisanPackUI\Bookings\Events\BookingReassigned} for each booking it
+ * moves. Erasure is not a lifecycle change and fires nothing; it overwrites the
+ * personal columns in place, deletes the copies of them the notification log and
+ * webhook deliveries hold, and marks the row erased.
  *
  * The query is site-scoped by the model, so nothing here names a tenant. The
  * export streams the same filtered set the list is showing rather than a fresh
@@ -309,7 +310,7 @@ class BookingsIndex extends Component
             }
 
             try {
-                $service->reassign( $booking );
+                $service->reassign( $booking, BookingActor::Admin );
             } catch ( BookingException ) {
                 return false;
             }

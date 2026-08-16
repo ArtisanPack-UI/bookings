@@ -82,7 +82,7 @@
                 wire:click="cancelSelected"
                 wire:confirm="{{ __( 'Cancel the selected bookings? This notifies each customer.' ) }}"
             >
-                {{ __( 'Cancel' ) }}
+                {{ __( 'Cancel bookings' ) }}
             </button>
 
             <button type="button" class="btn btn-sm" wire:click="reassignSelected">

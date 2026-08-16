@@ -25,6 +25,7 @@ use ArtisanPackUI\Bookings\Events\BookingCancelled;
 use ArtisanPackUI\Bookings\Events\BookingCompleted;
 use ArtisanPackUI\Bookings\Events\BookingConfirmed;
 use ArtisanPackUI\Bookings\Events\BookingNoShow;
+use ArtisanPackUI\Bookings\Events\BookingReassigned;
 use ArtisanPackUI\Bookings\Events\BookingRequested;
 use ArtisanPackUI\Bookings\Events\BookingRescheduled;
 use ArtisanPackUI\Bookings\Exceptions\InvalidBookingTransitionException;
@@ -335,9 +336,17 @@ class BookingService
      * tried, so a reassign either lands on a genuinely free provider or reports
      * that none was free.
      *
+     * Once the move lands, `ap.bookings.reassigned` fires and
+     * {@see BookingReassigned} is dispatched, both carrying the provider the
+     * booking left — the row no longer remembers it — so a listener can undo what
+     * it set up for the old provider and stand the new one up. A change of time
+     * without a change of provider is {@see self::reschedule()}'s to announce, not
+     * this; the two never announce each other's kind of move.
+     *
      * @since 1.0.0
      *
      * @param  Booking  $booking  The booking to hand to another provider.
+     * @param  BookingActor  $actor  Who reassigned it.
      *
      * @throws InvalidArgumentException When the booking has no service to resolve
      *                                  providers against.
@@ -347,7 +356,7 @@ class BookingService
      *
      * @return Booking The booking, now on its new provider.
      */
-    public function reassign( Booking $booking ): Booking
+    public function reassign( Booking $booking, BookingActor $actor = BookingActor::System ): Booking
     {
         if ( ! $booking->occupiesSlot() ) {
             throw InvalidBookingTransitionException::cannotReschedule( $booking );
@@ -359,7 +368,8 @@ class BookingService
             throw new InvalidArgumentException( 'A booking with no service cannot be reassigned.' );
         }
 
-        $start = CarbonImmutable::instance( $booking->start_time )->utc();
+        $start              = CarbonImmutable::instance( $booking->start_time )->utc();
+        $previousProviderId = null === $booking->provider_id ? null : (int) $booking->provider_id;
 
         $candidates = $service->bookableProviders();
 
@@ -383,13 +393,17 @@ class BookingService
                 break;
             }
 
-            $reassigned = $this->moveToProvider( $booking, $provider, $start );
+            $reassigned = $this->moveToProvider( $booking, $service, $provider, $start );
             $available  = $this->without( $available, $provider );
         }
 
         if ( null === $reassigned ) {
             throw SlotUnavailableException::for( $service, $start );
         }
+
+        doAction( 'ap.bookings.reassigned', $reassigned, $previousProviderId );
+
+        BookingReassigned::dispatch( $reassigned, $previousProviderId, $actor );
 
         return $reassigned;
     }
@@ -626,15 +640,23 @@ class BookingService
      * chose this one. The time is untouched — a reassign keeps the appointment
      * where it is.
      *
+     * Availability is re-read inside the lock, exactly as {@see self::attempt()}
+     * does it: the candidate list was built before the lock was held, so a
+     * provider who stopped being free at the instant in that window — an override
+     * added, a blackout drawn — must be caught here rather than have the booking
+     * land on a diary that no longer covers the time. The clash check is a
+     * separate question, and both have to pass.
+     *
      * @since 1.0.0
      *
      * @param  Booking  $booking  The booking being moved.
+     * @param  Service  $service  The service being booked, for the availability re-read.
      * @param  ServiceProvider  $provider  The provider taking it.
      * @param  CarbonImmutable  $start  The instant the booking begins.
      *
      * @return Booking|null The booking, or null when this provider lost the slot.
      */
-    protected function moveToProvider( Booking $booking, ServiceProvider $provider, CarbonImmutable $start ): ?Booking
+    protected function moveToProvider( Booking $booking, Service $service, ServiceProvider $provider, CarbonImmutable $start ): ?Booking
     {
         $providerId = (int) $provider->getKey();
         $end        = CarbonImmutable::instance( $booking->end_time )->utc();
@@ -643,7 +665,11 @@ class BookingService
             $providerId,
             $start,
             $provider->timezone,
-            function () use ( $booking, $provider, $providerId, $start, $end ): ?Booking {
+            function () use ( $booking, $service, $provider, $providerId, $start, $end ): ?Booking {
+                if ( null === $this->slotAt( $service, $provider, $start ) ) {
+                    return null;
+                }
+
                 if ( $this->clashes( $providerId, $start, $end, $booking ) ) {
                     return null;
                 }
