@@ -82,6 +82,18 @@ class Booking extends Model
     use SoftDeletes;
 
     /**
+     * The value the personal columns hold once a booking has been erased.
+     *
+     * A fixed placeholder rather than a null so an erased row still reads as
+     * populated — {@see self::isPiiErased()} is what says it is not real.
+     *
+     * @since 1.0.0
+     *
+     * @var string
+     */
+    public const PII_PLACEHOLDER = '[erased]';
+
+    /**
      * The attributes that are mass assignable.
      *
      * `manage_token_hash` is absent on purpose. A caller who could set the hash
@@ -360,6 +372,60 @@ class Booking extends Model
     public function occupiesSlot(): bool
     {
         return $this->status->occupiesSlot();
+    }
+
+    /**
+     * Overwrites the booking's personal data in place, marking it erased.
+     *
+     * The booking has to keep existing — it may be the row somebody was invoiced
+     * for — so this redacts the columns a person is identifiable by rather than
+     * deleting the row. It writes the same shape {@see BookingFactory::erased()}
+     * produces: the name becomes the {@see self::PII_PLACEHOLDER} the NOT NULL
+     * columns need, the email a reserved `.invalid` address, and the phone, the
+     * intake answers, and the free-text notes — all of which can carry personal
+     * data — are dropped. `pii_erased_at` is set in the same write, because
+     * {@see self::isPiiErased()} reading that marker is the only thing that tells
+     * an erased row from a real one once the placeholders make it look populated.
+     *
+     * The notification log is the second place the customer's contact details
+     * land, so it is erased in the same transaction — otherwise a redacted
+     * booking would sit beside a log row still holding the address it was sent
+     * to and the transport error that quoted it back. Only the customer-facing
+     * channels are touched: staff sends record an internal notifiable reference
+     * rather than an address, so {@see NotificationLog}'s erasure contract keeps
+     * the `database` channel's rows intact as the record of who was told.
+     *
+     * Erasure is not a state transition and fires no lifecycle hook. A booking
+     * already erased is left as it is, so running it a second time neither
+     * re-redacts nor moves the timestamp.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    public function erasePersonalData(): void
+    {
+        if ( $this->isPiiErased() ) {
+            return;
+        }
+
+        $this->getConnection()->transaction( function (): void {
+            $this->forceFill( [
+                'customer_name'  => self::PII_PLACEHOLDER,
+                'customer_email' => 'erased@example.invalid',
+                'customer_phone' => null,
+                'intake_data'    => null,
+                'notes'          => null,
+                'pii_erased_at'  => $this->freshTimestamp(),
+            ] )->save();
+
+            $this->notificationLogs()
+                ->where( 'channel', '!=', 'database' )
+                ->update( [
+                    'recipient' => self::PII_PLACEHOLDER,
+                    'error'     => null,
+                ] );
+        } );
     }
 
     /**

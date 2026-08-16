@@ -129,3 +129,101 @@ describe( 'acting on a booking', function (): void {
             ->assertFileDownloaded( 'bookings.csv' );
     } );
 } );
+
+describe( 'bulk actions', function (): void {
+    afterEach( function (): void {
+        removeAllActions( 'ap.bookings.cancelled' );
+    } );
+
+    it( 'cancels every selected booking', function (): void {
+        $bookings = Booking::factory()->confirmed()->count( 3 )->create();
+        $spared   = Booking::factory()->confirmed()->create();
+
+        Livewire::test( BookingsIndex::class )
+            ->set( 'selected', $bookings->modelKeys() )
+            ->call( 'cancelSelected' )
+            ->assertSet( 'selected', [] );
+
+        foreach ( $bookings as $booking ) {
+            expect( $booking->fresh()->status )->toBe( BookingStatus::Cancelled );
+        }
+
+        expect( $spared->fresh()->status )->toBe( BookingStatus::Confirmed );
+    } );
+
+    it( 'runs the cancelled hook once for each booking in the batch', function (): void {
+        $bookings = Booking::factory()->confirmed()->count( 5 )->create();
+
+        $ran = 0;
+
+        addAction( 'ap.bookings.cancelled', function () use ( &$ran ): void {
+            ++$ran;
+        } );
+
+        Livewire::test( BookingsIndex::class )
+            ->set( 'selected', $bookings->modelKeys() )
+            ->call( 'cancelSelected' );
+
+        expect( $ran )->toBe( 5 );
+    } );
+
+    it( 'skips a selected booking that can no longer be cancelled', function (): void {
+        $live      = Booking::factory()->confirmed()->create();
+        $cancelled = Booking::factory()->cancelled()->create();
+
+        Livewire::test( BookingsIndex::class )
+            ->set( 'selected', [ $live->id, $cancelled->id ] )
+            ->call( 'cancelSelected' );
+
+        expect( $live->fresh()->status )->toBe( BookingStatus::Cancelled )
+            ->and( $cancelled->fresh()->status )->toBe( BookingStatus::Cancelled );
+    } );
+
+    it( 'reassigns every selected booking to another available provider', function (): void {
+        [ $service ] = bookableService( 2 );
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        $original = $booking->provider_id;
+
+        Livewire::test( BookingsIndex::class )
+            ->set( 'selected', [ $booking->id ] )
+            ->call( 'reassignSelected' )
+            ->assertSet( 'selected', [] );
+
+        expect( $booking->fresh()->provider_id )->not->toBe( $original );
+    } );
+
+    it( 'erases the personal data on every selected booking', function (): void {
+        $bookings = Booking::factory()->count( 2 )->create();
+
+        Livewire::test( BookingsIndex::class )
+            ->set( 'selected', $bookings->modelKeys() )
+            ->call( 'erasePiiSelected' )
+            ->assertSet( 'selected', [] );
+
+        foreach ( $bookings as $booking ) {
+            expect( $booking->fresh()->isPiiErased() )->toBeTrue();
+        }
+    } );
+
+    it( 'selects every booking on the page when the header box is ticked', function (): void {
+        Booking::factory()->count( 3 )->create();
+
+        Livewire::test( BookingsIndex::class )
+            ->set( 'selectPage', true )
+            ->assertCount( 'selected', 3 );
+    } );
+
+    it( 'clears the selection when a filter changes', function (): void {
+        $bookings = Booking::factory()->count( 2 )->create();
+
+        Livewire::test( BookingsIndex::class )
+            ->set( 'selected', $bookings->modelKeys() )
+            ->set( 'search', 'ada' )
+            ->assertSet( 'selected', [] );
+    } );
+} );

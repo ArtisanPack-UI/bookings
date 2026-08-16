@@ -66,6 +66,40 @@
 
     <div wire:loading.delay class="text-sm opacity-70" role="status">{{ __( 'Loading…' ) }}</div>
 
+    @if ( '' !== $statusMessage )
+        <p class="rounded-box bg-base-200 p-3 text-sm" role="status">{{ $statusMessage }}</p>
+    @endif
+
+    @if ( [] !== $selected )
+        <div class="flex flex-wrap items-center gap-2 rounded-box border p-3">
+            <span class="text-sm opacity-70">
+                {{ trans_choice( '{1}:count booking selected|[2,*]:count bookings selected', count( $selected ), [ 'count' => count( $selected ) ] ) }}
+            </span>
+
+            <button
+                type="button"
+                class="btn btn-sm"
+                wire:click="cancelSelected"
+                wire:confirm="{{ __( 'Cancel the selected bookings? This notifies each customer.' ) }}"
+            >
+                {{ __( 'Cancel' ) }}
+            </button>
+
+            <button type="button" class="btn btn-sm" wire:click="reassignSelected">
+                {{ __( 'Reassign' ) }}
+            </button>
+
+            <button
+                type="button"
+                class="btn btn-sm btn-error"
+                wire:click="erasePiiSelected"
+                wire:confirm="{{ __( 'Erase the personal data on the selected bookings? This cannot be undone.' ) }}"
+            >
+                {{ __( 'Erase personal data' ) }}
+            </button>
+        </div>
+    @endif
+
     @if ( 0 === $bookings->total() )
         <p class="rounded-box border border-dashed p-6 text-center opacity-70">
             {{ __( 'No bookings match these filters.' ) }}
@@ -74,6 +108,12 @@
         <table class="table w-full">
             <thead>
                 <tr>
+                    <th class="w-0">
+                        <label>
+                            <span class="sr-only">{{ __( 'Select all bookings on this page' ) }}</span>
+                            <input type="checkbox" class="checkbox" wire:model.live="selectPage" />
+                        </label>
+                    </th>
                     <th>{{ __( 'Booking' ) }}</th>
                     <th>{{ __( 'When' ) }}</th>
                     <th>{{ __( 'Service' ) }}</th>
@@ -85,6 +125,12 @@
             <tbody>
                 @foreach ( $bookings as $booking )
                     <tr wire:key="booking-{{ $booking->id }}">
+                        <td>
+                            <label>
+                                <span class="sr-only">{{ __( 'Select booking :number', [ 'number' => $booking->booking_number ] ) }}</span>
+                                <input type="checkbox" class="checkbox" value="{{ $booking->id }}" wire:model.live="selected" />
+                            </label>
+                        </td>
                         <td>
                             <span class="font-medium">{{ $booking->customer_name }}</span>
                             <span class="block text-xs opacity-60">{{ $booking->booking_number }}</span>
