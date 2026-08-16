@@ -157,7 +157,7 @@ describe( 'bulk actions', function (): void {
         $ran = 0;
 
         addAction( 'ap.bookings.cancelled', function () use ( &$ran ): void {
-            ++$ran;
+            $ran++;
         } );
 
         Livewire::test( BookingsIndex::class )

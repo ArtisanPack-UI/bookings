@@ -986,6 +986,7 @@ Actions fire; filters transform a value and must return one.
 | `ap.bookings.cancelled` | action | `(Booking $booking)` |
 | `ap.bookings.completed` | action | `(Booking $booking)` |
 | `ap.bookings.noShow` | action | `(Booking $booking)` |
+| `ap.bookings.reassigned` | action | `(Booking $booking, ?int $previousProviderId)` |
 | `ap.bookings.series.editApplying` | action | `(BookingSeries $series, string $scope, array $changes)` |
 | `ap.bookings.manageTokenReissued` | action | `(Booking $booking, string $plainToken)` |
 | `ap.bookings.manageTokensReissued` | action | `(int $count)` |

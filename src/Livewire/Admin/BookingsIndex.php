@@ -467,7 +467,7 @@ class BookingsIndex extends Component
 
         foreach ( $bookings as $booking ) {
             if ( $action( $booking ) ) {
-                ++$count;
+                $count++;
             }
         }
 

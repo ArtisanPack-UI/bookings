@@ -718,13 +718,13 @@ describe( 'reassign', function (): void {
         $roundRobin = 0;
 
         addFilter( 'ap.bookings.availableProviders', function ( array $providers ) use ( &$available ): array {
-            ++$available;
+            $available++;
 
             return $providers;
         } );
 
         addFilter( 'ap.bookings.roundRobin.selectProvider', function ( $selected ) use ( &$roundRobin ) {
-            ++$roundRobin;
+            $roundRobin++;
 
             return $selected;
         } );

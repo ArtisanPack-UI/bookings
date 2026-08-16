@@ -528,13 +528,26 @@ class Booking extends Model
      * of it is already erased, so an ongoing series keeps the template its future
      * occurrences need until the last of them has been erased too.
      *
+     * The series row is taken with `lockForUpdate()` before its occurrences are
+     * counted, so two requests erasing the last two occurrences at once cannot
+     * both read the other as still intact and both decline to redact it. The
+     * second to arrive blocks until the first commits, then sees the occurrence
+     * it raced marked erased and does the redaction the first correctly left.
+     *
      * @since 1.0.0
      *
      * @return void
      */
     protected function eraseSeriesIfLastOccurrence(): void
     {
-        $series = $this->series;
+        if ( null === $this->series_id ) {
+            return;
+        }
+
+        $series = BookingSeries::query()
+            ->whereKey( $this->series_id )
+            ->lockForUpdate()
+            ->first();
 
         if ( ! $series instanceof BookingSeries || $series->isPiiErased() ) {
             return;
