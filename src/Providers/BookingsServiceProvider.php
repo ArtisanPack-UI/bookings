@@ -84,6 +84,7 @@ use ArtisanPackUI\Bookings\Notifications\Channels\SmsChannel;
 use ArtisanPackUI\Bookings\Notifications\Sms\NullSmsDriver;
 use ArtisanPackUI\Bookings\Services\AvailabilityService;
 use ArtisanPackUI\Bookings\Services\BookingService;
+use ArtisanPackUI\Bookings\Services\CalendarSyncOrchestrator;
 use ArtisanPackUI\Bookings\Services\IcalFeedService;
 use ArtisanPackUI\Bookings\Services\IcalTokenService;
 use ArtisanPackUI\Bookings\Services\IntakeFieldValidator;
@@ -337,6 +338,13 @@ class BookingsServiceProvider extends ServiceProvider
         // resolves it from the container rather than constructing it, which is
         // what makes that rebinding reach the retries too.
         $this->app->singleton( WebhookDispatcher::class );
+
+        // A singleton for the same reason the webhook dispatcher is one: it holds
+        // nothing per call, and binding it lets an application replace the whole
+        // sync policy — retry, auto-disable, grace-hours downgrade — in one place.
+        // Both the sync job's happy path and its failure path resolve it from the
+        // container, so that rebinding reaches the retries too.
+        $this->app->singleton( CalendarSyncOrchestrator::class );
     }
 
     /**

@@ -253,8 +253,6 @@ class IcalFeedDriver implements CalendarSyncDriver
     {
         $externalEventId = $this->feed->uid( $booking );
 
-        doAction( 'ap.bookings.calendarSync.pushing', $booking, $this->driver()->value );
-
         $this->buildEvent( $booking );
 
         doAction( 'ap.bookings.calendarSync.pushed', $booking, $this->driver()->value, $externalEventId );

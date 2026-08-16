@@ -168,8 +168,6 @@ class GoogleCalendarDriver implements CalendarSyncDriver
     {
         $externalEventId = $this->eventIdFor( $booking );
 
-        doAction( 'ap.bookings.calendarSync.pushing', $booking, $this->driver()->value );
-
         $body     = $this->buildEvent( $booking );
         $response = $this->send( $connection, fn ( PendingRequest $http ): Response => $http
             ->post( $this->eventsUrl( $connection ), $body + [ 'id' => $externalEventId ] ) );
@@ -204,8 +202,6 @@ class GoogleCalendarDriver implements CalendarSyncDriver
      */
     public function updateEvent( CalendarConnection $connection, Booking $booking, string $externalEventId ): string
     {
-        doAction( 'ap.bookings.calendarSync.pushing', $booking, $this->driver()->value );
-
         $body     = $this->buildEvent( $booking );
         $response = $this->send( $connection, fn ( PendingRequest $http ): Response => $http
             ->put( $this->eventUrl( $connection, $externalEventId ), $body ) );

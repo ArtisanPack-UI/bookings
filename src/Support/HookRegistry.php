@@ -179,12 +179,19 @@ final class HookRegistry
         |
         | calendarSync.providers          ( array<string, CalendarSyncDriver> $drivers ): array<string, CalendarSyncDriver>
         | calendarSync.pushing            ( Booking $booking, string $providerSlug )
+        |                                 Fired by the orchestrator (#41) as it queues a push,
+        |                                 once per logical push — so a booking retried three
+        |                                 times still announces one push, which is what a
+        |                                 consumer rate-limiting or auditing pushes relies on.
+        |                                 The drivers deliberately do not fire it: they are
+        |                                 wrapped by the retry the orchestrator owns, and firing
+        |                                 from inside a write would announce a push per attempt.
         | calendarSync.pushed             ( Booking $booking, string $providerSlug, string $externalEventId )
-        |                                 Every driver fires both with the booking and its own
-        |                                 provider slug — 'ical' (#39), 'google' (#40), and so on
-        |                                 — so one consumer callback reads the same arguments
-        |                                 whichever calendar the push went to. pushed carries the
-        |                                 external identifier the write landed under as well.
+        |                                 Fired by each driver on a successful write with the
+        |                                 booking, its own provider slug — 'ical' (#39), 'google'
+        |                                 (#40), and so on — and the external identifier the write
+        |                                 landed under. Only the attempt that succeeds reaches it,
+        |                                 so it too is one per logical push.
         | calendarSync.pullReceived       ( array $payload, string $providerSlug )
         |                                 $payload is the external calendar's raw change
         |                                 feed, PERSONAL DATA that is not this package's —
@@ -203,11 +210,11 @@ final class HookRegistry
         ],
         'ap.bookings.calendarSync.pushing' => [
             'type'   => 'action',
-            'issues' => '#39, #40, #41, #43, #44',
+            'issues' => '#41',
         ],
         'ap.bookings.calendarSync.pushed' => [
             'type'   => 'action',
-            'issues' => '#39, #40, #41, #43, #44',
+            'issues' => '#39, #40, #43, #44',
         ],
         'ap.bookings.calendarSync.pullReceived' => [
             'type'   => 'action',
@@ -218,9 +225,8 @@ final class HookRegistry
             'issues' => '#39, #40, #43, #44',
         ],
         'ap.bookings.calendarSync.connectionDisabled' => [
-            'type'    => 'action',
-            'issues'  => '#41',
-            'pending' => true,
+            'type'   => 'action',
+            'issues' => '#41',
         ],
 
         /*

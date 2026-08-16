@@ -81,7 +81,7 @@ describe( 'writing', function (): void {
         expect( $driver->createEvent( $connection, $booking ) )->toBe( $driver->eventIdFor( $booking ) );
     } );
 
-    it( 'fires pushing with the provider slug and pushed with the external id too', function (): void {
+    it( 'fires pushed with the external id, and leaves pushing to the orchestrator', function (): void {
         Http::fake( [ 'https://www.googleapis.com/*' => Http::response( [], 200 ) ] );
 
         $connection = CalendarConnection::factory()->google()->create();
@@ -97,7 +97,7 @@ describe( 'writing', function (): void {
 
         $externalId = googleDriver()->createEvent( $connection, $booking );
 
-        expect( $seen['pushing'] )->toBe( [ $booking->getKey(), 'google' ] )
+        expect( $seen )->not->toHaveKey( 'pushing' )
             ->and( $seen['pushed'] )->toBe( [ $booking->getKey(), 'google', $externalId ] );
     } );
 
