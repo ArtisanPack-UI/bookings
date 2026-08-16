@@ -2,10 +2,13 @@
 
 declare( strict_types=1 );
 
+use ArtisanPackUI\Bookings\Http\Middleware\AuthorizeBookingsAdmin;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
+use Livewire\Mechanisms\PersistentMiddleware\PersistentMiddleware;
 use Tests\Concerns\TestsWithSqlite;
 
 uses( TestsWithSqlite::class, RefreshDatabase::class );
@@ -77,6 +80,42 @@ describe( 'the admin gate', function (): void {
 describe( 'the standalone layout', function (): void {
     beforeEach( function (): void {
         Gate::define( 'bookings.manage', static fn ( ?Authenticatable $user = null ): bool => true );
+    } );
+
+    it( 'registers the admin gate as persistent Livewire middleware', function (): void {
+        // The registration is what keeps the gate on update requests; the
+        // end-to-end proof is the next test.
+        expect( app( PersistentMiddleware::class )->getPersistentMiddleware() )
+            ->toContain( AuthorizeBookingsAdmin::class );
+    } );
+
+    it( 'keeps the gate on a Livewire update, not just the initial page load', function (): void {
+        // The classic Livewire gap: route middleware guards the mount, but the
+        // update request that runs a cancel or a PII erasure lands on Livewire's
+        // own endpoint. Persist the gate and it is re-checked there too. Here the
+        // operator loses the ability after the page was drawn, and the follow-up
+        // update is refused rather than executed.
+        $page = $this->get( route( 'artisanpack.bookings.admin.settings' ) )->assertOk();
+
+        expect( preg_match( '/wire:snapshot="([^"]+)"/', $page->getContent(), $matches ) )->toBe( 1 );
+
+        $snapshot = html_entity_decode( $matches[1], ENT_QUOTES );
+
+        Gate::define( 'bookings.manage', static fn ( ?Authenticatable $user = null ): bool => false );
+
+        $response = $this->withoutMiddleware( VerifyCsrfToken::class )
+            ->withHeaders( [ 'X-Livewire' => 'true' ] )
+            ->postJson( app( 'livewire' )->getUpdateUri(), [
+                'components' => [
+                    [
+                        'snapshot' => $snapshot,
+                        'calls'    => [],
+                        'updates'  => [],
+                    ],
+                ],
+            ] );
+
+        $response->assertForbidden();
     } );
 
     it( 'renders the screens inside the package layout when cms-framework is absent', function ( string $name ): void {

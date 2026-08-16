@@ -459,6 +459,19 @@ class BookingsServiceProvider extends ServiceProvider
         Livewire::component( 'artisanpack-bookings-admin-webhook-deliveries', WebhookDeliveries::class );
         Livewire::component( 'artisanpack-bookings-admin-notifications-log', NotificationsLog::class );
         Livewire::component( 'artisanpack-bookings-admin-settings', Settings::class );
+
+        // The `bookings.admin` gate on the admin routes only guards the initial
+        // page load. Livewire's update requests — the ones that actually run a
+        // cancel, a reassignment, a PII erasure — land on Livewire's own
+        // endpoint, not on the route that mounted the component, so without this
+        // the gate is checked once and never again. Registering the middleware
+        // as persistent tells Livewire to re-resolve the mounting route on every
+        // update and re-run it, so a component reached through a `bookings-admin`
+        // route stays behind the gate for the life of the page. It is keyed off
+        // the *mounting* route's middleware, so a host that embeds these
+        // components behind its own admin auth is unaffected — its route never
+        // carried this middleware, so this never re-applies there.
+        Livewire::addPersistentMiddleware( AuthorizeBookingsAdmin::class );
     }
 
     /**
