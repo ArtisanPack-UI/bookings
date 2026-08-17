@@ -47,6 +47,7 @@ use ArtisanPackUI\Bookings\Http\Middleware\RateLimitBookings;
 use ArtisanPackUI\Bookings\Http\Middleware\ResolveManageToken;
 use ArtisanPackUI\Bookings\Listeners\DispatchBookingWebhooks;
 use ArtisanPackUI\Bookings\Listeners\SendBookingNotifications;
+use ArtisanPackUI\Bookings\Listeners\SyncBookingToCalendar;
 use ArtisanPackUI\Bookings\Livewire\Admin\AvailabilityEditor;
 use ArtisanPackUI\Bookings\Livewire\Admin\BlackoutDatesIndex;
 use ArtisanPackUI\Bookings\Livewire\Admin\BookingCalendar;
@@ -403,6 +404,7 @@ class BookingsServiceProvider extends ServiceProvider
 
         Event::subscribe( SendBookingNotifications::class );
         Event::subscribe( DispatchBookingWebhooks::class );
+        Event::subscribe( SyncBookingToCalendar::class );
 
         $this->registerCmsNotificationTypes();
 
