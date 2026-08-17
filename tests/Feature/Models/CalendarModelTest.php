@@ -268,6 +268,37 @@ describe( 'busy blocks', function (): void {
             ->and( $block->overlaps( '2026-06-01 09:59:00', '2026-06-01 11:00:00' ) )->toBeTrue();
     } );
 
+    it( 'agrees between the scope and overlaps() when the app timezone is not UTC', function (): void {
+        // `overlaps()` compares hydrated attributes in PHP while the scope
+        // compares against the stored digits in SQL. They answer the same
+        // question about the same row, so they must never disagree. Laravel
+        // pins `date_default_timezone_set()` to `app.timezone` once at boot,
+        // so a non-UTC default is set on the process rather than through
+        // config after the fact.
+        $priorTimezone = date_default_timezone_get();
+        date_default_timezone_set( 'America/New_York' );
+
+        try {
+            $connection = CalendarConnection::factory()->twoWay()->create();
+
+            $block = CalendarBusyBlock::factory()
+                ->for( $connection, 'connection' )
+                ->spanning( '2026-06-01 14:00:00', '2026-06-01 15:00:00' )
+                ->create();
+
+            $scopeMatches = CalendarBusyBlock::overlapping(
+                $connection->id,
+                '2026-06-01 14:30:00',
+                '2026-06-01 14:45:00',
+            )->whereKey( $block->id )->exists();
+
+            expect( $scopeMatches )->toBeTrue()
+                ->and( $block->fresh()->overlaps( '2026-06-01 14:30:00', '2026-06-01 14:45:00' ) )->toBe( $scopeMatches );
+        } finally {
+            date_default_timezone_set( $priorTimezone );
+        }
+    } );
+
     it( 'searches several connections at once', function (): void {
         $first  = CalendarConnection::factory()->twoWay()->create();
         $second = CalendarConnection::factory()->twoWay()->create();
