@@ -33,6 +33,10 @@ beforeEach( function (): void {
 
 afterEach( function (): void {
     removeAllFilters( 'ap.bookings.reminderScheduling' );
+
+    // Pest runs every file in one process, so a zone left set by the non-UTC
+    // timezone cases would follow every later test in the suite.
+    date_default_timezone_set( 'UTC' );
 } );
 
 /**
@@ -183,6 +187,103 @@ describe( 'ap.bookings.reminderScheduling', function (): void {
 
         expect( $moments[ 0 ]->lessThan( $moments[ 1 ] ) )->toBeTrue()
             ->and( $moments[ 1 ]->lessThan( $moments[ 2 ] ) )->toBeTrue();
+    } );
+} );
+
+describe( 'under a non-UTC application timezone', function (): void {
+    // `candidates()` compares the current instant against `start_time`, which is
+    // stored in UTC. `CarbonImmutable::now()` returns the application's zone, and
+    // the query binding is formatted with no conversion — so without the explicit
+    // `->utc()` in `candidates()` the two sides sit in different zones and the
+    // whole window is shifted by the offset. These cases build `now` in a real
+    // non-UTC zone (a bare `config()` write would not: Laravel calls
+    // `date_default_timezone_set()` once at bootstrap, leaving `now()` in UTC) and
+    // store `start_time` as UTC, the way `BookingService::create()` does.
+
+    it( 'still sends a due reminder east of UTC', function (): void {
+        // Asia/Tokyo is UTC+9: an unconverted now() binds nine hours high, so a
+        // booking due for its 24-hour reminder drops below the lower bound and no
+        // reminder is ever sent — the defect this issue reports.
+        date_default_timezone_set( 'Asia/Tokyo' );
+        $now = CarbonImmutable::parse( '2026-06-01 12:00:00', 'UTC' )->setTimezone( 'Asia/Tokyo' );
+
+        Notifier::fake();
+
+        Booking::factory()->confirmed()->create( [
+            'customer_email' => 'customer@example.com',
+            'start_time'     => CarbonImmutable::parse( '2026-06-01 17:00:00', 'UTC' ),
+            'end_time'       => CarbonImmutable::parse( '2026-06-01 17:30:00', 'UTC' ),
+        ] );
+
+        expect( $this->scheduler->sendDue( $now ) )->toBe( 1 );
+
+        Notifier::assertSentOnDemandTimes( BookingReminder::class, 1 );
+    } );
+
+    it( 'still sends a due reminder west of UTC', function (): void {
+        // The other half of the same fix: converting must not stop it working.
+        date_default_timezone_set( 'America/Chicago' );
+        $now = CarbonImmutable::parse( '2026-06-01 12:00:00', 'UTC' )->setTimezone( 'America/Chicago' );
+
+        Notifier::fake();
+
+        Booking::factory()->confirmed()->create( [
+            'customer_email' => 'customer@example.com',
+            'start_time'     => CarbonImmutable::parse( '2026-06-01 17:00:00', 'UTC' ),
+            'end_time'       => CarbonImmutable::parse( '2026-06-01 17:30:00', 'UTC' ),
+        ] );
+
+        expect( $this->scheduler->sendDue( $now ) )->toBe( 1 );
+
+        Notifier::assertSentOnDemandTimes( BookingReminder::class, 1 );
+    } );
+
+    it( 'does not send for a booking already under way west of UTC', function (): void {
+        // The lower bound is also the guard against reminding about an appointment
+        // that has already started. On America/Chicago (UTC-5) an unconverted now()
+        // binds five hours low, so a booking that began an hour ago slips back above
+        // the bound and gets an overdue reminder — the UTC- half of the same defect.
+        date_default_timezone_set( 'America/Chicago' );
+        $now = CarbonImmutable::parse( '2026-06-01 12:00:00', 'UTC' )->setTimezone( 'America/Chicago' );
+
+        Notifier::fake();
+
+        Booking::factory()->confirmed()->create( [
+            'customer_email' => 'customer@example.com',
+            'start_time'     => CarbonImmutable::parse( '2026-06-01 11:00:00', 'UTC' ),
+            'end_time'       => CarbonImmutable::parse( '2026-06-01 11:30:00', 'UTC' ),
+        ] );
+
+        expect( $this->scheduler->sendDue( $now ) )->toBe( 0 );
+
+        Notifier::assertNothingSent();
+    } );
+
+    it( 'keeps the scheduled-for key stable so a repeated run still sends once', function (): void {
+        // momentsFor() derives the moment from the cast start_time and hands it to
+        // the notification log's unique key. If that value were stored in one zone
+        // and compared in another, deduplication would break the same way the
+        // window does. It comes back from Eloquent already cast, so this is an
+        // explicit guard rather than an assumption.
+        date_default_timezone_set( 'Asia/Tokyo' );
+        $now = CarbonImmutable::parse( '2026-06-01 12:00:00', 'UTC' )->setTimezone( 'Asia/Tokyo' );
+
+        Notifier::fake();
+
+        Booking::factory()->confirmed()->create( [
+            'customer_email' => 'customer@example.com',
+            'start_time'     => CarbonImmutable::parse( '2026-06-01 17:00:00', 'UTC' ),
+            'end_time'       => CarbonImmutable::parse( '2026-06-01 17:30:00', 'UTC' ),
+        ] );
+
+        $first  = $this->scheduler->sendDue( $now );
+        $second = $this->scheduler->sendDue( $now->addMinutes( 15 ) );
+
+        expect( $first )->toBe( 1 )
+            ->and( $second )->toBe( 0 )
+            ->and( NotificationLog::query()->count() )->toBe( 1 );
+
+        Notifier::assertSentOnDemandTimes( BookingReminder::class, 1 );
     } );
 } );
 
