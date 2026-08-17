@@ -134,6 +134,24 @@ describe( 'operator overrides', function (): void {
         expect( $guard->inspect( 'https://evil.example.com/hook' ) )->toContain( 'host is blocked' );
     } );
 
+    it( 'matches a block-list host through a trailing dot', function (): void {
+        // example.com. and example.com are the same host to a resolver, so the
+        // dotted form must not be a way around the block.
+        config()->set( 'artisanpack.bookings.webhooks.url_guard.blocked_hosts', [ 'evil.example.com' ] );
+
+        $guard = webhookUrlGuard();
+
+        expect( $guard->inspect( 'https://evil.example.com./hook' ) )->toContain( 'host is blocked' );
+    } );
+
+    it( 'matches an allow-list host through a trailing dot', function (): void {
+        config()->set( 'artisanpack.bookings.webhooks.url_guard.allowed_hosts', [ 'internal.example.com' ] );
+
+        $guard = webhookUrlGuard( [ 'internal.example.com' => [ '10.0.0.5' ] ] );
+
+        expect( $guard->inspect( 'https://internal.example.com./hook' ) )->toBeNull();
+    } );
+
     it( 'allows anything when the guard is switched off', function (): void {
         config()->set( 'artisanpack.bookings.webhooks.url_guard.enabled', false );
 
@@ -159,7 +177,37 @@ describe( 'decide() and address pinning', function (): void {
             ->and( $decision->pinnable )->toBeTrue()
             ->and( $decision->host )->toBe( 'hooks.example.com' )
             ->and( $decision->port )->toBe( 8443 )
-            ->and( $decision->addresses )->toBe( [ '93.184.216.34', '8.8.8.8' ] );
+            ->and( $decision->addresses )->toBe( [ '93.184.216.34', '8.8.8.8' ] )
+            ->and( $decision->requestUrl )->toBe( 'https://hooks.example.com:8443/hook' );
+    } );
+
+    it( 'canonicalises a trailing-dot host so the pin matches the request', function (): void {
+        // The dot is stripped from the pinned host and from the URL the client is
+        // handed, so the client resolves the exact string the pin was keyed on
+        // rather than a dotted variant the resolve entry would miss.
+        $guard    = webhookUrlGuard( [ 'hooks.example.com' => [ '8.8.8.8' ] ] );
+        $decision = $guard->decide( 'https://hooks.example.com./hook?x=1' );
+
+        expect( $decision->pinnable )->toBeTrue()
+            ->and( $decision->host )->toBe( 'hooks.example.com' )
+            ->and( $decision->requestUrl )->toBe( 'https://hooks.example.com/hook?x=1' );
+    } );
+
+    it( 'pins and requests an IDN host in its punycode form', function (): void {
+        $guard    = webhookUrlGuard( [ 'xn--bcher-kva.example' => [ '8.8.8.8' ] ] );
+        $decision = $guard->decide( 'https://bücher.example/hook' );
+
+        expect( $decision->pinnable )->toBeTrue()
+            ->and( $decision->host )->toBe( 'xn--bcher-kva.example' )
+            ->and( $decision->addresses )->toBe( [ '8.8.8.8' ] )
+            ->and( $decision->requestUrl )->toBe( 'https://xn--bcher-kva.example/hook' );
+    } )->skip( ! function_exists( 'idn_to_ascii' ), 'ext-intl is not installed.' );
+
+    it( 'preserves userinfo and port when rewriting the host', function (): void {
+        $guard    = webhookUrlGuard( [ 'hooks.example.com' => [ '8.8.8.8' ] ] );
+        $decision = $guard->decide( 'https://user:pass@hooks.example.com.:9000/a/b?q=1' );
+
+        expect( $decision->requestUrl )->toBe( 'https://user:pass@hooks.example.com:9000/a/b?q=1' );
     } );
 
     it( 'defaults the pinned port from the scheme', function (): void {

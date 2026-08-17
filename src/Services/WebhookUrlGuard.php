@@ -226,7 +226,18 @@ class WebhookUrlGuard
                 : WebhookUrlDecision::allowUnpinned();
         }
 
-        $addresses = $this->resolver->resolve( $host );
+        // The pin only holds if the address is pinned under the exact host the
+        // client will resolve. The client hands a Unicode host to its IDN layer
+        // and connects to the punycode it comes back with, so the host is put
+        // into that ASCII form here — and resolved, pinned, and requested under
+        // it — rather than pinning a Unicode string the client never looks up.
+        $asciiHost = $this->toAscii( $host );
+
+        if ( null === $asciiHost ) {
+            return WebhookUrlDecision::refuse( __( 'The webhook URL host could not be verified.' ) );
+        }
+
+        $addresses = $this->resolver->resolve( $asciiHost );
 
         if ( [] === $addresses ) {
             return WebhookUrlDecision::refuse( __( 'The webhook URL host could not be resolved.' ) );
@@ -238,7 +249,95 @@ class WebhookUrlGuard
             }
         }
 
-        return WebhookUrlDecision::allowPinned( $host, $this->portFor( $parts, $scheme ), $addresses );
+        return WebhookUrlDecision::allowPinned(
+            $asciiHost,
+            $this->portFor( $parts, $scheme ),
+            $addresses,
+            $this->rebuildUrl( $parts, $asciiHost ),
+        );
+    }
+
+    /**
+     * Renders a host in the ASCII form the client will resolve it as.
+     *
+     * A host already within ASCII is returned lower-cased and otherwise
+     * untouched — `idn_to_ascii()` is not run over it, because its UTS-46 rules
+     * would reject an unusual but legitimate label (a leading underscore, say)
+     * that a plain hostname is entitled to. A host with any byte outside ASCII
+     * is a name the client will punycode before it connects, so it is put
+     * through the same conversion here; a build without `ext-intl` cannot do
+     * that, and rather than pin a Unicode string the client will not resolve
+     * under, the host is reported unverifiable and the delivery refused.
+     *
+     * @since 1.0.0
+     *
+     * @param  string  $host  The already-normalised host.
+     *
+     * @return string|null The ASCII host, or null when it cannot be produced.
+     */
+    protected function toAscii( string $host ): ?string
+    {
+        if ( 1 !== preg_match( '/[^\x00-\x7f]/', $host ) ) {
+            return $host;
+        }
+
+        if ( ! function_exists( 'idn_to_ascii' ) ) {
+            return null;
+        }
+
+        $ascii = idn_to_ascii( $host );
+
+        return is_string( $ascii ) && '' !== $ascii ? strtolower( $ascii ) : null;
+    }
+
+    /**
+     * Rebuilds a URL with its host replaced by the canonical one.
+     *
+     * The client is handed this rewritten URL so the host it resolves is the
+     * host the address was pinned under, byte for byte — a trailing dot gone
+     * from both, a Unicode label rendered to punycode in both. Everything else
+     * the URL carried is put back unchanged; the fragment never leaves the
+     * process but is preserved so the rebuilt URL is the same request the stored
+     * one described.
+     *
+     * @since 1.0.0
+     *
+     * @param  array<string, mixed>  $parts  The parsed URL.
+     * @param  string  $host  The canonical host to write in.
+     *
+     * @return string The rebuilt URL.
+     */
+    protected function rebuildUrl( array $parts, string $host ): string
+    {
+        $url = strtolower( (string) ( $parts['scheme'] ?? 'https' ) ) . '://';
+
+        if ( isset( $parts['user'] ) ) {
+            $url .= $parts['user'];
+
+            if ( isset( $parts['pass'] ) ) {
+                $url .= ':' . $parts['pass'];
+            }
+
+            $url .= '@';
+        }
+
+        $url .= $host;
+
+        if ( isset( $parts['port'] ) ) {
+            $url .= ':' . $parts['port'];
+        }
+
+        $url .= (string) ( $parts['path'] ?? '' );
+
+        if ( isset( $parts['query'] ) ) {
+            $url .= '?' . $parts['query'];
+        }
+
+        if ( isset( $parts['fragment'] ) ) {
+            $url .= '#' . $parts['fragment'];
+        }
+
+        return $url;
     }
 
     /**
@@ -348,9 +447,12 @@ class WebhookUrlGuard
     /**
      * Normalises a URL host for comparison.
      *
-     * Lower-cased so a host list is not case-sensitive, and stripped of the
-     * brackets `parse_url` leaves around an IPv6 literal so the literal can be
-     * fed straight to {@see inet_pton()}.
+     * Lower-cased so a host list is not case-sensitive, stripped of the brackets
+     * `parse_url` leaves around an IPv6 literal so the literal can be fed
+     * straight to {@see inet_pton()}, and stripped of a trailing root-label dot.
+     * `example.com.` and `example.com` are the same host to a resolver, so a
+     * block list entry of `example.com` has to catch the dotted form too — left
+     * in, the dot is a one-character way around a configured block.
      *
      * @since 1.0.0
      *
@@ -366,7 +468,7 @@ class WebhookUrlGuard
             $host = substr( $host, 1, -1 );
         }
 
-        return $host;
+        return rtrim( $host, '.' );
     }
 
     /**

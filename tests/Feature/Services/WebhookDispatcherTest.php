@@ -205,6 +205,26 @@ describe( 'the endpoint URL as trusted input', function (): void {
         Http::assertSent( static fn ( Request $request ): bool => 'https://hooks.example.com/hook' === $request->url() );
     } );
 
+    it( 'posts a trailing-dot host under its canonical, pinnable form', function (): void {
+        // The stored URL keeps its trailing dot; the request goes out without it,
+        // so the client resolves the same string the address was pinned under.
+        app()->instance(
+            ResolvesHostAddresses::class,
+            new FakeHostResolver( [ 'hooks.example.com' => [ '93.184.216.34' ] ] ),
+        );
+        app()->forgetInstance( WebhookUrlGuard::class );
+        app()->forgetInstance( WebhookDispatcher::class );
+
+        Http::fake( [ '*' => Http::response( 'ok', 200 ) ] );
+
+        $webhook  = Webhook::factory()->create( [ 'url' => 'https://hooks.example.com./hook' ] );
+        $delivery = queuedWebhookDelivery( $webhook );
+
+        expect( webhookDispatcher()->deliver( $delivery ) )->toBeTrue();
+
+        Http::assertSent( static fn ( Request $request ): bool => 'https://hooks.example.com/hook' === $request->url() );
+    } );
+
     it( 'delivers normally when the guard is switched off', function (): void {
         config()->set( 'artisanpack.bookings.webhooks.url_guard.enabled', false );
 

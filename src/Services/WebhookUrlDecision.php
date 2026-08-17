@@ -45,6 +45,9 @@ final class WebhookUrlDecision
      * @param  int|null  $port  The port to connect on.
      * @param  array<int, string>  $addresses  The vetted addresses to pin to.
      * @param  bool  $pinnable  Whether the connection should pin an address.
+     * @param  string|null  $requestUrl  The URL to post, canonicalised so the
+     *                                   client's host matches the pinned one, or
+     *                                   null to post the URL as stored.
      */
     public function __construct(
         public readonly bool $allowed,
@@ -53,6 +56,7 @@ final class WebhookUrlDecision
         public readonly ?int $port = null,
         public readonly array $addresses = [],
         public readonly bool $pinnable = false,
+        public readonly ?string $requestUrl = null,
     ) {
     }
 
@@ -91,14 +95,17 @@ final class WebhookUrlDecision
      *
      * @since 1.0.0
      *
-     * @param  string  $host  The host the addresses belong to.
+     * @param  string  $host  The host the addresses belong to, canonicalised to
+     *                        the exact string the client will resolve.
      * @param  int  $port  The port to connect on.
      * @param  array<int, string>  $addresses  The vetted addresses.
+     * @param  string  $requestUrl  The URL to post, rewritten to the canonical
+     *                              host so the client's host matches the pin.
      *
      * @return self The allow.
      */
-    public static function allowPinned( string $host, int $port, array $addresses ): self
+    public static function allowPinned( string $host, int $port, array $addresses, string $requestUrl ): self
     {
-        return new self( true, null, $host, $port, $addresses, true );
+        return new self( true, null, $host, $port, $addresses, true, $requestUrl );
     }
 }

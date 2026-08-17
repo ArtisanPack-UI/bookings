@@ -757,7 +757,16 @@ name approved once can be repointed afterwards; a refused URL kills the delivery
 the way a disabled endpoint does, with the reason on the row. The host is
 resolved once and the vetted address is pinned into the connection, so the HTTP
 client cannot resolve the name a second time and reach an address the guard
-never checked — the DNS-rebinding case. TLS still verifies against the hostname.
+never checked — the DNS-rebinding case. The request is made under the host the
+address was pinned to (lower-cased, no trailing dot, and IDN names in their
+punycode form) so the client resolves the exact string the pin was keyed on. TLS
+still verifies against the hostname.
+
+Pinning is enforced by `CURLOPT_RESOLVE`, which needs the curl HTTP handler
+(`ext-curl`) and libcurl 7.59 or newer for its multi-address form. An
+installation without curl, or on older libcurl, still gets the delivery-time
+address check — it just cannot pin the connection to it, so a determined
+DNS-rebinding attacker regains the narrow resolve-then-connect window there.
 
 An installation that delivers to an internal host on purpose names it in
 `allowed_hosts`, where it skips the range check; `blocked_hosts` refuses a host

@@ -442,13 +442,20 @@ class WebhookDispatcher
                 ->timeout( self::timeoutSeconds() )
                 ->withBody( $body, 'application/json' );
 
+            $url = $webhook->url;
+
             if ( $decision->pinnable && [] !== $decision->addresses ) {
                 $request = $request->withOptions( [
                     'curl' => [ CURLOPT_RESOLVE => self::pinnedResolution( $decision ) ],
                 ] );
+
+                // Posted under the host the address was pinned to rather than the
+                // stored one, so the client resolves the string the pin was keyed
+                // on — the same host, canonicalised to the ASCII, dot-free form.
+                $url = $decision->requestUrl ?? $url;
             }
 
-            return $request->post( $webhook->url );
+            return $request->post( $url );
         } catch ( ConnectionException $unreachable ) {
             return $unreachable->getMessage();
         } catch ( Throwable $failed ) {
@@ -475,6 +482,11 @@ class WebhookDispatcher
      * back to resolving the name itself. Every address was cleared by the guard,
      * so any of them is a safe target. An IPv6 address is bracketed, which is how
      * curl's resolve list tells the address's colons from the host-port ones.
+     *
+     * Comma-joined addresses in one entry are a libcurl 7.59 feature, and the
+     * option is read only by the curl handler — an installation on older libcurl
+     * or without `ext-curl` pins nothing, and the guard's delivery-time re-check
+     * is the defence it is left with. See the README's "Outbound webhooks" note.
      *
      * @since 1.0.0
      *
