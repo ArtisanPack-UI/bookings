@@ -206,8 +206,8 @@ class ReminderScheduler
         return Booking::query()
             ->acrossAllSites()
             ->whereIn( 'status', [ BookingStatus::Requested->value, BookingStatus::Confirmed->value ] )
-            ->where( 'start_time', '>', $now )
-            ->where( 'start_time', '<=', $now->addHours( $this->lookaheadHours() ) )
+            ->where( 'start_time', '>', $now->utc() )
+            ->where( 'start_time', '<=', $now->addHours( $this->lookaheadHours() )->utc() )
             ->with( [ 'service', 'provider' ] )
             ->lazyById();
     }
