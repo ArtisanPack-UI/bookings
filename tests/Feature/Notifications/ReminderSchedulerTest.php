@@ -238,6 +238,27 @@ describe( 'under a non-UTC application timezone', function (): void {
         Notifier::assertSentOnDemandTimes( BookingReminder::class, 1 );
     } );
 
+    it( 'does not send for a booking already under way west of UTC', function (): void {
+        // The lower bound is also the guard against reminding about an appointment
+        // that has already started. On America/Chicago (UTC-5) an unconverted now()
+        // binds five hours low, so a booking that began an hour ago slips back above
+        // the bound and gets an overdue reminder — the UTC- half of the same defect.
+        date_default_timezone_set( 'America/Chicago' );
+        $now = CarbonImmutable::parse( '2026-06-01 12:00:00', 'UTC' )->setTimezone( 'America/Chicago' );
+
+        Notifier::fake();
+
+        Booking::factory()->confirmed()->create( [
+            'customer_email' => 'customer@example.com',
+            'start_time'     => CarbonImmutable::parse( '2026-06-01 11:00:00', 'UTC' ),
+            'end_time'       => CarbonImmutable::parse( '2026-06-01 11:30:00', 'UTC' ),
+        ] );
+
+        expect( $this->scheduler->sendDue( $now ) )->toBe( 0 );
+
+        Notifier::assertNothingSent();
+    } );
+
     it( 'keeps the scheduled-for key stable so a repeated run still sends once', function (): void {
         // momentsFor() derives the moment from the cast start_time and hands it to
         // the notification log's unique key. If that value were stored in one zone
