@@ -290,6 +290,22 @@ return [
     | connection's default. Give webhooks their own queue on an installation
     | where a slow endpoint must not delay anything else that is queued.
     |
+    | "url_guard" refuses a delivery whose URL points somewhere it should not.
+    | Posting from inside the application reaches hosts a browser cannot — an
+    | internal service, a cloud metadata endpoint — and the reply is written to
+    | the delivery ledger an admin screen reads back, so an unvalidated URL is a
+    | request-forgery primitive with an exfiltration channel attached. The guard
+    | is checked both when an endpoint is saved (via the ValidWebhookUrl rule)
+    | and again at delivery, because a name approved once can be repointed after.
+    |
+    | It is on by default. "allowed_schemes" is the scheme allowlist — add "http"
+    | for local development. A resolved address in a loopback, private,
+    | link-local, or unique-local range is refused; "allowed_hosts" names the
+    | hosts an installation delivers to on purpose (they skip the range check),
+    | and "blocked_hosts" names ones to refuse outright. Set "enabled" to false on
+    | an installation where every endpoint is operator-created and the range check
+    | is only in the way.
+    |
     */
     'webhooks' => [
         'failure_threshold'        => 10,
@@ -298,6 +314,12 @@ return [
         'timeout_seconds'          => 10,
         'connect_timeout_seconds'  => 5,
         'queue'                    => null,
+        'url_guard'                => [
+            'enabled'         => true,
+            'allowed_schemes' => [ 'https' ],
+            'allowed_hosts'   => [],
+            'blocked_hosts'   => [],
+        ],
     ],
 
     /*

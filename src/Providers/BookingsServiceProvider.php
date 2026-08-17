@@ -36,6 +36,7 @@ use ArtisanPackUI\Bookings\Contracts\CalendarDriverRegistry as CalendarDriverReg
 use ArtisanPackUI\Bookings\Contracts\GoogleTokenProvider;
 use ArtisanPackUI\Bookings\Contracts\MeetingTypeRegistry as MeetingTypeRegistryContract;
 use ArtisanPackUI\Bookings\Contracts\NotificationChannel;
+use ArtisanPackUI\Bookings\Contracts\ResolvesHostAddresses;
 use ArtisanPackUI\Bookings\Contracts\RoundRobinStrategy;
 use ArtisanPackUI\Bookings\Contracts\SlotResolver;
 use ArtisanPackUI\Bookings\Contracts\SmsDriver;
@@ -86,6 +87,7 @@ use ArtisanPackUI\Bookings\Notifications\Sms\NullSmsDriver;
 use ArtisanPackUI\Bookings\Services\AvailabilityService;
 use ArtisanPackUI\Bookings\Services\BookingService;
 use ArtisanPackUI\Bookings\Services\CalendarSyncOrchestrator;
+use ArtisanPackUI\Bookings\Services\DnsHostResolver;
 use ArtisanPackUI\Bookings\Services\IcalFeedService;
 use ArtisanPackUI\Bookings\Services\IcalTokenService;
 use ArtisanPackUI\Bookings\Services\IntakeFieldValidator;
@@ -95,6 +97,7 @@ use ArtisanPackUI\Bookings\Services\ProviderSlotLock;
 use ArtisanPackUI\Bookings\Services\ReminderScheduler;
 use ArtisanPackUI\Bookings\Services\SeriesService;
 use ArtisanPackUI\Bookings\Services\WebhookDispatcher;
+use ArtisanPackUI\Bookings\Services\WebhookUrlGuard;
 use ArtisanPackUI\Bookings\Strategies\LeastRecentlyAssignedStrategy;
 use ArtisanPackUI\Bookings\Support\AdminNav;
 use ArtisanPackUI\Bookings\Support\Google\OAuthGoogleTokenProvider;
@@ -331,6 +334,17 @@ class BookingsServiceProvider extends ServiceProvider
         } );
 
         $this->app->singleton( ReminderScheduler::class );
+
+        // Bound so an installation whose host resolution goes somewhere other
+        // than the system resolver — a split-horizon setup, a test double —
+        // replaces one interface rather than reaching into the guard.
+        $this->app->bind( ResolvesHostAddresses::class, DnsHostResolver::class );
+
+        // A singleton because it holds nothing per call, and bound so an
+        // installation can replace the whole URL policy — the range set, the
+        // scheme allowlist — in one place. The dispatcher resolves it from the
+        // container, so that rebinding reaches every delivery.
+        $this->app->singleton( WebhookUrlGuard::class );
 
         // A singleton because it holds nothing per call, and bound at all so
         // that an application signing its webhooks differently — a different

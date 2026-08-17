@@ -2,12 +2,14 @@
 
 declare( strict_types=1 );
 
+use ArtisanPackUI\Bookings\Contracts\ResolvesHostAddresses;
 use ArtisanPackUI\Bookings\Enums\WebhookDeliveryStatus;
 use ArtisanPackUI\Bookings\Events\WebhookDisabled;
 use ArtisanPackUI\Bookings\Jobs\DispatchWebhookDelivery;
 use ArtisanPackUI\Bookings\Models\Webhook;
 use ArtisanPackUI\Bookings\Models\WebhookDelivery;
 use ArtisanPackUI\Bookings\Services\WebhookDispatcher;
+use ArtisanPackUI\Bookings\Services\WebhookUrlGuard;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
@@ -15,6 +17,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Tests\Concerns\TestsWithSqlite;
+use Tests\Support\FakeHostResolver;
 
 uses( TestsWithSqlite::class, RefreshDatabase::class );
 
@@ -148,6 +151,98 @@ describe( 'the endpoint URL as trusted input', function (): void {
 
         expect( webhookDispatcher()->deliver( $delivery ) )->toBeFalse()
             ->and( $delivery->refresh()->response_status )->toBe( 302 );
+    } );
+
+    it( 'kills a delivery to a URL the guard refuses, without sending', function (): void {
+        // The endpoint was stored with a name that resolved to a public address;
+        // by delivery time it points at loopback. The guard is re-run here, so
+        // the request is never made and the reason is left on the row.
+        app()->instance(
+            ResolvesHostAddresses::class,
+            new FakeHostResolver( [ 'rebound.example.com' => [ '127.0.0.1' ] ] ),
+        );
+        app()->forgetInstance( WebhookUrlGuard::class );
+        app()->forgetInstance( WebhookDispatcher::class );
+
+        Http::fake( [ '*' => Http::response( 'ok', 200 ) ] );
+
+        $webhook  = Webhook::factory()->create( [ 'url' => 'https://rebound.example.com/hook' ] );
+        $delivery = queuedWebhookDelivery( $webhook );
+
+        expect( webhookDispatcher()->deliver( $delivery ) )->toBeFalse();
+
+        $delivery->refresh();
+
+        expect( $delivery->status )->toBe( WebhookDeliveryStatus::Dead )
+            ->and( $delivery->response_body )->toContain( 'address that is not allowed' );
+
+        // Not counted against the endpoint: a refused URL is not the consumer's
+        // fault, and no retry would change the answer.
+        expect( $webhook->refresh()->consecutive_failure_count )->toBe( 0 );
+
+        Http::assertNothingSent();
+    } );
+
+    it( 'delivers to a resolved hostname, pinning the vetted address', function (): void {
+        // The guard resolves the name to a public address and the delivery pins
+        // it. The HTTP fake short-circuits before curl, so this proves the
+        // pinning path posts to the hostname without erroring rather than
+        // asserting the curl option itself.
+        app()->instance(
+            ResolvesHostAddresses::class,
+            new FakeHostResolver( [ 'hooks.example.com' => [ '93.184.216.34' ] ] ),
+        );
+        app()->forgetInstance( WebhookUrlGuard::class );
+        app()->forgetInstance( WebhookDispatcher::class );
+
+        Http::fake( [ '*' => Http::response( 'ok', 200 ) ] );
+
+        $webhook  = Webhook::factory()->create( [ 'url' => 'https://hooks.example.com/hook' ] );
+        $delivery = queuedWebhookDelivery( $webhook );
+
+        expect( webhookDispatcher()->deliver( $delivery ) )->toBeTrue();
+
+        Http::assertSent( static fn ( Request $request ): bool => 'https://hooks.example.com/hook' === $request->url() );
+    } );
+
+    it( 'posts a trailing-dot host under its canonical, pinnable form', function (): void {
+        // The stored URL keeps its trailing dot; the request goes out without it,
+        // so the client resolves the same string the address was pinned under.
+        app()->instance(
+            ResolvesHostAddresses::class,
+            new FakeHostResolver( [ 'hooks.example.com' => [ '93.184.216.34' ] ] ),
+        );
+        app()->forgetInstance( WebhookUrlGuard::class );
+        app()->forgetInstance( WebhookDispatcher::class );
+
+        Http::fake( [ '*' => Http::response( 'ok', 200 ) ] );
+
+        $webhook  = Webhook::factory()->create( [ 'url' => 'https://hooks.example.com./hook' ] );
+        $delivery = queuedWebhookDelivery( $webhook );
+
+        expect( webhookDispatcher()->deliver( $delivery ) )->toBeTrue();
+
+        Http::assertSent( static fn ( Request $request ): bool => 'https://hooks.example.com/hook' === $request->url() );
+    } );
+
+    it( 'delivers normally when the guard is switched off', function (): void {
+        config()->set( 'artisanpack.bookings.webhooks.url_guard.enabled', false );
+
+        app()->instance(
+            ResolvesHostAddresses::class,
+            new FakeHostResolver( [ 'internal.example.com' => [ '10.0.0.5' ] ] ),
+        );
+        app()->forgetInstance( WebhookUrlGuard::class );
+        app()->forgetInstance( WebhookDispatcher::class );
+
+        Http::fake( [ '*' => Http::response( 'ok', 200 ) ] );
+
+        $webhook  = Webhook::factory()->create( [ 'url' => 'https://internal.example.com/hook' ] );
+        $delivery = queuedWebhookDelivery( $webhook );
+
+        expect( webhookDispatcher()->deliver( $delivery ) )->toBeTrue();
+
+        Http::assertSent( static fn ( Request $request ): bool => 'https://internal.example.com/hook' === $request->url() );
     } );
 } );
 
