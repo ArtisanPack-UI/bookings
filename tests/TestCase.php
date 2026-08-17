@@ -4,7 +4,10 @@ declare( strict_types=1 );
 
 namespace Tests;
 
+use ArtisanPackUI\Bookings\Contracts\ResolvesHostAddresses;
 use ArtisanPackUI\Bookings\Providers\BookingsServiceProvider;
+use ArtisanPackUI\Bookings\Services\WebhookDispatcher;
+use ArtisanPackUI\Bookings\Services\WebhookUrlGuard;
 use ArtisanPackUI\Core\CoreServiceProvider;
 use ArtisanPackUI\Hooks\Providers\HooksServiceProvider;
 use ArtisanPackUI\Security\SecurityServiceProvider;
@@ -13,6 +16,7 @@ use Illuminate\Foundation\Testing\RefreshDatabaseState;
 use Illuminate\Support\Facades\DB;
 use Livewire\LivewireServiceProvider;
 use Orchestra\Testbench\TestCase as BaseTestCase;
+use Tests\Support\FakeHostResolver;
 use Throwable;
 
 /**
@@ -49,6 +53,17 @@ abstract class TestCase extends BaseTestCase
         Factory::guessFactoryNamesUsing( static function ( string $modelName ): string {
             return 'ArtisanPackUI\\Bookings\\Database\\Factories\\' . class_basename( $modelName ) . 'Factory';
         } );
+
+        // The webhook URL guard resolves a host to check where it points, and no
+        // test should reach a real nameserver to do it — a lookup is slow, flaky,
+        // and answers differently depending on the machine. A test that cares
+        // where a name points rebinds this with its own map; the rest get a
+        // public address so the guard, on by default, waves an ordinary delivery
+        // through. Bound after parent::setUp() so it wins over the package's own
+        // resolver, and the guard singleton is forgotten so it picks this up.
+        $this->app->instance( ResolvesHostAddresses::class, new FakeHostResolver() );
+        $this->app->forgetInstance( WebhookUrlGuard::class );
+        $this->app->forgetInstance( WebhookDispatcher::class );
 
         // The two have to agree, and nothing else makes them. A connection
         // renamed in `defineDatabaseConnection()` but not here would put the

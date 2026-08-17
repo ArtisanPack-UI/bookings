@@ -72,23 +72,28 @@ use Throwable;
  * for it to re-encode — two encoders that disagree about a slash or a unicode
  * escape produce a signature the consumer cannot reproduce.
  *
- * ## The endpoint URL is trusted input
+ * ## The endpoint URL
  *
  * This class posts wherever `booking_webhooks.url` says, from inside the
  * application, and writes the first 2,000 characters of the reply into a row an
  * admin screen can read. That is a request-forgery primitive if the URL is not
  * trusted: an internal service or a cloud metadata endpoint is reachable from
  * here and not from the browser, and the response comes back out through the
- * ledger. Redirects are refused so the reviewed address stays the called one,
- * but nothing here validates the address itself.
+ * ledger. Redirects are refused so the reviewed address stays the called one.
  *
- * So endpoint creation is an administrative act. An installation that exposes it
- * to anybody less trusted than an operator — a tenant self-service screen — has
- * to validate the URL before it is stored: a scheme allowlist, a resolved-address
- * check against private and link-local ranges, re-checked at delivery time
- * because DNS can be moved after the fact. That belongs to whoever builds that
- * screen; it cannot be done here, because a package cannot know which of its
- * hosts' internal addresses are legitimate destinations.
+ * The address itself is checked by {@see WebhookUrlGuard}, consulted here before
+ * every send: a scheme allowlist and a resolved-address check against the
+ * loopback, private, link-local, and unique-local ranges, re-run at delivery
+ * because a name approved when it was saved can be repointed afterwards. A
+ * refused URL kills the delivery rather than failing it. The guard resolves the
+ * host once and {@see self::send()} pins the vetted address into the connection,
+ * so curl cannot resolve the name a second time and reach an address the guard
+ * never saw — the DNS-rebinding case the re-check alone would only narrow. The
+ * guard defaults to blocking those ranges and is configured off, or narrowed
+ * with an allow list, by an installation that delivers to an internal host on
+ * purpose — see `artisanpack.bookings.webhooks.url_guard`. The save-time half of
+ * the same guard is {@see \ArtisanPackUI\Bookings\Rules\ValidWebhookUrl}, for a
+ * screen that accepts a URL below operator trust.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
@@ -109,6 +114,17 @@ class WebhookDispatcher
      * @var int
      */
     protected const RESPONSE_BODY_LIMIT = 2000;
+
+    /**
+     * Constructs the dispatcher.
+     *
+     * @since 1.0.0
+     *
+     * @param  WebhookUrlGuard  $urlGuard  Decides whether a URL is safe to call.
+     */
+    public function __construct( protected WebhookUrlGuard $urlGuard )
+    {
+    }
 
     /**
      * Queues an event for every endpoint subscribed to it.
@@ -242,6 +258,19 @@ class WebhookDispatcher
             return false;
         }
 
+        // Re-checked here rather than only when the endpoint was saved, because
+        // a name approved once can be repointed afterwards — the DNS-rebinding
+        // case a save-time check never sees. A refused URL kills the delivery
+        // the way a disabled endpoint does: it is not the consumer's fault, no
+        // retry will change the answer, and the reason is left on the row.
+        $decision = $this->urlGuard->decide( $webhook->url );
+
+        if ( ! $decision->allowed ) {
+            $this->markDead( $delivery, null, (string) $decision->reason );
+
+            return false;
+        }
+
         try {
             $body = json_encode(
                 $delivery->payload,
@@ -256,7 +285,7 @@ class WebhookDispatcher
             return false;
         }
 
-        $response = $this->send( $webhook, $delivery, $body );
+        $response = $this->send( $webhook, $delivery, $body, $decision );
 
         if ( $response instanceof Response && $response->successful() ) {
             $this->recordSuccess( $webhook, $delivery, $response );
@@ -371,20 +400,36 @@ class WebhookDispatcher
      * non-2xx it is, which is also the honest answer for a consumer that has
      * moved and not said so.
      *
+     * The guard already resolved and vetted the host; when it says so, that
+     * address is pinned into the connection with `CURLOPT_RESOLVE` so curl uses
+     * it rather than resolving the name a second time. The second lookup is the
+     * DNS-rebinding gap: a name that answered with a public address to the
+     * guard's query can answer with loopback to curl's, and vetting the first
+     * while connecting on the second closes nothing. TLS still verifies against
+     * the hostname — only the address is pinned. When the guard did not pin (it
+     * is off, the host is allow-listed, or the host is an IP literal) the URL is
+     * posted as given.
+     *
      * @since 1.0.0
      *
      * @param  Webhook  $webhook  The endpoint to deliver to.
      * @param  WebhookDelivery  $delivery  The delivery being attempted.
      * @param  string  $body  The exact bytes to send and to sign.
+     * @param  WebhookUrlDecision  $decision  The guard's decision, carrying any
+     *                                        vetted address to pin.
      *
      * @return Response|string The response, or the reason there was not one.
      */
-    protected function send( Webhook $webhook, WebhookDelivery $delivery, string $body ): Response|string
-    {
+    protected function send(
+        Webhook $webhook,
+        WebhookDelivery $delivery,
+        string $body,
+        WebhookUrlDecision $decision,
+    ): Response|string {
         $timestamp = (string) Carbon::now()->getTimestamp();
 
         try {
-            return Http::withHeaders( [
+            $request = Http::withHeaders( [
                 'User-Agent'              => 'ArtisanPackUI-Bookings/1.0',
                 'X-ArtisanPack-Event'     => $delivery->event_type,
                 'X-ArtisanPack-Delivery'  => (string) $delivery->getKey(),
@@ -395,8 +440,15 @@ class WebhookDispatcher
                 ->withoutRedirecting()
                 ->connectTimeout( self::connectTimeoutSeconds() )
                 ->timeout( self::timeoutSeconds() )
-                ->withBody( $body, 'application/json' )
-                ->post( $webhook->url );
+                ->withBody( $body, 'application/json' );
+
+            if ( $decision->pinnable && [] !== $decision->addresses ) {
+                $request = $request->withOptions( [
+                    'curl' => [ CURLOPT_RESOLVE => self::pinnedResolution( $decision ) ],
+                ] );
+            }
+
+            return $request->post( $webhook->url );
         } catch ( ConnectionException $unreachable ) {
             return $unreachable->getMessage();
         } catch ( Throwable $failed ) {
@@ -413,6 +465,31 @@ class WebhookDispatcher
 
             return $failed->getMessage();
         }
+    }
+
+    /**
+     * Builds the `CURLOPT_RESOLVE` entry that pins a decision's vetted addresses.
+     *
+     * All of them are pinned, comma-joined into the one entry for the host and
+     * port, so curl may fail over between vetted addresses without ever falling
+     * back to resolving the name itself. Every address was cleared by the guard,
+     * so any of them is a safe target. An IPv6 address is bracketed, which is how
+     * curl's resolve list tells the address's colons from the host-port ones.
+     *
+     * @since 1.0.0
+     *
+     * @param  WebhookUrlDecision  $decision  The allow carrying the addresses.
+     *
+     * @return array<int, string> The single resolve entry, for `CURLOPT_RESOLVE`.
+     */
+    protected static function pinnedResolution( WebhookUrlDecision $decision ): array
+    {
+        $addresses = array_map(
+            static fn ( string $address ): string => str_contains( $address, ':' ) ? '[' . $address . ']' : $address,
+            $decision->addresses,
+        );
+
+        return [ sprintf( '%s:%d:%s', $decision->host, $decision->port, implode( ',', $addresses ) ) ];
     }
 
     /**

@@ -739,21 +739,41 @@ Deliveries are pushed onto the default queue unless `webhooks.queue` names one.
 Give them their own queue on an installation where a slow consumer must not
 delay everything else that is queued.
 
-**The endpoint URL is trusted input.** The package posts wherever
+**The endpoint URL is guarded against SSRF.** The package posts wherever
 `booking_webhooks.url` says, from inside your application, and stores the first
 2,000 characters of the reply where an admin screen can read it. That is a
 request-forgery primitive if the URL is not trusted: an internal service or a
 cloud metadata endpoint is reachable from your server and not from a browser,
 and the response comes back out through the delivery ledger. Redirects are
-refused, so the address that was reviewed stays the address that is called — but
-the address itself is not validated, because a package cannot know which of your
-internal hosts are legitimate destinations.
+refused, so the address that was reviewed stays the address that is called.
 
-Creating an endpoint is therefore an administrative act. If you expose it to
-anybody less trusted than an operator — a tenant self-service screen — validate
-the URL before you store it: allow only `https`, resolve it and reject private,
-loopback, and link-local ranges, and re-check at delivery time, since a name can
-be repointed after it is approved.
+The address itself is checked by a guard, `webhooks.url_guard`, on by default. It
+allows only the schemes on `allowed_schemes` (`https` alone unless you add
+`http`) and refuses any URL whose host resolves to a loopback, private,
+link-local, or unique-local address — every address a name answers with, since a
+name offering one public and one private address is still a way into the private
+one. The check runs at delivery, not only when the endpoint is saved, because a
+name approved once can be repointed afterwards; a refused URL kills the delivery
+the way a disabled endpoint does, with the reason on the row. The host is
+resolved once and the vetted address is pinned into the connection, so the HTTP
+client cannot resolve the name a second time and reach an address the guard
+never checked — the DNS-rebinding case. TLS still verifies against the hostname.
+
+An installation that delivers to an internal host on purpose names it in
+`allowed_hosts`, where it skips the range check; `blocked_hosts` refuses a host
+whatever it resolves to; and `enabled => false` switches the guard off for an
+installation where every endpoint is operator-created. If you accept an endpoint
+URL below operator trust — a tenant self-service screen — apply the
+`ValidWebhookUrl` rule to the field so a bad address is refused before it is
+stored:
+
+```php
+use ArtisanPackUI\Bookings\Rules\ValidWebhookUrl;
+
+$request->validate( [
+    'url' => [ 'required', 'url', new ValidWebhookUrl() ],
+] );
+```
 
 ### Text messages
 
