@@ -802,8 +802,14 @@ describe( 'conflict detection under a non-UTC application timezone', function ()
     // leaves booking times hydrating in UTC and the bug unreproducible. The
     // existing timezone file sets the zone through config alone and cannot reach
     // this.
+    beforeEach( function (): void {
+        $this->priorTimezone = date_default_timezone_get();
+    } );
+
     afterEach( function (): void {
-        date_default_timezone_set( 'UTC' );
+        // Restore whatever was in force before the test rather than assuming
+        // the suite started on UTC, so a leaked zone cannot follow later tests.
+        date_default_timezone_set( $this->priorTimezone );
     } );
 
     it( 'suppresses the slot a booking holds when the app zone is not UTC', function (): void {

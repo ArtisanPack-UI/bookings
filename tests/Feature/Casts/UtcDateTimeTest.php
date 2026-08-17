@@ -19,10 +19,15 @@ uses( TestsWithSqlite::class, RefreshDatabase::class );
  * plain `'datetime'` cast would agree with UTC and the regression would ship.
  */
 
+beforeEach( function (): void {
+    $this->priorTimezone = date_default_timezone_get();
+} );
+
 afterEach( function (): void {
-    // Pest runs every file in one process, so a zone left set here would follow
-    // every later test in the suite.
-    date_default_timezone_set( 'UTC' );
+    // Pest runs every file in one process, so a zone left set by a test here
+    // would follow every later test in the suite. Restore whatever was in force
+    // before the test rather than assuming the suite started on UTC.
+    date_default_timezone_set( $this->priorTimezone );
 } );
 
 it( 'reads a stored instant back as the same instant under a non-UTC app timezone', function (): void {
