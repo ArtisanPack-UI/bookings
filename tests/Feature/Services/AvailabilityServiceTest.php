@@ -831,4 +831,28 @@ describe( 'conflict detection under a non-UTC application timezone', function ()
         expect( localStarts( $slots, $this->timezone ) )->not->toContain( '11:00' )
             ->and( $slots )->toHaveCount( 7 );
     } );
+
+    it( 'suppresses the slot a busy block holds when the app zone is not UTC', function (): void {
+        // `busyBlocksFor()` filters rows with the SQL scope (correct) but builds
+        // the clash range from the hydrated `starts_at_utc` / `ends_at_utc`.
+        // Through the plain `'datetime'` cast those come back reinterpreted in
+        // Tokyo — nine hours off — so the busy block suppresses the wrong hour
+        // and the time the calendar is actually busy is offered as free.
+        date_default_timezone_set( 'Asia/Tokyo' );
+
+        $connection = CalendarConnection::factory()
+            ->for( $this->provider, 'provider' )
+            ->twoWay()
+            ->create();
+
+        CalendarBusyBlock::factory()->for( $connection, 'connection' )->spanning(
+            CarbonImmutable::parse( AVAILABILITY_MONDAY . ' 11:00', $this->timezone )->utc(),
+            CarbonImmutable::parse( AVAILABILITY_MONDAY . ' 12:00', $this->timezone )->utc(),
+        )->create();
+
+        $slots = availability()->resolve( $this->service, $this->provider, $this->window );
+
+        expect( localStarts( $slots, $this->timezone ) )->not->toContain( '11:00' )
+            ->and( $slots )->toHaveCount( 7 );
+    } );
 } );

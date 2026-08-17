@@ -15,6 +15,7 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Models;
 
+use ArtisanPackUI\Bookings\Casts\UtcDateTime;
 use ArtisanPackUI\Bookings\Database\Factories\CalendarBusyBlockFactory;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Builder;
@@ -90,8 +91,8 @@ class CalendarBusyBlock extends Model
      * @var array<string, string>
      */
     protected $casts = [
-        'starts_at_utc' => 'datetime',
-        'ends_at_utc'   => 'datetime',
+        'starts_at_utc' => UtcDateTime::class,
+        'ends_at_utc'   => UtcDateTime::class,
     ];
 
     /**
