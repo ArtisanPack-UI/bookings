@@ -15,6 +15,7 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Models;
 
+use ArtisanPackUI\Bookings\Casts\UtcDateTime;
 use ArtisanPackUI\Bookings\Database\Factories\BookingFactory;
 use ArtisanPackUI\Bookings\Enums\BookingAssignmentStrategy;
 use ArtisanPackUI\Bookings\Enums\BookingStatus;
@@ -145,8 +146,8 @@ class Booking extends Model
         'series_index'            => 'integer',
         'detached_from_series_at' => 'datetime',
         'customer_timezone'       => 'string',
-        'start_time'              => 'datetime',
-        'end_time'                => 'datetime',
+        'start_time'              => UtcDateTime::class,
+        'end_time'                => UtcDateTime::class,
         'status'                  => BookingStatus::class,
         'assignment_strategy'     => BookingAssignmentStrategy::class,
         'intake_schema_version'   => 'integer',

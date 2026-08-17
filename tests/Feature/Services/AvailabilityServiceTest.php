@@ -795,3 +795,34 @@ describe( 'the extent of a window', function (): void {
         ) )->toBe( [] );
     } );
 } );
+
+describe( 'conflict detection under a non-UTC application timezone', function (): void {
+    // The zone is set on PHP rather than only in config: Laravel calls
+    // `date_default_timezone_set()` once at boot, so a config write after boot
+    // leaves booking times hydrating in UTC and the bug unreproducible. The
+    // existing timezone file sets the zone through config alone and cannot reach
+    // this.
+    afterEach( function (): void {
+        date_default_timezone_set( 'UTC' );
+    } );
+
+    it( 'suppresses the slot a booking holds when the app zone is not UTC', function (): void {
+        // Hydrated through the plain `'datetime'` cast this booking's 16:00 UTC
+        // start comes back reinterpreted in Tokyo — nine hours off — so the
+        // clash range is built at the wrong instant and the 11:00 slot the
+        // booking actually holds is offered as free.
+        date_default_timezone_set( 'Asia/Tokyo' );
+
+        Booking::factory()
+            ->for( $this->service )
+            ->for( $this->provider, 'provider' )
+            ->confirmed()
+            ->startingAt( CarbonImmutable::parse( AVAILABILITY_MONDAY . ' 11:00', $this->timezone )->utc(), 60 )
+            ->create();
+
+        $slots = availability()->resolve( $this->service, $this->provider, $this->window );
+
+        expect( localStarts( $slots, $this->timezone ) )->not->toContain( '11:00' )
+            ->and( $slots )->toHaveCount( 7 );
+    } );
+} );
