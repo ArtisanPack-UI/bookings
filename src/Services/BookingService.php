@@ -43,7 +43,6 @@ use Illuminate\Container\Container;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Database\ConnectionInterface;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\UniqueConstraintViolationException;
 use InvalidArgumentException;
 use UnexpectedValueException;
@@ -241,16 +240,8 @@ class BookingService
         $minutes  = max( 1, $previous->minutes() );
         $end      = $start->addMinutes( $minutes );
 
-        doAction( 'ap.bookings.rescheduling', $booking, $start );
-
         $providerId = null === $booking->provider_id ? null : (int) $booking->provider_id;
 
-        // The booking already knows its own site, and that — not the ambient
-        // one — is the tenant its clash check has to run against. A reschedule
-        // driven from a mismatched context (a per-site reminder command, a
-        // maintenance sweep under `acrossAllSites()`) would otherwise read
-        // another tenant's diary for conflicts and miss a real double booking.
-        // {@see self::inSiteOf()}.
         $move = function () use ( $booking, $start, $end, $providerId ): ?Booking {
             if ( null !== $providerId && $this->clashes( $providerId, $start, $end, $booking ) ) {
                 return null;
@@ -274,26 +265,33 @@ class BookingService
             return $booking;
         };
 
-        // The failure throw is inside the pin too: it names the booking's
-        // service, which is site-scoped, and would lazy-load as null read from a
-        // mismatched ambient site.
-        $this->inSiteOf( $booking, function () use ( $booking, $providerId, $start, $move ): Booking {
-            $result = null === $providerId
+        // The whole announced lifecycle runs under the booking's own site, not
+        // the ambient one — parity with {@see self::place()}. That is the tenant
+        // its clash check has to read (a reschedule driven from a mismatched
+        // context — a per-site reminder command, a maintenance sweep under
+        // `acrossAllSites()` — would otherwise read another tenant's diary and
+        // miss a real double booking), and the tenant a `rescheduling` or
+        // `rescheduled` listener sees when it reads the booking's site-scoped
+        // service or writes a site-scoped row of its own. The failure throw is
+        // inside it too: it names the service, which would lazy-load as null
+        // read from the wrong site. {@see self::inSiteOf()}.
+        return $this->inSiteOf( $booking, function () use ( $booking, $providerId, $start, $previous, $actor, $move ): Booking {
+            doAction( 'ap.bookings.rescheduling', $booking, $start );
+
+            $moved = null === $providerId
                 ? $this->connection()->transaction( $move )
                 : $this->lock->withSlotLock( $providerId, $start, $this->providerTimezone( $booking ), $move );
 
-            if ( null === $result ) {
+            if ( null === $moved ) {
                 throw SlotUnavailableException::for( $booking->service, $start );
             }
 
-            return $result;
+            doAction( 'ap.bookings.rescheduled', $moved, $previous->start );
+
+            BookingRescheduled::dispatch( $moved, $previous, $actor );
+
+            return $moved;
         } );
-
-        doAction( 'ap.bookings.rescheduled', $booking, $previous->start );
-
-        BookingRescheduled::dispatch( $booking, $previous, $actor );
-
-        return $booking;
     }
 
     /**
@@ -1275,12 +1273,15 @@ class BookingService
      *
      * @since 1.0.0
      *
-     * @param  Model  $owner  The record whose site to work in.
+     * @param  Booking|Service  $owner  The record whose site to work in. Both
+     *                                  carry `site_id` through `BelongsToSite`,
+     *                                  which is what `getSiteIdColumn()` needs —
+     *                                  a bare `Model` could not answer it.
      * @param  Closure  $callback  The work to do.
      *
      * @return mixed Whatever the callback returns.
      */
-    protected function inSiteOf( Model $owner, Closure $callback ): mixed
+    protected function inSiteOf( Booking|Service $owner, Closure $callback ): mixed
     {
         $container = Container::getInstance();
 
