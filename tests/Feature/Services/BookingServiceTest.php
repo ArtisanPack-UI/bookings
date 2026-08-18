@@ -19,6 +19,7 @@ use ArtisanPackUI\Bookings\Exceptions\SlotUnavailableException;
 use ArtisanPackUI\Bookings\Models\Booking;
 use ArtisanPackUI\Bookings\Models\Service;
 use ArtisanPackUI\Bookings\Models\ServiceProvider;
+use ArtisanPackUI\Core\MultiTenancy\SiteContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -763,5 +764,96 @@ describe( 'reassign', function (): void {
 
         expect( fn () => bookingService()->reassign( $booking->fresh() ) )
             ->toThrow( InvalidBookingTransitionException::class );
+    } );
+} );
+
+describe( 'site scoping', function (): void {
+    it( 'stamps the booking with the service\'s site, not whichever one is in context', function (): void {
+        // The two paths the package supports for crossing sites — a console
+        // command looping with SiteContext::forSite(), and a maintenance query
+        // using acrossAllSites() — both leave the ambient site disagreeing with
+        // the service being booked. A booking stamped from the ambient site
+        // would carry this customer's name, email, and phone into another
+        // tenant, and hide the appointment from the tenant that owns the service.
+        scopeToSite( 7 );
+
+        [ $service ] = bookableService();
+
+        scopeToSite( 9 );
+
+        $from = Service::query()->acrossAllSites()->findOrFail( $service->getKey() );
+
+        $booking = bookingService()->create( bookingCustomer( [
+            'service'    => $from,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        // The returned instance, and the row as any tenant would read it back.
+        // Without the pin the booking would land under site 9 — and the
+        // provider lookup would not even have found the site-7 provider from
+        // site 9, so the create would more likely have thrown first.
+        $stored = Booking::query()->acrossAllSites()->findOrFail( $booking->getKey() );
+
+        expect( (int) $booking->getAttribute( 'site_id' ) )->toBe( 7 )
+            ->and( (int) $stored->getAttribute( 'site_id' ) )->toBe( 7 );
+    } );
+
+    it( 'still refuses a bare service id resolved from another site', function (): void {
+        // The service is resolved before the pin, so a bare id from another site
+        // remains invisible — the documented limit that pushes cross-site
+        // callers to hand over the model they already hold.
+        scopeToSite( 7 );
+
+        [ $service ] = bookableService();
+
+        scopeToSite( 9 );
+
+        expect( fn () => bookingService()->create( bookingCustomer( [
+            'service_id' => $service->getKey(),
+            'start_time' => bookingStart(),
+        ] ) ) )->toThrow( InvalidArgumentException::class );
+    } );
+
+    it( 'restores whatever site was in context once the booking is placed', function (): void {
+        scopeToSite( 7 );
+
+        [ $service ] = bookableService();
+
+        scopeToSite( 9 );
+
+        bookingService()->create( bookingCustomer( [
+            'service'    => Service::query()->acrossAllSites()->findOrFail( $service->getKey() ),
+            'start_time' => bookingStart(),
+        ] ) );
+
+        expect( app( SiteContext::class )->currentSiteId() )->toBe( 9 );
+    } );
+
+    it( 'checks a reschedule for clashes against the booking\'s own site', function (): void {
+        scopeToSite( 7 );
+
+        [ $service, $providers ] = bookableService();
+
+        bookingService()->create( bookingCustomer( [
+            'service'     => $service,
+            'provider_id' => $providers[0]->getKey(),
+            'start_time'  => bookingStart( '10:00' ),
+        ] ) );
+
+        $later = bookingService()->create( bookingCustomer( [
+            'service'     => $service,
+            'provider_id' => $providers[0]->getKey(),
+            'start_time'  => bookingStart( '11:00' ),
+        ] ) );
+
+        scopeToSite( 9 );
+
+        // Moving the 11:00 booking onto the 10:00 one must be refused. The clash
+        // check has to read the booking's own site (7), not the ambient one (9)
+        // — under site 9 it sees an empty diary and double-books the provider.
+        expect( fn () => bookingService()->reschedule(
+            Booking::query()->acrossAllSites()->findOrFail( $later->getKey() ),
+            bookingStart( '10:00' ),
+        ) )->toThrow( SlotUnavailableException::class );
     } );
 } );
