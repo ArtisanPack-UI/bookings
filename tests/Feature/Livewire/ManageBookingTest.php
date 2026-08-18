@@ -384,19 +384,25 @@ describe( 'rescheduling', function (): void {
             ->toBe( bookingStart()->toIso8601String() );
     } );
 
-    it( 'takes nothing at all when the window is shut', function (): void {
+    it( 'treats a zero maximum as no limit rather than a shut window', function (): void {
+        // Zero on the maximum reads the same way zero reads on the minimum: no
+        // constraint. It must open the window, not collapse it — a blank setting
+        // that emptied every calendar and blamed the customer's chosen time is the
+        // failure this bound is meant not to have.
         config()->set( 'artisanpack.bookings.booking_window.max_advance_minutes', 0 );
 
         [ $booking, $token ] = manageableBooking();
 
+        $wanted = bookingStart( '11:00' );
+
         Livewire::test( ManageBooking::class, [ 'token' => $token ] )
             ->call( 'startReschedule' )
-            ->call( 'chooseSlot', bookingStart( '11:00' )->toIso8601String() )
+            ->call( 'chooseSlot', $wanted->toIso8601String() )
             ->call( 'reschedule' )
-            ->assertHasErrors( 'slotStart' );
+            ->assertHasNoErrors();
 
         expect( $booking->refresh()->start_time->toIso8601String() )
-            ->toBe( bookingStart()->toIso8601String() );
+            ->toBe( $wanted->toIso8601String() );
     } );
 
     it( 'refuses a move to the time the booking already has', function (): void {

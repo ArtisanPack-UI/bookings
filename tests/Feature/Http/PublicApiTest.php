@@ -194,6 +194,25 @@ describe( 'GET service slots', function (): void {
         expect( $slots )->toHaveCount( 8 );
     } );
 
+    it( 'offers the whole month when the maximum is non-positive', function ( int|string $value ): void {
+        [ $service ] = bookableService();
+
+        // Non-positive means "no maximum": the far end must not collapse to now
+        // and empty the month. Ten days would leave 8 slots; no limit leaves more.
+        config()->set( 'artisanpack.bookings.booking_window.max_advance_minutes', $value );
+
+        $slots = $this->getJson( '/api/bookings/services/' . $service->slug . '/slots?date=2026-06' )
+            ->assertOk()
+            ->json( 'data' );
+
+        expect( count( $slots ) )->toBeGreaterThan( 8 );
+    } )->with( [
+        'a blank string'  => '',
+        'a string zero'   => '0',
+        'an integer zero' => 0,
+        'a negative'      => -60,
+    ] );
+
     it( 'refuses a date that is not a month', function ( string $date ): void {
         [ $service ] = bookableService();
 
@@ -341,6 +360,22 @@ describe( 'POST bookings', function (): void {
         'already gone'    => '2026-05-04 15:00:00',
         'inside the hour' => '2026-05-25 12:30:00',
         'years ahead'     => '2029-06-01 15:00:00',
+    ] );
+
+    it( 'takes a submission when the maximum is non-positive', function ( int|string $value ): void {
+        [ $service ] = bookableService();
+
+        // The default submission is a week out. Under a maximum that collapsed to
+        // now, it would be refused as "too far ahead" for a time days away; a
+        // non-positive maximum means no limit, so it is taken.
+        config()->set( 'artisanpack.bookings.booking_window.max_advance_minutes', $value );
+
+        $this->postJson( '/api/bookings', publicBookingBody( $service ) )->assertCreated();
+    } )->with( [
+        'a blank string'  => '',
+        'a string zero'   => '0',
+        'an integer zero' => 0,
+        'a negative'      => -60,
     ] );
 
     it( 'answers a slot somebody else has taken with a conflict', function (): void {
