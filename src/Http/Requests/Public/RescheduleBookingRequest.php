@@ -15,6 +15,7 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Http\Requests\Public;
 
+use ArtisanPackUI\Bookings\Support\BookingWindow;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -124,17 +125,16 @@ class RescheduleBookingRequest extends FormRequest
                 return;
             }
 
-            $now      = CarbonImmutable::now()->utc();
-            $earliest = $now->addMinutes( max( 0, (int) config( 'artisanpack.bookings.booking_window.min_advance_minutes', 0 ) ) );
-            $latest   = $now->addMinutes( max( 0, (int) config( 'artisanpack.bookings.booking_window.max_advance_minutes', 0 ) ) );
+            $now    = CarbonImmutable::now()->utc();
+            $latest = BookingWindow::latest( $now );
 
-            if ( $start->lessThan( $earliest ) ) {
+            if ( $start->lessThan( BookingWindow::earliest( $now ) ) ) {
                 $validator->errors()->add( 'start_time', __( 'That appointment time is too soon to book.' ) );
 
                 return;
             }
 
-            if ( $start->greaterThan( $latest ) ) {
+            if ( null !== $latest && $start->greaterThan( $latest ) ) {
                 $validator->errors()->add( 'start_time', __( 'That appointment time is too far ahead to book.' ) );
             }
         } );

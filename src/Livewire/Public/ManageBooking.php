@@ -880,9 +880,9 @@ class ManageBooking extends Component
      * without this check a client setting `$slotStart` by hand could move an
      * appointment to a free instant years beyond the diary the installation
      * takes bookings in. The bounds are read through `BookingWindow::day()`
-     * rather than restated from config, so the two cannot drift and
-     * `max_advance_minutes` of zero stays the zero-length window it is
-     * everywhere else.
+     * rather than restated from config, so the two cannot drift and a
+     * non-positive `max_advance_minutes` reads as no maximum here exactly as it
+     * does everywhere else.
      *
      * @since 1.0.0
      *

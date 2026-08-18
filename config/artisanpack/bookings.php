@@ -113,6 +113,12 @@ return [
     | they may book at all. Both are measured in minutes from the moment of the
     | request. The default maximum is 90 days.
     |
+    | A non-positive value on either bound means "no constraint": zero (or a
+    | missing, blank, or negative value) on the minimum lets a customer book right
+    | up to the slot, and the same on the maximum lets them book arbitrarily far
+    | ahead. The two bounds read zero the same way, so clearing the maximum opens
+    | the window rather than silently emptying every calendar.
+    |
     */
     'booking_window' => [
         'min_advance_minutes' => 60,

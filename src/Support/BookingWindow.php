@@ -110,6 +110,48 @@ final class BookingWindow
     }
 
     /**
+     * Gets the earliest instant a booking may start.
+     *
+     * A non-positive `min_advance_minutes` reads as "no minimum" — the earliest
+     * bookable instant is now — which is the counterpart of what {@see self::latest()}
+     * does at the other end. The two bounds agree that zero means "no constraint".
+     *
+     * @since 1.0.0
+     *
+     * @param  CarbonImmutable  $now  The moment to measure the window from, in UTC.
+     *
+     * @return CarbonImmutable The earliest instant a booking may start.
+     */
+    public static function earliest( CarbonImmutable $now ): CarbonImmutable
+    {
+        return $now->addMinutes( max( 0, (int) config( 'artisanpack.bookings.booking_window.min_advance_minutes', 0 ) ) );
+    }
+
+    /**
+     * Gets the latest instant a booking may start, or null when there is no limit.
+     *
+     * A non-positive `max_advance_minutes` — a missing key, a blank environment
+     * variable, an explicit `0`, or a negative — means "no maximum", the same
+     * reading zero already carries on the minimum. It deliberately does not mean
+     * "nothing bookable": a bound that collapsed the window to the current instant
+     * would empty every calendar in the installation over a blank `.env` value and
+     * blame the customer's chosen time for it.
+     *
+     * @since 1.0.0
+     *
+     * @param  CarbonImmutable  $now  The moment to measure the window from, in UTC.
+     *
+     * @return CarbonImmutable|null The latest instant a booking may start, or null
+     *                              when the installation sets no maximum.
+     */
+    public static function latest( CarbonImmutable $now ): ?CarbonImmutable
+    {
+        $minutes = (int) config( 'artisanpack.bookings.booking_window.max_advance_minutes', 0 );
+
+        return $minutes > 0 ? $now->addMinutes( $minutes ) : null;
+    }
+
+    /**
      * Trims a span to the part of it the installation takes bookings in.
      *
      * @since 1.0.0
@@ -122,11 +164,11 @@ final class BookingWindow
     private static function clip( CarbonImmutable $start, CarbonImmutable $end ): ?TimeRange
     {
         $now      = CarbonImmutable::now()->utc();
-        $earliest = $now->addMinutes( max( 0, (int) config( 'artisanpack.bookings.booking_window.min_advance_minutes', 0 ) ) );
-        $latest   = $now->addMinutes( max( 0, (int) config( 'artisanpack.bookings.booking_window.max_advance_minutes', 0 ) ) );
+        $earliest = self::earliest( $now );
+        $latest   = self::latest( $now );
 
         $start = $start->lessThan( $earliest ) ? $earliest : $start;
-        $end   = $end->greaterThan( $latest ) ? $latest : $end;
+        $end   = null !== $latest && $end->greaterThan( $latest ) ? $latest : $end;
 
         if ( $end->lessThanOrEqualTo( $start ) ) {
             return null;
