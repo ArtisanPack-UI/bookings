@@ -88,6 +88,20 @@ it( 'does not unsync a reassigned booking that had no previous provider', functi
     $orchestrator->shouldNotHaveReceived( 'unsync' );
 } );
 
+it( 'does not unsync when the move lands back on the same provider', function (): void {
+    // The guard that stops unsync() removing the event sync() just wrote: a
+    // reassignment whose previous provider is the current one takes the sync but
+    // never the removal.
+    $orchestrator = spyCalendarSyncOrchestrator();
+
+    $booking = Booking::factory()->create();
+
+    BookingReassigned::dispatch( $booking, (int) $booking->provider_id );
+
+    $orchestrator->shouldHaveReceived( 'sync' )->once();
+    $orchestrator->shouldNotHaveReceived( 'unsync' );
+} );
+
 it( 'leaves lifecycle events that are out of scope alone', function ( Closure $raise ): void {
     $orchestrator = spyCalendarSyncOrchestrator();
 

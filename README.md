@@ -639,7 +639,7 @@ Webhook::create( [
 ] );
 ```
 
-Six events are raised, one per lifecycle transition:
+Seven events are raised, one per lifecycle transition:
 
 | Event                 | Raised when                                             |
 |-----------------------|---------------------------------------------------------|

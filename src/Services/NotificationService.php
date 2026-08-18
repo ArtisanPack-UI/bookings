@@ -158,10 +158,15 @@ class NotificationService
      * honoured, a booking whose personal data has been erased is refused because
      * the staff copy carries the customer's details, and the
      * `ap.bookings.notification.sending` filter can still replace or suppress the
-     * message. The log row is claimed before the send for the same idempotency
-     * every other send relies on — keyed by booking, type, channel, and a null
-     * schedule, so the two provider notices a single reassignment raises are two
-     * distinct claims and both go out.
+     * message. The log row is claimed before the send and recorded after it, the
+     * way the customer path logs its own sends — keyed by booking, type, channel,
+     * and a null schedule. Null schedules are not deduplicated
+     * ({@see NotificationLog::logSend()}), so the two provider notices one
+     * reassignment raises are recorded as distinct rows and both go out; the flip
+     * side is that a replayed or re-dispatched `BookingReassigned` would send the
+     * same provider a second email rather than being suppressed. That is
+     * acceptable here for the reason a lifecycle notice is: the event is raised
+     * once, synchronously, by a transition that has already happened.
      *
      * The log records an internal provider reference rather than the address,
      * following {@see Channels\DatabaseChannel::recipient()}: a provider is staff,

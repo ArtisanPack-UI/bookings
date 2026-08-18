@@ -548,6 +548,30 @@ describe( 'unsyncing a booking from a former provider', function (): void {
 
         Queue::assertNothingPushed();
     } );
+
+    it( 'removes the event even from a since-disabled connection', function (): void {
+        // unsync() drops the active()/writesEvents() filters sync() applies: a
+        // connection switched off after the event was written still holds it, and
+        // it must still come down. A future active() filter here would silently
+        // leave the event on a disabled calendar — this locks that out.
+        $previous = ServiceProvider::factory()->create();
+        $current  = ServiceProvider::factory()->create();
+
+        $connection = CalendarConnection::factory()->google()->disabled()->for( $previous, 'provider' )->create();
+
+        $booking = Booking::factory()->for( $current, 'provider' )->create();
+        CalendarEvent::factory()->create( [
+            'booking_id'    => $booking->getKey(),
+            'connection_id' => $connection->getKey(),
+        ] );
+
+        calendarSyncOrchestrator()->unsync( $booking, $previous->getKey() );
+
+        Queue::assertPushed(
+            RemoveBookingFromCalendars::class,
+            static fn ( RemoveBookingFromCalendars $job ): bool => $job->connectionId === $connection->getKey(),
+        );
+    } );
 } );
 
 describe( 'removing a booking from one connection', function (): void {

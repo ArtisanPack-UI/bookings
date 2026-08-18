@@ -19,6 +19,8 @@ use ArtisanPackUI\Bookings\Enums\NotificationAudience;
 use ArtisanPackUI\Bookings\Enums\NotificationType;
 use ArtisanPackUI\Bookings\Models\Booking;
 use ArtisanPackUI\Bookings\Models\ServiceProvider;
+use DateTimeZone;
+use Exception;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
@@ -651,13 +653,33 @@ abstract class BookingNotification extends Notification
             return $this->booking->startTimeForProvider();
         }
 
-        $timezone = $provider->timezone;
+        return $this->booking->start_time->copy()->setTimezone( $this->safeZone( $provider->timezone ) );
+    }
 
-        if ( ! is_string( $timezone ) || '' === $timezone ) {
-            $timezone = (string) config( 'app.timezone', 'UTC' );
+    /**
+     * Resolves a usable timezone from a provider's stored value.
+     *
+     * A provider's `timezone` is validated by the editor, but the column accepts
+     * any string, and a value written around that validation — an import, a
+     * direct write, a rename that lands somewhere invalid — would make
+     * {@see Carbon::setTimezone()} throw from inside a send.
+     * An unusable value falls back to the application timezone rather than
+     * failing the notification: a message in the wrong zone is a smaller problem
+     * than a booking whose reassignment could not be told to anyone.
+     *
+     * @since 1.0.0
+     *
+     * @param  string|null  $timezone  The provider's stored timezone.
+     *
+     * @return DateTimeZone The stored zone when it is valid, else the app's.
+     */
+    protected function safeZone( ?string $timezone ): DateTimeZone
+    {
+        try {
+            return new DateTimeZone( (string) $timezone );
+        } catch ( Exception ) {
+            return new DateTimeZone( (string) config( 'app.timezone', 'UTC' ) );
         }
-
-        return $this->booking->start_time->copy()->setTimezone( $timezone );
     }
 
     /**

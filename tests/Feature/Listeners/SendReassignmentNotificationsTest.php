@@ -11,6 +11,7 @@ use ArtisanPackUI\Bookings\Notifications\BookingProviderAssigned;
 use ArtisanPackUI\Bookings\Notifications\BookingProviderUnassigned;
 use ArtisanPackUI\Bookings\Services\NotificationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Notification as Notifier;
 use Tests\Concerns\TestsWithSqlite;
 
@@ -130,11 +131,18 @@ it( 'sends nothing for a booking whose personal data has been erased', function 
 it( 'shows the previous provider their own timezone in the removed notice', function (): void {
     // The booking now points at the new provider, so a "removed" notice rendered
     // off the booking's own provider would show the previous provider the new
-    // provider's clock face under a label saying it is theirs.
+    // provider's clock face under a label saying it is theirs. Times are fixed
+    // and the three zones — previous provider, new provider, and customer — are
+    // kept distinct so the assertion cannot collide with the staff copy's own
+    // "Customer time" row.
     $previous = ServiceProvider::factory()->create( [ 'email' => 'previous@example.test', 'timezone' => 'Pacific/Auckland' ] );
     $current  = ServiceProvider::factory()->create( [ 'email' => 'current@example.test', 'timezone' => 'America/Chicago' ] );
 
-    $booking = Booking::factory()->confirmed()->for( $current, 'provider' )->create();
+    $booking = Booking::factory()->confirmed()->for( $current, 'provider' )->create( [
+        'start_time'        => Carbon::parse( '2026-09-29 12:00:00', 'UTC' ),
+        'end_time'          => Carbon::parse( '2026-09-29 12:30:00', 'UTC' ),
+        'customer_timezone' => 'Europe/London',
+    ] );
 
     $html = (string) app( NotificationService::class )
         ->notificationForProvider( NotificationType::ProviderUnassigned, $booking )
