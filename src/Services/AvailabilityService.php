@@ -41,12 +41,15 @@ use UnexpectedValueException;
  *
  * The whole widget rests on this question, so the order the answer is built in
  * matters more than any single step. Availability is authored as wall-clock time
- * in a provider's own zone, so the clock face comes first and the instant second:
- * a candidate slot is named as a time of day on a date, turned into a real moment
- * against the provider's zone, and only then compared against anything. That is
- * what keeps nine o'clock meaning nine o'clock on the two days a year the offset
- * moves under it, and it is why a slot that names a local time the clocks skipped
- * is dropped rather than quietly rounded into one that exists.
+ * in a provider's own zone, so each authored window is resolved to real instants
+ * before anything is compared against it — that is what keeps nine o'clock meaning
+ * nine o'clock on the two days a year the offset moves under it. Candidate slots
+ * are then walked as elapsed time across the local day, not as clock faces across
+ * a notional twenty-four hours: the day a clock changes is twenty-three or
+ * twenty-five real hours long, and advancing from the instant the day opens by the
+ * slot interval lets the offset shift under the cursor. The hour a fall-back
+ * repeats is offered twice, as the two distinct instants it genuinely is; the hour
+ * a spring-forward skips is never landed on. Neither direction is special-cased.
  *
  * What is subtracted, in order: a blackout closes the day outright; an
  * unavailable override closes it for one provider; a custom-hours override
@@ -384,19 +387,14 @@ class AvailabilityService implements SlotResolver
 
         $slots = [];
 
-        for ( $minutes = 0; $minutes < 1440; $minutes += $interval ) {
-            $start = $this->localInstant(
-                $date,
-                sprintf( '%02d:%02d:00', intdiv( $minutes, 60 ), $minutes % 60 ),
-                $timezone,
-            );
-
-            // The local time does not exist on this date — the clocks went
-            // forward over it. There is no instant to offer.
-            if ( null === $start ) {
-                continue;
-            }
-
+        // Walk elapsed time across the local day, not clock faces across a
+        // notional twenty-four hours. The day a clock changes is twenty-three or
+        // twenty-five real hours long, and advancing the cursor by the interval
+        // from the instant the day opens lets the offset move underneath it: the
+        // hour a fall-back repeats is generated twice, as the two distinct
+        // instants it is, and the hour a spring-forward skips is never landed on.
+        // Both fall out of the one walk without either being special-cased.
+        for ( $start = $dayStart; $start->lessThan( $dayEnd ); $start = $start->addMinutes( $interval ) ) {
             $end = $start->addMinutes( $duration );
 
             if ( ! $this->fitsAWindow( $start, $end, $windows ) ) {
@@ -904,30 +902,6 @@ class AvailabilityService implements SlotResolver
         }
 
         return $dates;
-    }
-
-    /**
-     * Turns a date and a clock face into the instant they name, if there is one.
-     *
-     * Carbon does not object to a local time that never happened: ask it for
-     * 02:30 on the morning the clocks go forward and it hands back 03:30 without
-     * comment. Reading the clock face back off the result is what catches that,
-     * and a slot that cannot exist is dropped rather than silently moved.
-     *
-     * @since 1.0.0
-     *
-     * @param  string  $date  The date, as `Y-m-d`.
-     * @param  string  $wallClock  The clock face, as `H:i:s`.
-     * @param  string  $timezone  The zone to read the clock face in.
-     *
-     * @return CarbonImmutable|null The instant, or null when the local time does
-     *                              not exist on that date.
-     */
-    protected function localInstant( string $date, string $wallClock, string $timezone ): ?CarbonImmutable
-    {
-        $instant = CarbonImmutable::createFromFormat( 'Y-m-d H:i:s', $date . ' ' . $wallClock, $timezone );
-
-        return null !== $instant && $instant->format( 'H:i:s' ) === $wallClock ? $instant : null;
     }
 
     /**
