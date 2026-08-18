@@ -639,13 +639,14 @@ Webhook::create( [
 ] );
 ```
 
-Six events are raised, one per lifecycle transition:
+Seven events are raised, one per lifecycle transition:
 
 | Event                 | Raised when                                             |
 |-----------------------|---------------------------------------------------------|
 | `booking.created`     | A booking is made, whether or not it is yet confirmed    |
 | `booking.confirmed`   | It becomes an appointment                                |
 | `booking.rescheduled` | It moves; carries `data.previous_period`                 |
+| `booking.reassigned`  | It moves to another provider; carries `data.previous_provider_id` |
 | `booking.cancelled`   | It is called off; carries `data.reason`                  |
 | `booking.completed`   | It is marked as having happened                          |
 | `booking.no_show`     | The customer did not arrive                              |

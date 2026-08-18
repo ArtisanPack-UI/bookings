@@ -7,6 +7,7 @@ use ArtisanPackUI\Bookings\Events\BookingCancelled;
 use ArtisanPackUI\Bookings\Events\BookingCompleted;
 use ArtisanPackUI\Bookings\Events\BookingConfirmed;
 use ArtisanPackUI\Bookings\Events\BookingNoShow;
+use ArtisanPackUI\Bookings\Events\BookingReassigned;
 use ArtisanPackUI\Bookings\Events\BookingRequested;
 use ArtisanPackUI\Bookings\Events\BookingRescheduled;
 use ArtisanPackUI\Bookings\Jobs\DispatchWebhookDelivery;
@@ -75,7 +76,35 @@ it( 'fans each lifecycle event out under its own name', function ( string $name,
             CarbonImmutable::parse( '2026-03-01 09:30' ),
         ) ),
     ],
+    'booking.reassigned'  => [
+        'booking.reassigned',
+        fn ( Booking $booking ) => BookingReassigned::dispatch( $booking, 7 ),
+    ],
 ] );
+
+it( 'carries the previous provider id on a reassignment', function (): void {
+    endpointFor( [ 'booking.reassigned' ] );
+
+    $booking = Booking::factory()->create();
+
+    BookingReassigned::dispatch( $booking, 7, BookingActor::Admin );
+
+    $reassigned = WebhookDelivery::query()->where( 'event_type', 'booking.reassigned' )->sole();
+
+    expect( $reassigned->payload['data']['previous_provider_id'] )->toBe( 7 )
+        ->and( $reassigned->payload['data']['actor'] )->toBe( BookingActor::Admin->value );
+} );
+
+it( 'carries a null previous provider id when the booking had no provider', function (): void {
+    endpointFor( [ 'booking.reassigned' ] );
+
+    BookingReassigned::dispatch( Booking::factory()->create(), null );
+
+    $reassigned = WebhookDelivery::query()->where( 'event_type', 'booking.reassigned' )->sole();
+
+    expect( $reassigned->payload['data'] )->toHaveKey( 'previous_provider_id' )
+        ->and( $reassigned->payload['data']['previous_provider_id'] )->toBeNull();
+} );
 
 it( 'sends nothing to an endpoint that did not subscribe to the event', function (): void {
     endpointFor( [ 'booking.cancelled' ] );

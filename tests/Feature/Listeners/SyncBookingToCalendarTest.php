@@ -7,6 +7,7 @@ use ArtisanPackUI\Bookings\Events\BookingCancelled;
 use ArtisanPackUI\Bookings\Events\BookingCompleted;
 use ArtisanPackUI\Bookings\Events\BookingConfirmed;
 use ArtisanPackUI\Bookings\Events\BookingNoShow;
+use ArtisanPackUI\Bookings\Events\BookingReassigned;
 use ArtisanPackUI\Bookings\Events\BookingRequested;
 use ArtisanPackUI\Bookings\Events\BookingRescheduled;
 use ArtisanPackUI\Bookings\Models\Booking;
@@ -55,6 +56,50 @@ it( 're-syncs a rescheduled booking so its calendar event moves in place', funct
     $orchestrator->shouldHaveReceived( 'sync' )
         ->once()
         ->with( Mockery::on( fn ( Booking $synced ): bool => $synced->is( $booking ) ) );
+} );
+
+it( 'moves a reassigned booking onto the new provider and off the previous one', function (): void {
+    $orchestrator = spyCalendarSyncOrchestrator();
+
+    $booking = Booking::factory()->create();
+
+    BookingReassigned::dispatch( $booking, 42 );
+
+    $orchestrator->shouldHaveReceived( 'sync' )
+        ->once()
+        ->with( Mockery::on( fn ( Booking $synced ): bool => $synced->is( $booking ) ) );
+
+    $orchestrator->shouldHaveReceived( 'unsync' )
+        ->once()
+        ->with(
+            Mockery::on( fn ( Booking $moved ): bool => $moved->is( $booking ) ),
+            42,
+        );
+} );
+
+it( 'does not unsync a reassigned booking that had no previous provider', function (): void {
+    $orchestrator = spyCalendarSyncOrchestrator();
+
+    $booking = Booking::factory()->create();
+
+    BookingReassigned::dispatch( $booking, null );
+
+    $orchestrator->shouldHaveReceived( 'sync' )->once();
+    $orchestrator->shouldNotHaveReceived( 'unsync' );
+} );
+
+it( 'does not unsync when the move lands back on the same provider', function (): void {
+    // The guard that stops unsync() removing the event sync() just wrote: a
+    // reassignment whose previous provider is the current one takes the sync but
+    // never the removal.
+    $orchestrator = spyCalendarSyncOrchestrator();
+
+    $booking = Booking::factory()->create();
+
+    BookingReassigned::dispatch( $booking, (int) $booking->provider_id );
+
+    $orchestrator->shouldHaveReceived( 'sync' )->once();
+    $orchestrator->shouldNotHaveReceived( 'unsync' );
 } );
 
 it( 'leaves lifecycle events that are out of scope alone', function ( Closure $raise ): void {

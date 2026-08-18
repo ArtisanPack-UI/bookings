@@ -19,7 +19,9 @@ use ArtisanPackUI\Bookings\Enums\NotificationType;
 use ArtisanPackUI\Bookings\Events\BookingCancelled;
 use ArtisanPackUI\Bookings\Events\BookingConfirmed;
 use ArtisanPackUI\Bookings\Events\BookingNoShow;
+use ArtisanPackUI\Bookings\Events\BookingReassigned;
 use ArtisanPackUI\Bookings\Events\BookingRescheduled;
+use ArtisanPackUI\Bookings\Models\ServiceProvider;
 use ArtisanPackUI\Bookings\Services\NotificationService;
 use Illuminate\Events\Dispatcher;
 
@@ -91,6 +93,7 @@ class SendBookingNotifications
             BookingConfirmed::class   => 'handleConfirmed',
             BookingCancelled::class   => 'handleCancelled',
             BookingRescheduled::class => 'handleRescheduled',
+            BookingReassigned::class  => 'handleReassigned',
             BookingNoShow::class      => 'handleNoShow',
         ];
     }
@@ -135,6 +138,54 @@ class SendBookingNotifications
     public function handleRescheduled( BookingRescheduled $event ): void
     {
         $this->notifications->send( NotificationType::Reschedule, $event->booking );
+    }
+
+    /**
+     * Tells the providers on both sides of a reassignment about the move.
+     *
+     * The provider now on the booking is told it has been assigned to them; the
+     * one it moved away from — looked up by the id the event carries, because it
+     * is no longer on the booking row — is told it has been removed from theirs.
+     * The previous provider is skipped when there was none, and when the move
+     * somehow lands back on the same provider, so nobody is told an appointment
+     * left a calendar it is still on. The previous provider is read across all
+     * sites — this runs on the booking's own site in a request, but the primary
+     * key resolves the one provider either way — and then held to the booking's
+     * site before it is notified. The id can only be the booking's own former
+     * provider through the service, but this event takes it raw, and a foreign
+     * id would otherwise put a customer's details in front of another tenant's
+     * provider; the same-site check makes that impossible rather than merely
+     * unlikely.
+     *
+     * @since 1.0.0
+     *
+     * @param  BookingReassigned  $event  The event.
+     *
+     * @return void
+     */
+    public function handleReassigned( BookingReassigned $event ): void
+    {
+        $booking     = $event->booking;
+        $newProvider = $booking->provider;
+
+        if ( null !== $newProvider ) {
+            $this->notifications->sendToProvider( NotificationType::ProviderAssigned, $booking, $newProvider );
+        }
+
+        $previousProviderId = $event->previousProviderId;
+
+        if ( null === $previousProviderId || $previousProviderId === $booking->provider_id ) {
+            return;
+        }
+
+        $previousProvider = ServiceProvider::query()
+            ->acrossAllSites()
+            ->whereKey( $previousProviderId )
+            ->first();
+
+        if ( null !== $previousProvider && $previousProvider->site_id === $booking->site_id ) {
+            $this->notifications->sendToProvider( NotificationType::ProviderUnassigned, $booking, $previousProvider );
+        }
     }
 
     /**

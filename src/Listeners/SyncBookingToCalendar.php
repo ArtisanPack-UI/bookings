@@ -16,6 +16,7 @@ declare( strict_types=1 );
 namespace ArtisanPackUI\Bookings\Listeners;
 
 use ArtisanPackUI\Bookings\Events\BookingConfirmed;
+use ArtisanPackUI\Bookings\Events\BookingReassigned;
 use ArtisanPackUI\Bookings\Events\BookingRescheduled;
 use ArtisanPackUI\Bookings\Services\CalendarSyncOrchestrator;
 use Illuminate\Events\Dispatcher;
@@ -39,10 +40,21 @@ use Illuminate\Events\Dispatcher;
  * connection together, so the second push updates the calendar event already
  * recorded rather than stacking a second one.
  *
- * **No listener for `BookingCancelled`.** Removing a booking from its calendars
- * needs `Jobs\RemoveBookingFromCalendars` (plan §5.6), which does not exist yet;
- * cancellation is tracked separately. A booking whose provider has no active,
- * event-writing connection is unaffected, since the orchestrator no-ops on it.
+ * `BookingReassigned` does both halves of a move between providers: it re-pushes
+ * the booking so the new provider's calendars gain it, and unsyncs the previous
+ * provider's calendars so the event comes off the diary it has left. The push is
+ * the same {@see CalendarSyncOrchestrator::sync()} the other events use — the
+ * booking already carries its new provider, so `sync()` writes to their
+ * connections — and the removal goes through
+ * {@see CalendarSyncOrchestrator::unsync()}, which finds the stale events through
+ * the ledger and dispatches a {@see \ArtisanPackUI\Bookings\Jobs\RemoveBookingFromCalendars}
+ * job per calendar.
+ *
+ * **No listener for `BookingCancelled`.** Removing a cancelled booking from its
+ * calendars is tracked separately; the removal machinery `BookingReassigned` uses
+ * is per-provider, and cancellation wants every calendar the booking is on. A
+ * booking whose provider has no active, event-writing connection is unaffected,
+ * since the orchestrator no-ops on it.
  *
  * The events are `ShouldDispatchAfterCommit`, so by the time this runs the
  * booking is committed and readable by the queue worker each push is dispatched
@@ -80,6 +92,7 @@ class SyncBookingToCalendar
         return [
             BookingConfirmed::class   => 'handleConfirmed',
             BookingRescheduled::class => 'handleRescheduled',
+            BookingReassigned::class  => 'handleReassigned',
         ];
     }
 
@@ -109,5 +122,33 @@ class SyncBookingToCalendar
     public function handleRescheduled( BookingRescheduled $event ): void
     {
         $this->orchestrator->sync( $event->booking );
+    }
+
+    /**
+     * Moves a reassigned booking from the old provider's calendars to the new.
+     *
+     * The push comes first so the new provider gains the appointment; the unsync
+     * takes it off the previous provider's calendars. It is skipped when the
+     * booking had no provider before the move — there is nothing to take down —
+     * and when the move somehow lands back on the same provider, so the removal
+     * cannot pull off a calendar the push has just written to. The two halves are
+     * otherwise independent, each keyed to its own provider's connections, so the
+     * order between them carries no state.
+     *
+     * @since 1.0.0
+     *
+     * @param  BookingReassigned  $event  The event.
+     *
+     * @return void
+     */
+    public function handleReassigned( BookingReassigned $event ): void
+    {
+        $this->orchestrator->sync( $event->booking );
+
+        $previousProviderId = $event->previousProviderId;
+
+        if ( null !== $previousProviderId && $previousProviderId !== $event->booking->provider_id ) {
+            $this->orchestrator->unsync( $event->booking, $previousProviderId );
+        }
     }
 }

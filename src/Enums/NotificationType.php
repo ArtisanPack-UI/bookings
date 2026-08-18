@@ -34,4 +34,8 @@ enum NotificationType: string
     case Reschedule = 'reschedule';
 
     case NoShow = 'no_show';
+
+    case ProviderAssigned = 'provider_assigned';
+
+    case ProviderUnassigned = 'provider_unassigned';
 }

@@ -186,6 +186,16 @@ return [
         'cancellation' => [ 'enabled' => true ],
 
         /*
+        | Provider-facing notices sent when a booking is reassigned: the provider
+        | it moves to is told it has been assigned to them, and the one it moves
+        | away from is told it has been taken off their calendar. Both go out by
+        | email to the provider's own address. Set "enabled" to false to send
+        | neither.
+        */
+        'provider_assigned'   => [ 'enabled' => true ],
+        'provider_unassigned' => [ 'enabled' => true ],
+
+        /*
         | Who receives the staff-facing copy on the "database" channel, and how
         | it is delivered. Two implementations answer to this channel and the
         | package picks between them automatically:

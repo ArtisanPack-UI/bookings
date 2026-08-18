@@ -19,6 +19,7 @@ use ArtisanPackUI\Bookings\Events\BookingCancelled;
 use ArtisanPackUI\Bookings\Events\BookingCompleted;
 use ArtisanPackUI\Bookings\Events\BookingConfirmed;
 use ArtisanPackUI\Bookings\Events\BookingNoShow;
+use ArtisanPackUI\Bookings\Events\BookingReassigned;
 use ArtisanPackUI\Bookings\Events\BookingRequested;
 use ArtisanPackUI\Bookings\Events\BookingRescheduled;
 use ArtisanPackUI\Bookings\Models\Booking;
@@ -86,6 +87,7 @@ class DispatchBookingWebhooks
             BookingRequested::class   => 'handleRequested',
             BookingConfirmed::class   => 'handleConfirmed',
             BookingRescheduled::class => 'handleRescheduled',
+            BookingReassigned::class  => 'handleReassigned',
             BookingCancelled::class   => 'handleCancelled',
             BookingCompleted::class   => 'handleCompleted',
             BookingNoShow::class      => 'handleNoShow',
@@ -140,6 +142,29 @@ class DispatchBookingWebhooks
         $this->fanOut( 'booking.rescheduled', $event->booking, [
             'actor'           => $event->actor->value,
             'previous_period' => $event->previousPeriod->toArray(),
+        ] );
+    }
+
+    /**
+     * Fans a reassigned booking out as `booking.reassigned`.
+     *
+     * The booking already carries its new provider under `data.booking.provider`;
+     * the provider it moved away from is gone from the row by the time this runs,
+     * so `previous_provider_id` is carried beside it for a consumer reconciling
+     * the change on its own side. It is null when the booking had no provider
+     * before the reassignment.
+     *
+     * @since 1.0.0
+     *
+     * @param  BookingReassigned  $event  The event.
+     *
+     * @return void
+     */
+    public function handleReassigned( BookingReassigned $event ): void
+    {
+        $this->fanOut( 'booking.reassigned', $event->booking, [
+            'actor'                => $event->actor->value,
+            'previous_provider_id' => $event->previousProviderId,
         ] );
     }
 

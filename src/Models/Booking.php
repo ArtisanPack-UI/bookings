@@ -143,6 +143,7 @@ class Booking extends Model
      * @var array<string, string>
      */
     protected $casts = [
+        'provider_id'             => 'integer',
         'series_index'            => 'integer',
         'detached_from_series_at' => 'datetime',
         'customer_timezone'       => 'string',

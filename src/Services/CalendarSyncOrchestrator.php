@@ -19,6 +19,7 @@ use ArtisanPackUI\Bookings\Contracts\CalendarDriverRegistry;
 use ArtisanPackUI\Bookings\Enums\CalendarSyncMode;
 use ArtisanPackUI\Bookings\Events\CalendarSynced;
 use ArtisanPackUI\Bookings\Events\CalendarSyncFailed;
+use ArtisanPackUI\Bookings\Jobs\RemoveBookingFromCalendars;
 use ArtisanPackUI\Bookings\Jobs\SyncBookingToCalendars;
 use ArtisanPackUI\Bookings\Models\Booking;
 use ArtisanPackUI\Bookings\Models\CalendarConnection;
@@ -138,6 +139,49 @@ class CalendarSyncOrchestrator
     }
 
     /**
+     * Dispatches a removal job for every calendar a former provider had a booking on.
+     *
+     * Called when a booking is reassigned: the booking now carries its new
+     * provider, and {@see sync()} writes it out to their calendars, but the event
+     * on the *previous* provider's calendars is still there pointing at an
+     * appointment that has moved off their diary. This takes it back off.
+     *
+     * The stale events are found through the ledger rather than by asking the
+     * previous provider for its connections: the ledger is what records that this
+     * booking was ever written to a given connection, and a connection since
+     * switched off still holds an event that ought to come down. Connections are
+     * looked up across every site because the booking's own site is the previous
+     * provider's too, and the primary key resolves them either way.
+     *
+     * @since 1.0.0
+     *
+     * @param  Booking  $booking  The booking that moved.
+     * @param  int  $previousProviderId  The provider it moved away from.
+     *
+     * @return void
+     */
+    public function unsync( Booking $booking, int $previousProviderId ): void
+    {
+        $connectionIds = CalendarConnection::query()
+            ->acrossAllSites()
+            ->where( 'provider_id', $previousProviderId )
+            ->pluck( 'id' );
+
+        if ( $connectionIds->isEmpty() ) {
+            return;
+        }
+
+        $events = CalendarEvent::query()
+            ->where( 'booking_id', $booking->getKey() )
+            ->whereIn( 'connection_id', $connectionIds )
+            ->get();
+
+        foreach ( $events as $event ) {
+            RemoveBookingFromCalendars::dispatch( (int) $booking->getKey(), (int) $event->connection_id );
+        }
+    }
+
+    /**
      * Makes one attempt at writing a booking to one connection's calendar.
      *
      * Called from the job's `handle()`, so a throw here is the job's failure and
@@ -218,6 +262,61 @@ class CalendarSyncOrchestrator
         $this->clearFailureStreak( $connection );
 
         CalendarSynced::dispatch( $connection, $booking, $externalEventId );
+    }
+
+    /**
+     * Makes one attempt at taking a booking off one connection's calendar.
+     *
+     * Called from {@see RemoveBookingFromCalendars}'s `handle()`, so a throw here
+     * is the job's failure and the queue's cue to retry it on the backoff
+     * schedule. Nothing to remove — no ledger row, a missing connection, or a
+     * driver package that is no longer installed — is a no-op rather than an
+     * error: the event either was never written or cannot be reached, and neither
+     * is a failure to retry.
+     *
+     * The ledger row is deleted only after the driver has confirmed the event is
+     * gone. A delete that throws leaves the row in place, so a later attempt still
+     * knows the event needs removing — the opposite of {@see push()}, which
+     * records the row on success; here success is the row's disappearance.
+     *
+     * The connection is looked up across every site, because the job runs on a
+     * queue worker with no request to resolve one from.
+     *
+     * @since 1.0.0
+     *
+     * @param  int  $bookingId  The booking to take off the calendar.
+     * @param  int  $connectionId  The connection to take it off.
+     *
+     * @throws Throwable When the driver could not delete the event.
+     *
+     * @return void
+     */
+    public function remove( int $bookingId, int $connectionId ): void
+    {
+        $connection = CalendarConnection::query()->acrossAllSites()->whereKey( $connectionId )->first();
+
+        if ( null === $connection ) {
+            return;
+        }
+
+        $event = CalendarEvent::query()
+            ->where( 'booking_id', $bookingId )
+            ->where( 'connection_id', $connectionId )
+            ->first();
+
+        if ( null === $event ) {
+            return;
+        }
+
+        $driver = $this->registry->get( $connection->driver->value );
+
+        if ( null === $driver ) {
+            return;
+        }
+
+        $driver->deleteEvent( $connection, $event->external_event_id );
+
+        $event->delete();
     }
 
     /**

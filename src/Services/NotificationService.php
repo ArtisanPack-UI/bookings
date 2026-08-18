@@ -16,18 +16,23 @@ declare( strict_types=1 );
 namespace ArtisanPackUI\Bookings\Services;
 
 use ArtisanPackUI\Bookings\Contracts\NotificationChannel;
+use ArtisanPackUI\Bookings\Enums\NotificationAudience;
 use ArtisanPackUI\Bookings\Enums\NotificationType;
 use ArtisanPackUI\Bookings\Models\Booking;
 use ArtisanPackUI\Bookings\Models\NotificationLog;
+use ArtisanPackUI\Bookings\Models\ServiceProvider;
 use ArtisanPackUI\Bookings\Notifications\BookingCancellation;
 use ArtisanPackUI\Bookings\Notifications\BookingConfirmation;
 use ArtisanPackUI\Bookings\Notifications\BookingNoShow;
 use ArtisanPackUI\Bookings\Notifications\BookingNotification;
+use ArtisanPackUI\Bookings\Notifications\BookingProviderAssigned;
+use ArtisanPackUI\Bookings\Notifications\BookingProviderUnassigned;
 use ArtisanPackUI\Bookings\Notifications\BookingReminder;
 use ArtisanPackUI\Bookings\Notifications\BookingReschedule;
 use DateTimeInterface;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Notification as Notifier;
 use Throwable;
 use UnexpectedValueException;
 
@@ -78,6 +83,22 @@ class NotificationService
     ];
 
     /**
+     * The notification class that carries each provider-facing message.
+     *
+     * Kept apart from {@see self::NOTIFICATIONS} because these are addressed to a
+     * provider rather than to the booking's customer, and go out through
+     * {@see self::sendToProvider()} rather than the customer channel pipeline.
+     *
+     * @since 1.0.0
+     *
+     * @var array<string, class-string<BookingNotification>>
+     */
+    protected const PROVIDER_NOTIFICATIONS = [
+        'provider_assigned'   => BookingProviderAssigned::class,
+        'provider_unassigned' => BookingProviderUnassigned::class,
+    ];
+
+    /**
      * Constructs the service.
      *
      * @since 1.0.0
@@ -124,6 +145,94 @@ class NotificationService
     }
 
     /**
+     * Sends a provider-facing message to one provider by email.
+     *
+     * The customer pipeline in {@see self::send()} cannot carry this: it resolves
+     * its recipient from the booking, and the provider a reassignment concerns is
+     * either the one now on the booking or — for the "removed" notice — the one
+     * that has just left it and is no longer on the row at all. So the provider
+     * is passed in, and the message goes out over mail directly rather than
+     * through the customer channels.
+     *
+     * The safety rails the customer path has are kept: the type's enabled flag is
+     * honoured, a booking whose personal data has been erased is refused because
+     * the staff copy carries the customer's details, and the
+     * `ap.bookings.notification.sending` filter can still replace or suppress the
+     * message. The log row is claimed before the send and recorded after it, the
+     * way the customer path logs its own sends — keyed by booking, type, channel,
+     * and a null schedule. Null schedules are not deduplicated
+     * ({@see NotificationLog::logSend()}), so the two provider notices one
+     * reassignment raises are recorded as distinct rows and both go out; the flip
+     * side is that a replayed or re-dispatched `BookingReassigned` would send the
+     * same provider a second email rather than being suppressed. That is
+     * acceptable here for the reason a lifecycle notice is: the event is raised
+     * once, synchronously, by a transition that has already happened.
+     *
+     * The log records an internal provider reference rather than the address,
+     * following {@see Channels\DatabaseChannel::recipient()}: a provider is staff,
+     * not the subject of a booking's erasure, so their address has no business
+     * being caught by the sweep that redacts `recipient` for an erased booking.
+     *
+     * @since 1.0.0
+     *
+     * @param  NotificationType  $type  Which provider message to send.
+     * @param  Booking  $booking  The booking it concerns.
+     * @param  ServiceProvider  $provider  The provider to notify.
+     *
+     * @return NotificationLog|null The claimed row, or null when nothing was sent.
+     */
+    public function sendToProvider( NotificationType $type, Booking $booking, ServiceProvider $provider ): ?NotificationLog
+    {
+        if ( ! $this->isEnabled( $type ) ) {
+            return null;
+        }
+
+        if ( $booking->isPiiErased() ) {
+            return null;
+        }
+
+        $email = trim( (string) $provider->email );
+
+        if ( false === filter_var( $email, FILTER_VALIDATE_EMAIL ) ) {
+            return null;
+        }
+
+        $notification = $this->filterNotification(
+            $this->notificationForProvider( $type, $booking )->forProvider( $provider ),
+            $booking,
+        );
+
+        if ( null === $notification ) {
+            return null;
+        }
+
+        $log = NotificationLog::logSend( $booking, $type, 'mail', $this->providerRecipient( $provider ) );
+
+        if ( null === $log ) {
+            return null;
+        }
+
+        try {
+            Notifier::route( 'mail', [ $email => $provider->name ] )->notify( $notification );
+        } catch ( Throwable $e ) {
+            $log->markFailed( $e->getMessage() );
+
+            Log::warning( 'A booking provider notification could not be sent.', [
+                'booking_id'  => $booking->getKey(),
+                'type'        => $type->value,
+                'provider_id' => $provider->getKey(),
+                'exception'   => $e->getMessage(),
+            ] );
+
+            return null;
+        }
+
+        $log->markSent();
+
+        return $log;
+    }
+
+    /**
      * Builds the notification carrying a lifecycle message.
      *
      * @since 1.0.0
@@ -138,6 +247,32 @@ class NotificationService
         $class = self::NOTIFICATIONS[ $type->value ];
 
         return new $class( $booking );
+    }
+
+    /**
+     * Builds a provider-facing notification, addressed to the provider audience.
+     *
+     * @since 1.0.0
+     *
+     * @param  NotificationType  $type  Which provider message to build.
+     * @param  Booking  $booking  The booking it concerns.
+     *
+     * @throws UnexpectedValueException When the type has no provider notification.
+     *
+     * @return BookingNotification The notification, unfiltered.
+     */
+    public function notificationForProvider( NotificationType $type, Booking $booking ): BookingNotification
+    {
+        $class = self::PROVIDER_NOTIFICATIONS[ $type->value ] ?? null;
+
+        if ( null === $class ) {
+            throw new UnexpectedValueException( sprintf(
+                'There is no provider notification for the %s message.',
+                $type->value,
+            ) );
+        }
+
+        return ( new $class( $booking ) )->for( NotificationAudience::Provider );
     }
 
     /**
@@ -204,6 +339,25 @@ class NotificationService
         $log->markSent();
 
         return $log;
+    }
+
+    /**
+     * Gets what the notification log should record for a provider recipient.
+     *
+     * An internal reference — the provider model and its key — rather than the
+     * address, so that erasing a booking's customer data does not blank the
+     * record of which provider was told about it. The reasoning is the same one
+     * {@see Channels\DatabaseChannel::recipient()} spells out for staff.
+     *
+     * @since 1.0.0
+     *
+     * @param  ServiceProvider  $provider  The provider being notified.
+     *
+     * @return string The provider reference, as the log should record it.
+     */
+    protected function providerRecipient( ServiceProvider $provider ): string
+    {
+        return sprintf( '%s:%s', ServiceProvider::class, (string) $provider->getKey() );
     }
 
     /**

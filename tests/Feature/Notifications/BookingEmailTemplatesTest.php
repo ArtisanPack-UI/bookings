@@ -70,9 +70,13 @@ function templateBooking( array $attributes = [] ): Booking
  */
 function renderEmail( NotificationType $type, NotificationAudience $audience, Booking $booking ): string
 {
-    $notification = app( NotificationService::class )->notificationFor( $type, $booking )->for( $audience );
+    $service = app( NotificationService::class );
 
-    return (string) $notification->toMail( null )->render();
+    $notification = in_array( $type, [ NotificationType::ProviderAssigned, NotificationType::ProviderUnassigned ], true )
+        ? $service->notificationForProvider( $type, $booking )
+        : $service->notificationFor( $type, $booking );
+
+    return (string) $notification->for( $audience )->toMail( null )->render();
 }
 
 /**
@@ -402,9 +406,26 @@ describe( 'sending the confirmation', function (): void {
 } );
 
 dataset( 'lifecycleMessages', static function (): iterable {
-    foreach ( NotificationType::cases() as $type ) {
-        foreach ( NotificationAudience::cases() as $audience ) {
+    // Customer lifecycle messages are written for the customer and the staff
+    // (admin) reader; the two provider-facing messages are written only for the
+    // provider. Pairing a customer type with the provider audience — or a
+    // provider type with the customer audience — has no template and no meaning,
+    // so the matrix is built from the audiences each type actually renders for.
+    $customerAudiences = [ NotificationAudience::Customer, NotificationAudience::Admin ];
+
+    foreach ( [
+        NotificationType::Confirmation,
+        NotificationType::Reminder,
+        NotificationType::Cancellation,
+        NotificationType::Reschedule,
+        NotificationType::NoShow,
+    ] as $type ) {
+        foreach ( $customerAudiences as $audience ) {
             yield $type->value . ' / ' . $audience->value => [ $type, $audience ];
         }
+    }
+
+    foreach ( [ NotificationType::ProviderAssigned, NotificationType::ProviderUnassigned ] as $type ) {
+        yield $type->value . ' / ' . NotificationAudience::Provider->value => [ $type, NotificationAudience::Provider ];
     }
 } );
