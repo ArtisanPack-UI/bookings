@@ -18,6 +18,7 @@ namespace ArtisanPackUI\Bookings\Notifications;
 use ArtisanPackUI\Bookings\Enums\NotificationAudience;
 use ArtisanPackUI\Bookings\Enums\NotificationType;
 use ArtisanPackUI\Bookings\Models\Booking;
+use ArtisanPackUI\Bookings\Models\ServiceProvider;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
@@ -75,6 +76,25 @@ abstract class BookingNotification extends Notification
      * @var NotificationAudience
      */
     protected NotificationAudience $audience = NotificationAudience::Customer;
+
+    /**
+     * The provider this copy is addressed to, when it is not the booking's own.
+     *
+     * A provider-facing message is sent to whichever provider it concerns, and
+     * that is not always the one on the booking: the "removed" notice goes to the
+     * provider a booking has just moved *away* from, who is gone from the row by
+     * the time it is built. Held here so the times render in that provider's own
+     * working zone rather than the new provider's — the booking's own provider
+     * accessor would otherwise show the reader an appointment in a zone that is
+     * not theirs, under a label saying it is.
+     *
+     * Null for the customer and admin copies, which read the booking's provider.
+     *
+     * @since 1.0.0
+     *
+     * @var ServiceProvider|null
+     */
+    protected ?ServiceProvider $audienceProvider = null;
 
     /**
      * The plain manage token this message was built with, once taken.
@@ -174,6 +194,29 @@ abstract class BookingNotification extends Notification
     public function audience(): NotificationAudience
     {
         return $this->audience;
+    }
+
+    /**
+     * Gets a copy of this notification addressed to a specific provider.
+     *
+     * Returns a new instance rather than mutating this one, for the same reason
+     * {@see self::for()} does. The provider only changes which zone the staff
+     * copy's times are rendered in — a "removed" notice shown to the provider a
+     * booking has left, in their zone rather than the new provider's. It has no
+     * effect on a customer copy, whose times are the customer's own.
+     *
+     * @since 1.0.0
+     *
+     * @param  ServiceProvider  $provider  The provider the copy is addressed to.
+     *
+     * @return static The notification, addressed to that provider.
+     */
+    public function forProvider( ServiceProvider $provider ): static
+    {
+        $copy                   = clone $this;
+        $copy->audienceProvider = $provider;
+
+        return $copy;
     }
 
     /**
@@ -365,6 +408,25 @@ abstract class BookingNotification extends Notification
     }
 
     /**
+     * Determines whether this copy is written for a member of staff.
+     *
+     * The provider and the admin are both staff readers: they get the customer's
+     * contact details, the appointment shown in the provider's working zone, and
+     * no manage link. Only the customer's own copy differs on all three. Reading
+     * the distinction through this one method keeps a later audience — a second
+     * staff role, a partner integration — from having to be threaded through
+     * every branch by hand.
+     *
+     * @since 1.0.0
+     *
+     * @return bool True when this copy is for staff rather than the customer.
+     */
+    protected function isStaffAudience(): bool
+    {
+        return NotificationAudience::Customer !== $this->audience;
+    }
+
+    /**
      * Gets the subject line for this audience, before the filter runs.
      *
      * @since 1.0.0
@@ -373,9 +435,11 @@ abstract class BookingNotification extends Notification
      */
     protected function unfilteredSubject(): string
     {
-        return NotificationAudience::Admin === $this->audience
-            ? $this->adminSubject()
-            : $this->defaultSubject();
+        return match ( $this->audience ) {
+            NotificationAudience::Admin    => $this->adminSubject(),
+            NotificationAudience::Provider => $this->providerSubject(),
+            default                        => $this->defaultSubject(),
+        };
     }
 
     /**
@@ -387,9 +451,11 @@ abstract class BookingNotification extends Notification
      */
     protected function currentOpeningLine(): string
     {
-        return NotificationAudience::Admin === $this->audience
-            ? $this->adminOpeningLine()
-            : $this->openingLine();
+        return match ( $this->audience ) {
+            NotificationAudience::Admin    => $this->adminOpeningLine(),
+            NotificationAudience::Provider => $this->providerOpeningLine(),
+            default                        => $this->openingLine(),
+        };
     }
 
     /**
@@ -440,6 +506,36 @@ abstract class BookingNotification extends Notification
     }
 
     /**
+     * Gets the subject line the provider's copy would use unfiltered.
+     *
+     * Falls through to the admin wording, which already speaks to a staff reader
+     * about somebody else's booking. A message written for the provider — one
+     * that has just gained or lost this appointment — overrides it; a lifecycle
+     * message that has no provider variant keeps the staff subject rather than
+     * addressing the provider as though they were the customer.
+     *
+     * @since 1.0.0
+     *
+     * @return string The provider subject.
+     */
+    protected function providerSubject(): string
+    {
+        return $this->adminSubject();
+    }
+
+    /**
+     * Gets the first line of the provider's copy.
+     *
+     * @since 1.0.0
+     *
+     * @return string The provider opening line.
+     */
+    protected function providerOpeningLine(): string
+    {
+        return $this->adminOpeningLine();
+    }
+
+    /**
      * Gets the salutation this copy opens with.
      *
      * @since 1.0.0
@@ -448,7 +544,7 @@ abstract class BookingNotification extends Notification
      */
     protected function greeting(): string
     {
-        if ( NotificationAudience::Admin === $this->audience ) {
+        if ( $this->isStaffAudience() ) {
             return __( 'Hello,' );
         }
 
@@ -495,7 +591,7 @@ abstract class BookingNotification extends Notification
             $rows[ (string) __( 'With' ) ] = (string) $provider->name;
         }
 
-        if ( NotificationAudience::Admin !== $this->audience ) {
+        if ( ! $this->isStaffAudience() ) {
             return $rows;
         }
 
@@ -545,9 +641,23 @@ abstract class BookingNotification extends Notification
      */
     protected function localStart(): Carbon
     {
-        return NotificationAudience::Admin === $this->audience
-            ? $this->booking->startTimeForProvider()
-            : $this->booking->startTimeForCustomer();
+        if ( ! $this->isStaffAudience() ) {
+            return $this->booking->startTimeForCustomer();
+        }
+
+        $provider = $this->audienceProvider;
+
+        if ( null === $provider ) {
+            return $this->booking->startTimeForProvider();
+        }
+
+        $timezone = $provider->timezone;
+
+        if ( ! is_string( $timezone ) || '' === $timezone ) {
+            $timezone = (string) config( 'app.timezone', 'UTC' );
+        }
+
+        return $this->booking->start_time->copy()->setTimezone( $timezone );
     }
 
     /**

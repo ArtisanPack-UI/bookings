@@ -73,7 +73,7 @@ return new class extends Migration {
             $table->string( 'channel', 32 );
             $table->enum(
                 'type',
-                [ 'confirmation', 'reminder', 'cancellation', 'reschedule', 'no_show' ],
+                [ 'confirmation', 'reminder', 'cancellation', 'reschedule', 'no_show', 'provider_assigned', 'provider_unassigned' ],
             );
             $table->string( 'recipient' );
             $table->timestamp( 'scheduled_for' )->nullable();

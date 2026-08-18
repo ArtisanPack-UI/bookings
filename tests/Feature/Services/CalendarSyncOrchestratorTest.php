@@ -9,6 +9,7 @@ use ArtisanPackUI\Bookings\Events\CalendarConnectionDisabled;
 use ArtisanPackUI\Bookings\Events\CalendarSynced;
 use ArtisanPackUI\Bookings\Events\CalendarSyncFailed;
 use ArtisanPackUI\Bookings\Exceptions\CalendarSyncException;
+use ArtisanPackUI\Bookings\Jobs\RemoveBookingFromCalendars;
 use ArtisanPackUI\Bookings\Jobs\SyncBookingToCalendars;
 use ArtisanPackUI\Bookings\Models\Booking;
 use ArtisanPackUI\Bookings\Models\CalendarConnection;
@@ -80,6 +81,78 @@ function recordingCalendarDriver(): CalendarSyncDriver
 
         public function deleteEvent( CalendarConnection $connection, string $externalEventId ): void
         {
+        }
+
+        public function busyPeriods( CalendarConnection $connection, TimeRange $window ): array
+        {
+            return [];
+        }
+    };
+}
+
+/**
+ * Builds a driver that records the events it is asked to delete.
+ */
+function deletingCalendarDriver(): CalendarSyncDriver
+{
+    return new class() implements CalendarSyncDriver {
+        public array $deleted = [];
+
+        public function driver(): CalendarDriver
+        {
+            return CalendarDriver::Google;
+        }
+
+        public function createEvent( CalendarConnection $connection, Booking $booking ): string
+        {
+            return 'evt-created';
+        }
+
+        public function updateEvent( CalendarConnection $connection, Booking $booking, string $externalEventId ): string
+        {
+            return $externalEventId;
+        }
+
+        public function deleteEvent( CalendarConnection $connection, string $externalEventId ): void
+        {
+            $this->deleted[] = $externalEventId;
+        }
+
+        public function busyPeriods( CalendarConnection $connection, TimeRange $window ): array
+        {
+            return [];
+        }
+    };
+}
+
+/**
+ * Builds a driver whose deletes always throw, counting the attempts it takes.
+ */
+function throwingDeleteCalendarDriver(): CalendarSyncDriver
+{
+    return new class() implements CalendarSyncDriver {
+        public int $attempts = 0;
+
+        public function driver(): CalendarDriver
+        {
+            return CalendarDriver::Google;
+        }
+
+        public function createEvent( CalendarConnection $connection, Booking $booking ): string
+        {
+            return 'evt-created';
+        }
+
+        public function updateEvent( CalendarConnection $connection, Booking $booking, string $externalEventId ): string
+        {
+            return $externalEventId;
+        }
+
+        public function deleteEvent( CalendarConnection $connection, string $externalEventId ): void
+        {
+            $this->attempts++;
+
+            throw new CalendarSyncException( 'Google returned 503.' );
         }
 
         public function busyPeriods( CalendarConnection $connection, TimeRange $window ): array
@@ -406,5 +479,148 @@ describe( 'the pushing hook and the retry schedule', function (): void {
 
         expect( $count )->toBe( 1 )
             ->and( $driver->attempts )->toBe( 3 );
+    } );
+} );
+
+describe( 'unsyncing a booking from a former provider', function (): void {
+    beforeEach( function (): void {
+        Queue::fake();
+        registerCalendarDriver( recordingCalendarDriver() );
+    } );
+
+    it( 'queues one removal per calendar the previous provider had the booking on', function (): void {
+        $previous = ServiceProvider::factory()->create();
+        $current  = ServiceProvider::factory()->create();
+
+        $connection = CalendarConnection::factory()->google()->for( $previous, 'provider' )->create();
+
+        $booking = Booking::factory()->for( $current, 'provider' )->create();
+        CalendarEvent::factory()->create( [
+            'booking_id'        => $booking->getKey(),
+            'connection_id'     => $connection->getKey(),
+            'external_event_id' => 'evt-previous',
+        ] );
+
+        calendarSyncOrchestrator()->unsync( $booking, $previous->getKey() );
+
+        Queue::assertPushed( RemoveBookingFromCalendars::class, 1 );
+        Queue::assertPushed(
+            RemoveBookingFromCalendars::class,
+            static fn ( RemoveBookingFromCalendars $job ): bool => $job->bookingId === $booking->getKey()
+                && $job->connectionId === $connection->getKey(),
+        );
+    } );
+
+    it( 'ignores calendars that belong to a different provider', function (): void {
+        $previous = ServiceProvider::factory()->create();
+        $other    = ServiceProvider::factory()->create();
+        $current  = ServiceProvider::factory()->create();
+
+        $previousConnection = CalendarConnection::factory()->google()->for( $previous, 'provider' )->create();
+        $otherConnection    = CalendarConnection::factory()->google()->for( $other, 'provider' )->create();
+
+        $booking = Booking::factory()->for( $current, 'provider' )->create();
+        CalendarEvent::factory()->create( [
+            'booking_id'    => $booking->getKey(),
+            'connection_id' => $previousConnection->getKey(),
+        ] );
+        CalendarEvent::factory()->create( [
+            'booking_id'    => $booking->getKey(),
+            'connection_id' => $otherConnection->getKey(),
+        ] );
+
+        calendarSyncOrchestrator()->unsync( $booking, $previous->getKey() );
+
+        Queue::assertPushed( RemoveBookingFromCalendars::class, 1 );
+        Queue::assertPushed(
+            RemoveBookingFromCalendars::class,
+            static fn ( RemoveBookingFromCalendars $job ): bool => $job->connectionId === $previousConnection->getKey(),
+        );
+    } );
+
+    it( 'queues nothing when the previous provider had the booking on no calendar', function (): void {
+        $previous = ServiceProvider::factory()->create();
+        $current  = ServiceProvider::factory()->create();
+
+        $booking = Booking::factory()->for( $current, 'provider' )->create();
+
+        calendarSyncOrchestrator()->unsync( $booking, $previous->getKey() );
+
+        Queue::assertNothingPushed();
+    } );
+} );
+
+describe( 'removing a booking from one connection', function (): void {
+    it( 'deletes the external event and drops the ledger row', function (): void {
+        $driver = deletingCalendarDriver();
+        registerCalendarDriver( $driver );
+
+        $connection = CalendarConnection::factory()->google()->create();
+        $booking    = Booking::factory()->for( $connection->provider, 'provider' )->create();
+        CalendarEvent::factory()->create( [
+            'booking_id'        => $booking->getKey(),
+            'connection_id'     => $connection->getKey(),
+            'external_event_id' => 'evt-remove',
+        ] );
+
+        calendarSyncOrchestrator()->remove( $booking->getKey(), $connection->getKey() );
+
+        expect( $driver->deleted )->toBe( [ 'evt-remove' ] )
+            ->and( CalendarEvent::query()->count() )->toBe( 0 );
+    } );
+
+    it( 'is a no-op when there is no ledger row for the pair', function (): void {
+        $driver = deletingCalendarDriver();
+        registerCalendarDriver( $driver );
+
+        $connection = CalendarConnection::factory()->google()->create();
+        $booking    = Booking::factory()->for( $connection->provider, 'provider' )->create();
+
+        calendarSyncOrchestrator()->remove( $booking->getKey(), $connection->getKey() );
+
+        expect( $driver->deleted )->toBe( [] );
+    } );
+
+    it( 'is a no-op when the connection no longer exists', function (): void {
+        $booking = Booking::factory()->create();
+
+        calendarSyncOrchestrator()->remove( $booking->getKey(), 999999 );
+
+        expect( CalendarEvent::query()->count() )->toBe( 0 );
+    } );
+
+    it( 'leaves the ledger row in place when the driver is not installed', function (): void {
+        removeAllFilters( 'ap.bookings.calendarSync.providers' );
+
+        $connection = CalendarConnection::factory()->google()->create();
+        $booking    = Booking::factory()->for( $connection->provider, 'provider' )->create();
+        CalendarEvent::factory()->create( [
+            'booking_id'        => $booking->getKey(),
+            'connection_id'     => $connection->getKey(),
+            'external_event_id' => 'evt-orphan',
+        ] );
+
+        calendarSyncOrchestrator()->remove( $booking->getKey(), $connection->getKey() );
+
+        expect( CalendarEvent::query()->count() )->toBe( 1 );
+    } );
+
+    it( 'keeps the ledger row when the delete fails, so a retry still has it', function (): void {
+        $driver = throwingDeleteCalendarDriver();
+        registerCalendarDriver( $driver );
+
+        $connection = CalendarConnection::factory()->google()->create();
+        $booking    = Booking::factory()->for( $connection->provider, 'provider' )->create();
+        CalendarEvent::factory()->create( [
+            'booking_id'        => $booking->getKey(),
+            'connection_id'     => $connection->getKey(),
+            'external_event_id' => 'evt-remove',
+        ] );
+
+        expect( fn () => calendarSyncOrchestrator()->remove( $booking->getKey(), $connection->getKey() ) )
+            ->toThrow( CalendarSyncException::class );
+
+        expect( CalendarEvent::query()->count() )->toBe( 1 )
+            ->and( $driver->attempts )->toBe( 1 );
     } );
 } );
