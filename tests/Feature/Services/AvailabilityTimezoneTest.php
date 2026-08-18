@@ -55,17 +55,52 @@ it( 'offers no slot at a local time the clocks skipped', function (): void {
         ] );
 } );
 
-it( 'offers a repeated local hour once when the clocks go back', function (): void {
-    // 01:00–01:59 happens twice in Chicago on 2026-11-01. A slot is a clock
-    // face, so it is offered once — a customer picking "01:30" must not be shown
-    // two of them and left to guess which is which.
+it( 'offers both occurrences of a repeated local hour when the clocks go back', function (): void {
+    // 01:00–01:59 happens twice in Chicago on 2026-11-01, and both occurrences
+    // are real, elapsed, bookable time. Walking clock faces would generate only
+    // the first and leave the second — a genuine hour of availability —
+    // unbookable once a year. Two 01:00 slots come back, at the two distinct
+    // instants the hour is, one an hour of real time after the other.
     [ $service, $provider ] = serviceWorkedEveryDayIn( 'America/Chicago', '01:00', '03:00' );
 
     $slots = availability()->resolve( $service, $provider, localDayWindow( '2026-11-01', 'America/Chicago' ) );
 
-    expect( localStarts( $slots, 'America/Chicago' ) )->toBe( [ '01:00', '02:00' ] )
-        ->and( utcStarts( $slots ) )->toHaveCount( 2 )
-        ->and( utcStarts( $slots )[ 0 ] )->not->toBe( utcStarts( $slots )[ 1 ] );
+    expect( localStarts( $slots, 'America/Chicago' ) )->toBe( [ '01:00', '01:00', '02:00' ] )
+        ->and( utcStarts( $slots ) )->toBe( [
+            '2026-11-01 06:00',
+            '2026-11-01 07:00',
+            '2026-11-01 08:00',
+        ] );
+} );
+
+it( 'counts the fall-back day as twenty-five hours of candidates', function (): void {
+    // The reproduction from the report: a provider open 00:00–06:00 on the US
+    // fall-back day. Walking clock faces returned six slots because the repeated
+    // 01:00 hour was generated once; walking elapsed time returns seven, with the
+    // repeated hour offered at both of its distinct instants.
+    [ $service, $provider ] = serviceWorkedEveryDayIn( 'America/Chicago', '00:00', '06:00' );
+
+    $slots = availability()->resolve( $service, $provider, localDayWindow( '2026-11-01', 'America/Chicago' ) );
+
+    expect( $slots )->toHaveCount( 7 )
+        ->and( localStarts( $slots, 'America/Chicago' ) )->toBe( [
+            '00:00',
+            '01:00',
+            '01:00',
+            '02:00',
+            '03:00',
+            '04:00',
+            '05:00',
+        ] )
+        ->and( utcStarts( $slots ) )->toBe( [
+            '2026-11-01 05:00',
+            '2026-11-01 06:00',
+            '2026-11-01 07:00',
+            '2026-11-01 08:00',
+            '2026-11-01 09:00',
+            '2026-11-01 10:00',
+            '2026-11-01 11:00',
+        ] );
 } );
 
 it( 'moves the other way in the southern hemisphere', function (): void {
