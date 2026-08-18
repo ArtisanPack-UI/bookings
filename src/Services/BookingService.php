@@ -35,8 +35,11 @@ use ArtisanPackUI\Bookings\Models\Service;
 use ArtisanPackUI\Bookings\Models\ServiceProvider;
 use ArtisanPackUI\Bookings\Support\Slot;
 use ArtisanPackUI\Bookings\Support\TimeRange;
+use ArtisanPackUI\Core\MultiTenancy\SiteContext;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
+use Closure;
+use Illuminate\Container\Container;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Database\ConnectionInterface;
@@ -156,56 +159,16 @@ class BookingService
     {
         $service = $this->resolveService( $attributes );
         $start   = $this->resolveStart( $attributes );
-        $version = (int) $service->intake_schema_version;
 
-        [ $candidates, $assignment ] = $this->candidateProviders( $service, $attributes );
-
-        $base                = $this->baseAttributes( $attributes, $service, $start, $version, $assignment );
-        $base['intake_data'] = $this->intake->validate(
+        // The service the caller resolved — through `acrossAllSites()` or a
+        // per-site loop — is the authority for the booking's site, not whichever
+        // one happens to be ambient. Pinning it before anything reads or writes
+        // means the provider lookup, the availability re-read, and the insert's
+        // `site_id` stamp all speak of the service's tenant. {@see self::inSiteOf()}.
+        return $this->inSiteOf(
             $service,
-            $version,
-            $this->arrayValue( $attributes['intake_data'] ?? [] ),
+            fn (): Booking => $this->place( $service, $start, $attributes, $customer ),
         );
-
-        $available = $this->filterAvailableProviders(
-            $this->providersFreeAt( $service, $candidates, $start ),
-            $service,
-            $start,
-        );
-
-        $draft     = ( new Booking() )->forceFill( $base );
-        $requested = new Slot( new TimeRange( $start, $start->addMinutes( max( 1, (int) $service->duration ) ) ) );
-        $booking   = null;
-
-        while ( [] !== $available && null === $booking ) {
-            $provider = $this->chooseProvider( $available, $service, $requested, $draft, $assignment );
-
-            if ( null === $provider ) {
-                break;
-            }
-
-            $booking   = $this->attempt( $service, $provider, $start, $base, $customer, $assignment );
-            $available = $this->without( $available, $provider );
-        }
-
-        if ( null === $booking ) {
-            throw SlotUnavailableException::for( $service, $start );
-        }
-
-        doAction( 'ap.bookings.created', $booking );
-
-        BookingRequested::dispatch( $booking );
-
-        // Re-read rather than trust the instance. `BookingRequested` is where a
-        // listener vetoes a booking, and it does that by cancelling it — on
-        // whatever instance it loaded, which is not this one.
-        $booking->refresh();
-
-        if ( $this->confirmsAutomatically() && BookingStatus::Requested === $booking->status ) {
-            $this->confirm( $booking );
-        }
-
-        return $booking;
     }
 
     /**
@@ -277,8 +240,6 @@ class BookingService
         $minutes  = max( 1, $previous->minutes() );
         $end      = $start->addMinutes( $minutes );
 
-        doAction( 'ap.bookings.rescheduling', $booking, $start );
-
         $providerId = null === $booking->provider_id ? null : (int) $booking->provider_id;
 
         $move = function () use ( $booking, $start, $end, $providerId ): ?Booking {
@@ -304,19 +265,33 @@ class BookingService
             return $booking;
         };
 
-        $moved = null === $providerId
-            ? $this->connection()->transaction( $move )
-            : $this->lock->withSlotLock( $providerId, $start, $this->providerTimezone( $booking ), $move );
+        // The whole announced lifecycle runs under the booking's own site, not
+        // the ambient one — parity with {@see self::place()}. That is the tenant
+        // its clash check has to read (a reschedule driven from a mismatched
+        // context — a per-site reminder command, a maintenance sweep under
+        // `acrossAllSites()` — would otherwise read another tenant's diary and
+        // miss a real double booking), and the tenant a `rescheduling` or
+        // `rescheduled` listener sees when it reads the booking's site-scoped
+        // service or writes a site-scoped row of its own. The failure throw is
+        // inside it too: it names the service, which would lazy-load as null
+        // read from the wrong site. {@see self::inSiteOf()}.
+        return $this->inSiteOf( $booking, function () use ( $booking, $providerId, $start, $previous, $actor, $move ): Booking {
+            doAction( 'ap.bookings.rescheduling', $booking, $start );
 
-        if ( null === $moved ) {
-            throw SlotUnavailableException::for( $booking->service, $start );
-        }
+            $moved = null === $providerId
+                ? $this->connection()->transaction( $move )
+                : $this->lock->withSlotLock( $providerId, $start, $this->providerTimezone( $booking ), $move );
 
-        doAction( 'ap.bookings.rescheduled', $booking, $previous->start );
+            if ( null === $moved ) {
+                throw SlotUnavailableException::for( $booking->service, $start );
+            }
 
-        BookingRescheduled::dispatch( $booking, $previous, $actor );
+            doAction( 'ap.bookings.rescheduled', $moved, $previous->start );
 
-        return $booking;
+            BookingRescheduled::dispatch( $moved, $previous, $actor );
+
+            return $moved;
+        } );
     }
 
     /**
@@ -534,6 +509,86 @@ class BookingService
         doAction( 'ap.bookings.noShow', $booking );
 
         BookingNoShow::dispatch( $booking, $actor );
+
+        return $booking;
+    }
+
+    /**
+     * Places a booking against a service whose site is already pinned.
+     *
+     * The body of {@see self::create()} once the service and start time are
+     * resolved, split out so the whole of it runs inside the site pin rather
+     * than only its final write.
+     *
+     * @since 1.0.0
+     *
+     * @param  Service  $service  The service being booked.
+     * @param  CarbonImmutable  $start  The instant the booking begins.
+     * @param  array<string, mixed>  $attributes  The booking to create.
+     * @param  Authenticatable|null  $customer  The signed-in customer, if any.
+     *
+     * @throws SlotUnavailableException When no provider could take the slot.
+     * @throws UnexpectedValueException When a subscriber to one of the
+     *                                  `ap.bookings.*` filters returns something
+     *                                  the filter cannot use.
+     *
+     * @return Booking The booking, confirmed unless a listener cancelled it or
+     *                 automatic confirmation is switched off.
+     */
+    protected function place(
+        Service $service,
+        CarbonImmutable $start,
+        array $attributes,
+        ?Authenticatable $customer,
+    ): Booking {
+        $version = (int) $service->intake_schema_version;
+
+        [ $candidates, $assignment ] = $this->candidateProviders( $service, $attributes );
+
+        $base                = $this->baseAttributes( $attributes, $service, $start, $version, $assignment );
+        $base['intake_data'] = $this->intake->validate(
+            $service,
+            $version,
+            $this->arrayValue( $attributes['intake_data'] ?? [] ),
+        );
+
+        $available = $this->filterAvailableProviders(
+            $this->providersFreeAt( $service, $candidates, $start ),
+            $service,
+            $start,
+        );
+
+        $draft     = ( new Booking() )->forceFill( $base );
+        $requested = new Slot( new TimeRange( $start, $start->addMinutes( max( 1, (int) $service->duration ) ) ) );
+        $booking   = null;
+
+        while ( [] !== $available && null === $booking ) {
+            $provider = $this->chooseProvider( $available, $service, $requested, $draft, $assignment );
+
+            if ( null === $provider ) {
+                break;
+            }
+
+            $booking   = $this->attempt( $service, $provider, $start, $base, $customer, $assignment );
+            $available = $this->without( $available, $provider );
+        }
+
+        if ( null === $booking ) {
+            throw SlotUnavailableException::for( $service, $start );
+        }
+
+        doAction( 'ap.bookings.created', $booking );
+
+        BookingRequested::dispatch( $booking );
+
+        // Re-read rather than trust the instance. `BookingRequested` is where a
+        // listener vetoes a booking, and it does that by cancelling it — on
+        // whatever instance it loaded, which is not this one.
+        $booking->refresh();
+
+        if ( $this->confirmsAutomatically() && BookingStatus::Requested === $booking->status ) {
+            $this->confirm( $booking );
+        }
 
         return $booking;
     }
@@ -1190,6 +1245,58 @@ class BookingService
     protected function arrayValue( mixed $value ): array
     {
         return is_array( $value ) ? $value : [];
+    }
+
+    /**
+     * Runs a piece of work in the site the given record belongs to.
+     *
+     * A booking is written against a service and read back against a provider's
+     * diary, each of which is site-scoped on the way in and site-stamped on the
+     * way out. Ordinarily the ambient site and the record's site are the same,
+     * because the record was loaded through the scope. The two paths the package
+     * explicitly supports for crossing sites break that: a console command
+     * looping with `SiteContext::forSite()`, and a maintenance query using
+     * `acrossAllSites()`.
+     *
+     * Left alone, a write under a mismatched ambient site does one of two
+     * things, both bad. It stamps the row with the ambient site — putting a
+     * booking carrying this customer's name, email, and phone under a tenant
+     * they do not belong to, and hiding it from the tenant that owns the
+     * service. Or it fails halfway, because a provider or availability the write
+     * needs is invisible from where it is standing.
+     *
+     * Pinning the record's own site for the duration removes both. A null site —
+     * every row on a single-tenant installation — pins "no site", which is
+     * exactly the inert state those installations already run in. `forSite()`
+     * restores the previous context afterwards, nests safely, and is
+     * exception-safe. Mirrors {@see SeriesService::inSiteOf()}.
+     *
+     * @since 1.0.0
+     *
+     * @param  Booking|Service  $owner  The record whose site to work in. Both
+     *                                  carry `site_id` through `BelongsToSite`,
+     *                                  which is what `getSiteIdColumn()` needs —
+     *                                  a bare `Model` could not answer it.
+     * @param  Closure  $callback  The work to do.
+     *
+     * @return mixed Whatever the callback returns.
+     */
+    protected function inSiteOf( Booking|Service $owner, Closure $callback ): mixed
+    {
+        $container = Container::getInstance();
+
+        // Asked rather than assumed, for the same reason the site scope asks:
+        // an application that never registered core's provider should get an
+        // inert no-op here instead of a failure building a SiteContext out of
+        // nothing.
+        if ( ! $container->bound( SiteContext::class ) ) {
+            return $callback();
+        }
+
+        return $container->make( SiteContext::class )->forSite(
+            $owner->getAttribute( $owner->getSiteIdColumn() ),
+            static fn (): mixed => $callback(),
+        );
     }
 
     /**
