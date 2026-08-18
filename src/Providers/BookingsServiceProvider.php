@@ -106,6 +106,7 @@ use ArtisanPackUI\Google\Facades\Google;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\View\View as ViewContract;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\View;
@@ -894,6 +895,20 @@ class BookingsServiceProvider extends ServiceProvider
      * What it does not cover is a write that bypasses the models entirely, which
      * is what the TTL on each entry is for.
      *
+     * Every stamp move is deferred to {@see DB::afterCommit()} so that it lands
+     * on the far side of the transaction the write ran in. A booking write is
+     * wrapped in a transaction by `BookingService::attempt()`, and bumping the
+     * stamp inside it opens a window where a concurrent read sees the new stamp,
+     * recomputes without the still-uncommitted row, and caches that stale answer
+     * under the new stamp — where nothing dislodges it until the TTL expires.
+     * Outside a transaction, `afterCommit()` runs the move immediately, so the
+     * listeners not written from inside one behave exactly as before.
+     *
+     * The ids to invalidate are read *before* the deferral, while the model
+     * still carries the original attributes a reassignment's previous owner is
+     * found through — {@see self::touchedIds()} leans on those, and Eloquent
+     * syncs them away the moment the `saved` event returns.
+     *
      * @since 1.0.0
      *
      * @return void
@@ -903,9 +918,13 @@ class BookingsServiceProvider extends ServiceProvider
         $availability = fn (): AvailabilityService => $this->app->make( AvailabilityService::class );
 
         $forProvider = static function ( Model $model ) use ( $availability ): void {
-            foreach ( self::touchedIds( $model, 'provider_id' ) as $providerId ) {
-                $availability()->invalidateProvider( $providerId );
-            }
+            $providerIds = self::touchedIds( $model, 'provider_id' );
+
+            DB::afterCommit( static function () use ( $availability, $providerIds ): void {
+                foreach ( $providerIds as $providerId ) {
+                    $availability()->invalidateProvider( $providerId );
+                }
+            } );
         };
 
         foreach ( [ AvailabilitySchedule::class, AvailabilityOverride::class ] as $model ) {
@@ -925,32 +944,41 @@ class BookingsServiceProvider extends ServiceProvider
             // ones whose cached days were computed before it existed — and a row
             // that has *stopped* being site-wide has to reopen all of them, which
             // bumping the one service it now names would not do.
-            if ( self::wasEverNull( $blackout, 'service_id' ) ) {
-                $availability()->invalidateEverything();
-            }
+            $wasEverSiteWide = self::wasEverNull( $blackout, 'service_id' );
 
-            foreach ( $touched as $serviceId ) {
-                $availability()->invalidateService( $serviceId );
-            }
+            DB::afterCommit( static function () use ( $availability, $touched, $wasEverSiteWide ): void {
+                if ( $wasEverSiteWide ) {
+                    $availability()->invalidateEverything();
+                }
+
+                foreach ( $touched as $serviceId ) {
+                    $availability()->invalidateService( $serviceId );
+                }
+            } );
         };
 
         ServiceBlackoutDate::saved( $forBlackout );
         ServiceBlackoutDate::deleted( $forBlackout );
 
         $forBusyBlock = static function ( CalendarBusyBlock $block ) use ( $availability ): void {
-            foreach ( self::touchedIds( $block, 'connection_id' ) as $connectionId ) {
-                // Read across sites deliberately: a sync job writing busy blocks
-                // has no site in context, and a scoped lookup would find no
-                // connection and quietly leave the provider's cache stale.
-                $providerId = CalendarConnection::query()
-                    ->acrossAllSites()
-                    ->whereKey( $connectionId )
-                    ->value( 'provider_id' );
+            $connectionIds = self::touchedIds( $block, 'connection_id' );
 
-                if ( null !== $providerId ) {
-                    $availability()->invalidateProvider( (int) $providerId );
+            DB::afterCommit( static function () use ( $availability, $connectionIds ): void {
+                foreach ( $connectionIds as $connectionId ) {
+                    // Read across sites deliberately: a sync job writing busy
+                    // blocks has no site in context, and a scoped lookup would
+                    // find no connection and quietly leave the provider's cache
+                    // stale.
+                    $providerId = CalendarConnection::query()
+                        ->acrossAllSites()
+                        ->whereKey( $connectionId )
+                        ->value( 'provider_id' );
+
+                    if ( null !== $providerId ) {
+                        $availability()->invalidateProvider( (int) $providerId );
+                    }
                 }
-            }
+            } );
         };
 
         CalendarBusyBlock::saved( $forBusyBlock );
@@ -962,14 +990,22 @@ class BookingsServiceProvider extends ServiceProvider
         // firmly. An admin halving a service's duration and watching the widget
         // keep the old grid is the same staleness bug wearing a different hat.
         $forService = static function ( Service $service ) use ( $availability ): void {
-            $availability()->invalidateService( (int) $service->getKey() );
+            $serviceId = (int) $service->getKey();
+
+            DB::afterCommit( static function () use ( $availability, $serviceId ): void {
+                $availability()->invalidateService( $serviceId );
+            } );
         };
 
         Service::saved( $forService );
         Service::deleted( $forService );
 
         $forServiceProvider = static function ( ServiceProviderModel $provider ) use ( $availability ): void {
-            $availability()->invalidateProvider( (int) $provider->getKey() );
+            $providerId = (int) $provider->getKey();
+
+            DB::afterCommit( static function () use ( $availability, $providerId ): void {
+                $availability()->invalidateProvider( $providerId );
+            } );
         };
 
         ServiceProviderModel::saved( $forServiceProvider );
@@ -983,13 +1019,18 @@ class BookingsServiceProvider extends ServiceProvider
         // event on any Laravel version this package supports, so a custom
         // duration set that way is covered by the TTL rather than by this.
         $forAttachment = static function ( ServiceProviderService $attachment ) use ( $availability ): void {
-            foreach ( self::touchedIds( $attachment, 'service_id' ) as $serviceId ) {
-                $availability()->invalidateService( $serviceId );
-            }
+            $serviceIds  = self::touchedIds( $attachment, 'service_id' );
+            $providerIds = self::touchedIds( $attachment, 'provider_id' );
 
-            foreach ( self::touchedIds( $attachment, 'provider_id' ) as $providerId ) {
-                $availability()->invalidateProvider( $providerId );
-            }
+            DB::afterCommit( static function () use ( $availability, $serviceIds, $providerIds ): void {
+                foreach ( $serviceIds as $serviceId ) {
+                    $availability()->invalidateService( $serviceId );
+                }
+
+                foreach ( $providerIds as $providerId ) {
+                    $availability()->invalidateProvider( $providerId );
+                }
+            } );
         };
 
         ServiceProviderService::saved( $forAttachment );

@@ -15,6 +15,8 @@ use ArtisanPackUI\Bookings\Support\Slot;
 use ArtisanPackUI\Bookings\Support\TimeRange;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Tests\Concerns\TestsWithSqlite;
 
 uses( TestsWithSqlite::class, RefreshDatabase::class );
@@ -719,6 +721,50 @@ describe( 'cache invalidation on rows that move', function (): void {
         $connection->update( [ 'sync_mode' => CalendarSyncMode::TwoWay ] );
 
         expect( availability()->resolve( $this->service, $this->provider, $this->window ) )->toHaveCount( 6 );
+    } );
+} );
+
+describe( 'stamp moves wait for the write to commit', function (): void {
+    it( 'holds a provider stamp still until the booking transaction commits', function (): void {
+        $stampKey = 'artisanpack.bookings.availability.stamp.provider.' . $this->provider->id;
+
+        // Warm the day so there is a cached answer riding on the stamp below.
+        availability()->resolve( $this->service, $this->provider, $this->window );
+        $before = (int) Cache::get( $stampKey, 0 );
+
+        $duringWrite = null;
+
+        DB::transaction( function () use ( &$duringWrite, $stampKey ): void {
+            Booking::factory()
+                ->for( $this->service )
+                ->for( $this->provider, 'provider' )
+                ->confirmed()
+                ->startingAt( CarbonImmutable::parse( AVAILABILITY_MONDAY . ' 11:00', $this->timezone )->utc(), 60 )
+                ->create();
+
+            // The row is written but the transaction has not committed. A reader
+            // landing in this window must not find a moved stamp to cache a
+            // recomputed-without-this-row day under.
+            $duringWrite = (int) Cache::get( $stampKey, 0 );
+        } );
+
+        expect( $duringWrite )->toBe( $before )
+            ->and( (int) Cache::get( $stampKey, 0 ) )->toBeGreaterThan( $before );
+    } );
+
+    it( 'drops the taken slot once the transaction the booking was written in commits', function (): void {
+        expect( availability()->resolve( $this->service, $this->provider, $this->window ) )->toHaveCount( 8 );
+
+        DB::transaction( function (): void {
+            Booking::factory()
+                ->for( $this->service )
+                ->for( $this->provider, 'provider' )
+                ->confirmed()
+                ->startingAt( CarbonImmutable::parse( AVAILABILITY_MONDAY . ' 11:00', $this->timezone )->utc(), 60 )
+                ->create();
+        } );
+
+        expect( availability()->resolve( $this->service, $this->provider, $this->window ) )->toHaveCount( 7 );
     } );
 } );
 
