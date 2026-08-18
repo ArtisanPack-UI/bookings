@@ -207,11 +207,26 @@ describe( 'GET service slots', function (): void {
 
         expect( count( $slots ) )->toBeGreaterThan( 8 );
     } )->with( [
-        'a blank string'  => '',
-        'a string zero'   => '0',
-        'an integer zero' => 0,
-        'a negative'      => -60,
+        'a blank string'       => '',
+        'a non-numeric string' => 'off',
+        'a string zero'        => '0',
+        'an integer zero'      => 0,
+        'a negative'           => -60,
     ] );
+
+    it( 'offers the whole month when the maximum is missing entirely', function (): void {
+        [ $service ] = bookableService();
+
+        // A key removed from a partially published config falls to the default,
+        // which must read as no maximum the same way a blank one does.
+        config()->set( 'artisanpack.bookings.booking_window', [ 'min_advance_minutes' => 60 ] );
+
+        $slots = $this->getJson( '/api/bookings/services/' . $service->slug . '/slots?date=2026-06' )
+            ->assertOk()
+            ->json( 'data' );
+
+        expect( count( $slots ) )->toBeGreaterThan( 8 );
+    } );
 
     it( 'refuses a date that is not a month', function ( string $date ): void {
         [ $service ] = bookableService();
@@ -372,11 +387,22 @@ describe( 'POST bookings', function (): void {
 
         $this->postJson( '/api/bookings', publicBookingBody( $service ) )->assertCreated();
     } )->with( [
-        'a blank string'  => '',
-        'a string zero'   => '0',
-        'an integer zero' => 0,
-        'a negative'      => -60,
+        'a blank string'       => '',
+        'a non-numeric string' => 'off',
+        'a string zero'        => '0',
+        'an integer zero'      => 0,
+        'a negative'           => -60,
     ] );
+
+    it( 'takes a submission when the maximum is missing entirely', function (): void {
+        [ $service ] = bookableService();
+
+        // The default booking is a week out; a missing maximum falls to the
+        // default and must not refuse it as too far ahead.
+        config()->set( 'artisanpack.bookings.booking_window', [ 'min_advance_minutes' => 60 ] );
+
+        $this->postJson( '/api/bookings', publicBookingBody( $service ) )->assertCreated();
+    } );
 
     it( 'answers a slot somebody else has taken with a conflict', function (): void {
         [ $service ] = bookableService();

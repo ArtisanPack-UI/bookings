@@ -384,12 +384,13 @@ describe( 'rescheduling', function (): void {
             ->toBe( bookingStart()->toIso8601String() );
     } );
 
-    it( 'treats a zero maximum as no limit rather than a shut window', function (): void {
-        // Zero on the maximum reads the same way zero reads on the minimum: no
+    it( 'treats a non-positive maximum as no limit rather than a shut window', function ( int|string $value ): void {
+        // A non-positive maximum reads the same way zero reads on the minimum: no
         // constraint. It must open the window, not collapse it — a blank setting
         // that emptied every calendar and blamed the customer's chosen time is the
-        // failure this bound is meant not to have.
-        config()->set( 'artisanpack.bookings.booking_window.max_advance_minutes', 0 );
+        // failure this bound is meant not to have. This path clips through the same
+        // BookingWindow helpers the API does, so every value it accepts, this does.
+        config()->set( 'artisanpack.bookings.booking_window.max_advance_minutes', $value );
 
         [ $booking, $token ] = manageableBooking();
 
@@ -403,7 +404,13 @@ describe( 'rescheduling', function (): void {
 
         expect( $booking->refresh()->start_time->toIso8601String() )
             ->toBe( $wanted->toIso8601String() );
-    } );
+    } )->with( [
+        'a blank string'       => '',
+        'a non-numeric string' => 'off',
+        'a string zero'        => '0',
+        'an integer zero'      => 0,
+        'a negative'           => -60,
+    ] );
 
     it( 'refuses a move to the time the booking already has', function (): void {
         [ , $token ] = manageableBooking();

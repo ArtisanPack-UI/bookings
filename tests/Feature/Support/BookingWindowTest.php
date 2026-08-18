@@ -24,10 +24,11 @@ it( 'reads a non-positive maximum as no limit', function ( int|string $value ): 
 
     expect( BookingWindow::latest( bookingWindowNow() ) )->toBeNull();
 } )->with( [
-    'a blank string'  => '',
-    'a string zero'   => '0',
-    'an integer zero' => 0,
-    'a negative'      => -60,
+    'a blank string'       => '',
+    'a non-numeric string' => 'off',
+    'a string zero'        => '0',
+    'an integer zero'      => 0,
+    'a negative'           => -60,
 ] );
 
 it( 'reads a missing maximum as no limit', function (): void {
@@ -51,10 +52,11 @@ it( 'reads a non-positive minimum as no wait, the same way the maximum reads no 
     expect( BookingWindow::earliest( bookingWindowNow() )->toIso8601String() )
         ->toBe( bookingWindowNow()->toIso8601String() );
 } )->with( [
-    'a blank string'  => '',
-    'a string zero'   => '0',
-    'an integer zero' => 0,
-    'a negative'      => -60,
+    'a blank string'       => '',
+    'a non-numeric string' => 'off',
+    'a string zero'        => '0',
+    'an integer zero'      => 0,
+    'a negative'           => -60,
 ] );
 
 it( 'holds a booking off until a positive minimum has passed', function (): void {
