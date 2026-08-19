@@ -48,6 +48,7 @@ use ArtisanPackUI\Bookings\Enums\NotificationType;
 use ArtisanPackUI\Bookings\Http\Middleware\AuthorizeBookingsAdmin;
 use ArtisanPackUI\Bookings\Http\Middleware\RateLimitBookings;
 use ArtisanPackUI\Bookings\Http\Middleware\ResolveManageToken;
+use ArtisanPackUI\Bookings\Integrations\Forms\FormsIntegration;
 use ArtisanPackUI\Bookings\Listeners\DispatchBookingWebhooks;
 use ArtisanPackUI\Bookings\Listeners\SendBookingNotifications;
 use ArtisanPackUI\Bookings\Listeners\SyncBookingToCalendar;
@@ -441,6 +442,8 @@ class BookingsServiceProvider extends ServiceProvider
 
         $this->registerCmsAdminNav();
 
+        $this->registerFormsIntegration();
+
         $this->registerCalendarDrivers();
     }
 
@@ -655,6 +658,23 @@ class BookingsServiceProvider extends ServiceProvider
     protected function registerCmsAdminNav(): void
     {
         AdminNav::subscribeToCmsMenu();
+    }
+
+    /**
+     * Wires the forms integration.
+     *
+     * Whether the application still wants it, and whether forms is even here to
+     * receive it, both live in {@see FormsIntegration::subscribe()} — beside the
+     * subscriptions themselves — so the palette field, its picker, and the
+     * submission listener are stood up together or not at all.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    protected function registerFormsIntegration(): void
+    {
+        FormsIntegration::subscribe();
     }
 
     /**

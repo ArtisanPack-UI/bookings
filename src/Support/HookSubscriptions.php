@@ -42,6 +42,13 @@ use InvalidArgumentException;
  * |----------------|-----------------------------------|----------|
  * | cms-framework  | `ap.cmsFramework.admin.menu`      | #38      |
  * | forms          | `ap.forms.fieldTypes`             | #48      |
+ * | forms          | `ap.forms.fieldCategories`        | #48      |
+ * | forms          | `ap.forms.fieldSettings`          | #48      |
+ * | forms          | `ap.forms.fieldCardPreview`       | #48      |
+ * | forms          | `ap.forms.fieldRender`            | #48      |
+ *
+ * The forms integration (#48) also subscribes to forms' `FormSubmitted` event,
+ * behind the same gate, to book what a `booking_slot` field captured.
  *
  * Site resolution is deliberately absent. #3 originally planned to subscribe to
  * a `currentSite.resolve` filter directly; it shipped reading
