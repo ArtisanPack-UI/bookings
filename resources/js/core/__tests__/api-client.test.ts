@@ -4,7 +4,7 @@ import {
 	BookingsApiError,
 	createBookingsClient,
 	type FetchLike,
-} from '../api-client';
+} from '../api-client.js';
 
 interface Recorded {
 	url: string;
@@ -125,6 +125,60 @@ describe('createBookingsClient', () => {
 		});
 
 		expect(await client.getManagedBooking('token')).toEqual(envelope);
+	});
+
+	it('cancels via the /cancel route with a reason body and returns the envelope', async () => {
+		const envelope = { data: { id: 1 }, meta: { can_cancel: false } };
+		const { fetch, calls } = stubFetch(200, envelope);
+		const client = createBookingsClient({
+			baseUrl: 'https://example.test/api/bookings',
+			fetch,
+		});
+
+		const result = await client.cancelBooking('tok', { reason: 'Changed plans' });
+
+		expect(result).toEqual(envelope);
+		expect(calls[0]?.url).toBe(
+			'https://example.test/api/bookings/manage/tok/cancel',
+		);
+		expect(calls[0]?.init?.method).toBe('POST');
+		expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+			reason: 'Changed plans',
+		});
+	});
+
+	it('cancels with an empty body when no reason is given', async () => {
+		const { fetch, calls } = stubFetch(200, { data: { id: 1 }, meta: {} });
+		const client = createBookingsClient({
+			baseUrl: 'https://example.test/api/bookings',
+			fetch,
+		});
+
+		await client.cancelBooking('tok');
+
+		expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({});
+	});
+
+	it('reschedules via the /reschedule route with a start_time body and returns the envelope', async () => {
+		const envelope = { data: { id: 1 }, meta: { can_reschedule: true } };
+		const { fetch, calls } = stubFetch(200, envelope);
+		const client = createBookingsClient({
+			baseUrl: 'https://example.test/api/bookings',
+			fetch,
+		});
+
+		const result = await client.rescheduleBooking('tok', {
+			startTime: '2025-09-01T13:00:00Z',
+		});
+
+		expect(result).toEqual(envelope);
+		expect(calls[0]?.url).toBe(
+			'https://example.test/api/bookings/manage/tok/reschedule',
+		);
+		expect(calls[0]?.init?.method).toBe('POST');
+		expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+			start_time: '2025-09-01T13:00:00Z',
+		});
 	});
 
 	it('throws a validation error on 422 with the field messages', async () => {

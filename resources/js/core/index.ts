@@ -8,7 +8,7 @@
  * @packageDocumentation
  */
 
-export * from './types';
-export * from './timezone';
-export * from './date-utils';
-export * from './api-client';
+export * from './types.js';
+export * from './timezone.js';
+export * from './date-utils.js';
+export * from './api-client.js';

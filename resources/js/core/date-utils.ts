@@ -10,7 +10,7 @@
  * @packageDocumentation
  */
 
-import type { Slot } from './types';
+import type { Slot } from './types.js';
 
 /**
  * A slot grouped under the calendar day it starts on.

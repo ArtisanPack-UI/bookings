@@ -4,7 +4,7 @@ import {
 	captureTimezone,
 	FALLBACK_TIMEZONE,
 	isValidTimezone,
-} from '../timezone';
+} from '../timezone.js';
 
 describe('isValidTimezone', () => {
 	it('accepts real IANA zone names', () => {

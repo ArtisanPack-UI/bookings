@@ -7,8 +7,8 @@ import {
 	groupSlotsByDay,
 	slotDurationMinutes,
 	toDayKey,
-} from '../date-utils';
-import type { Slot } from '../types';
+} from '../date-utils.js';
+import type { Slot } from '../types.js';
 
 function slot(start: string, end: string, providerId: number | null = null): Slot {
 	return { start, end, provider_id: providerId };

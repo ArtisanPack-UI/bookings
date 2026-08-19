@@ -20,7 +20,7 @@ import type {
 	Service,
 	Slot,
 	SlotQuery,
-} from './types';
+} from './types.js';
 
 /**
  * Field-keyed validation messages, as Laravel returns them on a 422.
