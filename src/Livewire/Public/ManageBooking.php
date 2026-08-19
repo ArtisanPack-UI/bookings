@@ -235,6 +235,12 @@ class ManageBooking extends Component
      */
     public function cancel(): void
     {
+        // Cleared first so a rate-limited or guard return does not leave a stale
+        // field error from an earlier submission sitting alongside its message;
+        // `validateOnly( 'reason' )` below only revalidates that one field, so it
+        // cannot clear an error left on another key by an earlier submission.
+        $this->resetErrorBag();
+
         $booking = $this->booking;
 
         if ( null === $booking ) {
@@ -442,6 +448,11 @@ class ManageBooking extends Component
      */
     public function reschedule(): void
     {
+        // Cleared first so a rate-limited or guard return does not leave a stale
+        // field error from an earlier submission sitting alongside its message,
+        // matching cancel() and the widget's book().
+        $this->resetErrorBag();
+
         $booking = $this->booking;
 
         if ( null === $booking ) {

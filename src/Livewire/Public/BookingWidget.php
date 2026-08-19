@@ -415,6 +415,12 @@ class BookingWidget extends Component
      */
     public function book(): void
     {
+        // Cleared first so a rate-limited or guard return does not leave a stale
+        // field error from an earlier submission sitting alongside its message;
+        // `validate()` clears the bag on the happy path, but the early returns
+        // below run before it.
+        $this->resetErrorBag();
+
         // Counted before anything the request controls, the way `handle()`
         // counts a routed POST before its controller runs. Resolving the service
         // is a database read keyed by a slug the caller supplies, so spending the

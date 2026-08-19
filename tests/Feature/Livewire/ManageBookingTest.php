@@ -265,6 +265,26 @@ describe( 'cancelling', function (): void {
 
         expect( $booking->refresh()->status )->toBe( BookingStatus::Confirmed );
     } );
+
+    it( 'does not carry a stale field error into a rate-limited resubmission', function (): void {
+        config()->set( 'artisanpack.bookings.public.rate_limits.post', 1 );
+
+        [ , $token ] = manageableBooking();
+
+        // The first submission fails `reason` validation and spends the only
+        // allowance; the second is refused before `validateOnly()` can clear the
+        // bag. Without a reset up front, the stale `reason` error would ride
+        // alongside the rate-limit message.
+        Livewire::test( ManageBooking::class, [ 'token' => $token ] )
+            ->set( 'reason', str_repeat( 'x', 1001 ) )
+            ->call( 'cancel' )
+            ->assertHasErrors( 'reason' )
+            ->set( 'reason', 'Changed my mind' )
+            ->call( 'cancel' )
+            ->assertHasErrors( 'cancel' )
+            ->assertHasNoErrors( 'reason' )
+            ->assertSee( 'Too many requests.' );
+    } );
 } );
 
 describe( 'rescheduling', function (): void {
@@ -558,6 +578,25 @@ describe( 'rescheduling', function (): void {
             ->assertSet( 'slotStart', '' )
             ->assertSet( 'date', '' )
             ->assertSee( 'Reschedule' );
+    } );
+
+    it( 'does not carry a stale field error into a rate-limited resubmission', function (): void {
+        config()->set( 'artisanpack.bookings.public.rate_limits.post', 1 );
+
+        [ , $token ] = manageableBooking();
+
+        // The first submission is refused for want of a time and spends the only
+        // allowance; the second is rate-limited. Both messages share the
+        // `slotStart` key, so without a reset up front the stale "Choose a new
+        // time" line would render under the rate-limit message.
+        Livewire::test( ManageBooking::class, [ 'token' => $token ] )
+            ->call( 'startReschedule' )
+            ->call( 'reschedule' )
+            ->assertSee( 'Choose a new time before confirming.' )
+            ->call( 'chooseSlot', bookingStart( '11:00' )->toIso8601String() )
+            ->call( 'reschedule' )
+            ->assertSee( 'Too many requests.' )
+            ->assertDontSee( 'Choose a new time before confirming.' );
     } );
 } );
 
