@@ -23,8 +23,10 @@ namespace ArtisanPackUI\Bookings\Providers;
 use ArtisanPackUI\Bookings\Bookings;
 use ArtisanPackUI\Bookings\Calendar\CalendarDriverRegistry;
 use ArtisanPackUI\Bookings\Console\Commands\CompletePastBookingsCommand;
+use ArtisanPackUI\Bookings\Console\Commands\EraseBookingsCommand;
 use ArtisanPackUI\Bookings\Console\Commands\IcalTokenCommand;
 use ArtisanPackUI\Bookings\Console\Commands\PollAppleCalendarsCommand;
+use ArtisanPackUI\Bookings\Console\Commands\PruneBookingsCommand;
 use ArtisanPackUI\Bookings\Console\Commands\PruneCalendarEventsCommand;
 use ArtisanPackUI\Bookings\Console\Commands\PruneNotificationLogCommand;
 use ArtisanPackUI\Bookings\Console\Commands\PruneWebhookDeliveriesCommand;
@@ -405,8 +407,10 @@ class BookingsServiceProvider extends ServiceProvider
         if ( $this->app->runningInConsole() ) {
             $this->commands( [
                 CompletePastBookingsCommand::class,
+                EraseBookingsCommand::class,
                 IcalTokenCommand::class,
                 PollAppleCalendarsCommand::class,
+                PruneBookingsCommand::class,
                 PruneCalendarEventsCommand::class,
                 PruneNotificationLogCommand::class,
                 PruneWebhookDeliveriesCommand::class,
@@ -823,7 +827,13 @@ class BookingsServiceProvider extends ServiceProvider
             $this->scheduleCalendarCommands( $schedule );
 
             // Overnight, because a prune is the one thing here that holds locks
-            // on tables the request path writes to.
+            // on tables the request path writes to. `bookings:erase` is absent on
+            // purpose: it answers a person's request against a named booking, not
+            // a window a clock can decide has passed.
+            $schedule->command( 'bookings:prune' )
+                ->dailyAt( '03:00' )
+                ->withoutOverlapping( self::LOCK_DAILY );
+
             $schedule->command( 'bookings:prune-notification-log' )
                 ->dailyAt( '03:10' )
                 ->withoutOverlapping( self::LOCK_DAILY );

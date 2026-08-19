@@ -886,15 +886,34 @@ php artisan schedule:work    # or the usual cron entry for schedule:run
 | `bookings:calendar-refresh` | Daily | Re-reads busy blocks for two-way connections. |
 | `bookings:calendar-watch-renew` | Hourly | Renews Google/Microsoft push registrations before they lapse. |
 | `bookings:calendar-apple-poll` | Every 15 minutes | Polls Apple calendars, which cannot push. |
+| `bookings:prune` | Daily, 03:00 | Soft-deletes bookings past their retention window, keeping the row and its personal data. |
 | `bookings:prune-notification-log` | Daily, 03:10 | Removes notification log rows past their retention window. |
 | `bookings:prune-webhook-deliveries` | Daily, 03:20 | Removes settled delivery attempts past their retention window. |
 | `bookings:prune-calendar-events` | Daily, 03:30 | Removes calendar mappings for bookings long over. |
 
-`bookings:reissue-detached-manage-tokens` and `bookings:ical-token` are never
-scheduled. The first invalidates every manage link the package has ever sent; the
-second invalidates one provider's calendar subscriptions and prints a URL that
-exists nowhere else. Both are things you do in response to something, in front of
-the output, rather than things a clock should decide.
+`bookings:erase`, `bookings:reissue-detached-manage-tokens`, and
+`bookings:ical-token` are never scheduled. The first scrubs the personal data on
+a booking, or on every booking for an email address, in answer to a right-to-erasure
+request; the second invalidates every manage link the package has ever sent; the
+third invalidates one provider's calendar subscriptions and prints a URL that
+exists nowhere else. All three are things you do in response to something, in
+front of the output, rather than things a clock should decide.
+
+```bash
+# Retention prune runs on the schedule, but you can run it by hand too.
+php artisan bookings:prune --dry-run
+
+# Erasure is request-driven. Scrub one booking, or every booking for an address.
+php artisan bookings:erase --booking=BK-7F3A9C
+php artisan bookings:erase --email=customer@example.com
+```
+
+`bookings:prune` soft-deletes — the row and its personal data stay, for the legal
+or accounting record, and only drop out of the default queries. `bookings:erase`
+is the other obligation: it overwrites the personal columns in place and marks the
+row erased, so aggregate reporting keeps working on a row that no longer names
+anyone. Erasure reaches soft-deleted bookings too, so a booking already pruned for
+retention is still reachable by the request to scrub it.
 
 Every one is registered `withoutOverlapping()`. None of them needs it for
 correctness — a reminder is claimed in the notification log before it is sent,
@@ -922,10 +941,11 @@ nobody approved, and marking it delivered would be the package asserting that
 something happened which may never have been accepted — those are left for staff
 to dispose of, as a completion or a no-show.
 
-The three prunes read their windows from `retention`:
+The four prunes read their windows from `retention`:
 
 ```php
 'retention' => [
+    'prune_after_days'         => 365 * 3,   // read by bookings:prune
     'notification_log_days'    => 90,
     'webhook_delivery_days'    => null,   // falls back to webhooks.delivery_retention_days
     'calendar_events_ttl_days' => 30,
@@ -945,6 +965,13 @@ pruned however old it is, because deleting it makes the delivery stop existing
 rather than fail. And calendar mappings are pruned by the booking's end time
 rather than by the row's own age — a mapping for an appointment a year out is
 older than yesterday's, and is exactly what a reschedule still needs.
+
+`prune_after_days` is measured the same way — from the booking's end time, not
+the row's age — so a booking taken well ahead of time is not counted old the day
+it is made. The default is three years; set it to whatever your own retention
+policy requires. It defaults from `BOOKING_PRUNE_DAYS`, and zeroing it (a blank
+environment variable, most often) switches the prune off rather than deleting
+everything.
 
 The calendar sweeps find what is due and then need a `CalendarSyncDriver` to act
 on it. Those ship in `artisanpack-ui/google`, `artisanpack-ui/microsoft`, and
