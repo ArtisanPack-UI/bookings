@@ -74,18 +74,37 @@ describe( 'ap.bookings.availabilityQuery', function (): void {
             ->startingAt( CarbonImmutable::parse( AVAILABILITY_HOOK_MONDAY . ' 11:00', $this->timezone )->utc(), 60 )
             ->create();
 
+        // Another provider's cancelled booking, at a different hour, to prove the
+        // widening clause stays confined to the provider being resolved rather
+        // than reaching across everyone.
+        Booking::factory()
+            ->for( $this->service )
+            ->for( ServiceProvider::factory()->create(), 'provider' )
+            ->cancelled()
+            ->startingAt( CarbonImmutable::parse( AVAILABILITY_HOOK_MONDAY . ' 14:00', $this->timezone )->utc(), 60 )
+            ->create();
+
         expect( localStarts( availability()->resolve( $this->service, $this->provider, $this->window ), $this->timezone ) )
-            ->toContain( '11:00' );
+            ->toContain( '11:00' )
+            ->toContain( '14:00' );
 
         // Guarded on the subject: the same hook now shapes the busy-block query,
         // which has no `provider_id` column, so an unguarded clause would build
-        // SQL against a column that is not there.
-        addFilter(
-            'ap.bookings.availabilityQuery',
-            static fn ( Builder $query, array $criteria ): Builder => 'bookings' === $criteria['subject']
-                ? $query->orWhere( 'provider_id', '>', 0 )
-                : $query,
-        );
+        // SQL against a column that is not there. Grouped and scoped to this
+        // provider and the requested window — not re-applying active(), since the
+        // point is to count the cancelled booking the base query left out. A bare
+        // orWhere would reach the other provider and other days.
+        addFilter( 'ap.bookings.availabilityQuery', static function ( Builder $query, array $criteria ): Builder {
+            if ( 'bookings' !== $criteria['subject'] ) {
+                return $query;
+            }
+
+            return $query->orWhere( static function ( Builder $alternative ) use ( $criteria ): void {
+                $alternative->where( 'provider_id', $criteria['provider_id'] )
+                    ->where( 'start_time', '<', CarbonImmutable::parse( $criteria['until'] ) )
+                    ->where( 'end_time', '>', CarbonImmutable::parse( $criteria['from'] ) );
+            } );
+        } );
 
         // The day above was cached before the filter existed, so it has to be
         // dropped for the filter to be reachable at all — and that dropping it
@@ -93,8 +112,11 @@ describe( 'ap.bookings.availabilityQuery', function (): void {
         // computation rather than on the way back out of the cache.
         availability()->invalidateProvider( $this->provider->id );
 
+        // 11:00 falls to this provider's now-counted cancelled booking; 14:00
+        // survives, because the other provider's booking stayed out of scope.
         expect( localStarts( availability()->resolve( $this->service, $this->provider, $this->window ), $this->timezone ) )
-            ->not->toContain( '11:00' );
+            ->not->toContain( '11:00' )
+            ->toContain( '14:00' );
     } );
 
     it( 'refuses a subscriber that returns something other than a query', function (): void {
@@ -129,28 +151,49 @@ describe( 'ap.bookings.availabilityQuery', function (): void {
     } );
 
     it( 'honours a subscriber that injects busy time from a custom source', function (): void {
-        // A one-way connection's blocks are ignored by the built-in subtraction,
-        // so it stands in here for a source availability would never consult on
-        // its own — until a plugin folds it back in through the filter.
-        $connection = CalendarConnection::factory()
-            ->for( $this->provider, 'provider' )
-            ->create();
+        // Two one-way connections: their blocks are ignored by the built-in
+        // subtraction, so each stands in for a source availability would never
+        // consult on its own. The subscriber folds one of them back in — the
+        // other is here to prove the scoped clause reaches only what it names.
+        $injected = CalendarConnection::factory()->for( $this->provider, 'provider' )->create();
+        $other    = CalendarConnection::factory()->for( $this->provider, 'provider' )->create();
 
-        CalendarBusyBlock::factory()->for( $connection, 'connection' )->spanning(
+        CalendarBusyBlock::factory()->for( $injected, 'connection' )->spanning(
             CarbonImmutable::parse( AVAILABILITY_HOOK_MONDAY . ' 11:00', $this->timezone )->utc(),
             CarbonImmutable::parse( AVAILABILITY_HOOK_MONDAY . ' 12:00', $this->timezone )->utc(),
         )->create();
 
-        // Left alone, that block does nothing — the connection only pushes.
-        expect( localStarts( availability()->resolve( $this->service, $this->provider, $this->window ), $this->timezone ) )
-            ->toContain( '11:00' );
+        // A block on the injected connection but a day outside the window — the
+        // scoped clause must leave it be, so it can never suppress a slot here.
+        CalendarBusyBlock::factory()->for( $injected, 'connection' )->spanning(
+            CarbonImmutable::parse( '2026-06-02 11:00', $this->timezone )->utc(),
+            CarbonImmutable::parse( '2026-06-02 12:00', $this->timezone )->utc(),
+        )->create();
 
-        addFilter( 'ap.bookings.availabilityQuery', static function ( Builder $query, array $criteria ) use ( $connection ): Builder {
+        // A block the subscriber never names, at a different hour, to prove the
+        // clause does not simply pull every one-way connection's busy time in.
+        CalendarBusyBlock::factory()->for( $other, 'connection' )->spanning(
+            CarbonImmutable::parse( AVAILABILITY_HOOK_MONDAY . ' 14:00', $this->timezone )->utc(),
+            CarbonImmutable::parse( AVAILABILITY_HOOK_MONDAY . ' 15:00', $this->timezone )->utc(),
+        )->create();
+
+        // Left alone, none of them do anything — every connection only pushes.
+        expect( localStarts( availability()->resolve( $this->service, $this->provider, $this->window ), $this->timezone ) )
+            ->toContain( '11:00' )
+            ->toContain( '14:00' );
+
+        addFilter( 'ap.bookings.availabilityQuery', static function ( Builder $query, array $criteria ) use ( $injected ): Builder {
             if ( 'busy_blocks' !== $criteria['subject'] ) {
                 return $query;
             }
 
-            return $query->orWhere( 'connection_id', $connection->id );
+            // A grouped alternative confined to the named connection and the
+            // window the criteria carry — the shape the docblock asks a widening
+            // subscriber for, reusing the model's own overlap scope so a bare
+            // `orWhere` can escape neither the connection nor the window.
+            return $query->orWhere( static function ( Builder $alternative ) use ( $injected, $criteria ): void {
+                $alternative->overlapping( $injected->id, $criteria['from'], $criteria['until'] );
+            } );
         } );
 
         // Recompute so the filter is reachable: the day above was cached before it
@@ -159,7 +202,8 @@ describe( 'ap.bookings.availabilityQuery', function (): void {
         availability()->invalidateProvider( $this->provider->id );
 
         expect( localStarts( availability()->resolve( $this->service, $this->provider, $this->window ), $this->timezone ) )
-            ->not->toContain( '11:00' );
+            ->not->toContain( '11:00' )
+            ->toContain( '14:00' );
     } );
 
     it( 'refuses a busy-block subscriber that returns something other than a query', function (): void {
