@@ -1,0 +1,29 @@
+{
+	"name": "@artisanpack-ui/bookings-js",
+	"version": "1.0.0",
+	"description": "Framework-agnostic JavaScript core for the ArtisanPack UI bookings package: typed public API client, date and timezone helpers, and shared types.",
+	"type": "module",
+	"license": "GPL-2.0-or-later",
+	"author": "Jacob Martella <me@jacobmartella.com>",
+	"main": "./dist/core/index.js",
+	"types": "./dist/core/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/core/index.d.ts",
+			"import": "./dist/core/index.js"
+		}
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run",
+		"test:watch": "vitest"
+	},
+	"devDependencies": {
+		"typescript": "^5.6.0",
+		"vitest": "^2.1.0"
+	}
+}
