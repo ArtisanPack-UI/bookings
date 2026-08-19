@@ -77,6 +77,109 @@ describe( 'bookings:prune-notification-log', function (): void {
     } )->with( [ 'zero' => 0, 'negative' => -1, 'null' => null, 'nonsense' => 'soon' ] );
 } );
 
+describe( 'bookings:prune', function (): void {
+    it( 'soft-deletes bookings past the window and keeps the rest, personal data intact', function (): void {
+        config()->set( 'artisanpack.bookings.retention.prune_after_days', 365 );
+
+        $stale = Booking::factory()->create( [
+            'customer_name' => 'Ada Lovelace',
+            'start_time'    => Carbon::parse( '-400 days' ),
+            'end_time'      => Carbon::parse( '-400 days' )->addHour(),
+        ] );
+        $kept = Booking::factory()->create( [
+            'start_time' => Carbon::parse( '-10 days' ),
+            'end_time'   => Carbon::parse( '-10 days' )->addHour(),
+        ] );
+
+        $this->artisan( 'bookings:prune' )
+            ->expectsOutputToContain( '1 booking(s) soft-deleted.' )
+            ->assertSuccessful();
+
+        expect( Booking::query()->pluck( 'id' )->all() )->toBe( [ $kept->getKey() ] );
+
+        // The row stays, PII intact, for the legal record — a soft delete is not
+        // an erasure, and pruning must not touch either column.
+        $trashed = Booking::withTrashed()->find( $stale->getKey() );
+
+        expect( $trashed->trashed() )->toBeTrue()
+            ->and( $trashed->isPiiErased() )->toBeFalse()
+            ->and( $trashed->customer_name )->toBe( 'Ada Lovelace' );
+    } );
+
+    it( 'keeps a future booking however old its row is', function (): void {
+        // The window is measured from the booking's end time, not the row's own
+        // age: a booking taken well ahead of time is not old the day it is made,
+        // and pruning by `created_at` would soft-delete a live future booking.
+        config()->set( 'artisanpack.bookings.retention.prune_after_days', 365 );
+
+        $future = Booking::factory()->create( [
+            'start_time' => Carbon::parse( '+30 days' ),
+            'end_time'   => Carbon::parse( '+30 days' )->addHour(),
+        ] );
+
+        bookingRowAgedTo( $future, '-1000 days' );
+
+        $this->artisan( 'bookings:prune' )
+            ->expectsOutputToContain( '0 booking(s) soft-deleted.' )
+            ->assertSuccessful();
+
+        expect( Booking::query()->count() )->toBe( 1 );
+    } );
+
+    it( 'keeps a booking just inside the window under a non-UTC app timezone', function (): void {
+        // The cutoff comes back in the application's zone, but this prune compares
+        // against `end_time`, which the package writes as UTC. Without the
+        // `->utc()` at the call site, Asia/Tokyo prunes nine hours' worth early.
+        config()->set( 'artisanpack.bookings.retention.prune_after_days', 30 );
+
+        date_default_timezone_set( 'Asia/Tokyo' );
+        Carbon::setTestNow( Carbon::parse( '2026-06-01 12:00:00', 'UTC' )->setTimezone( 'Asia/Tokyo' ) );
+
+        // Ended 30 days ago minus four hours — inside the window by four hours,
+        // and outside it by five if the cutoff is read as Tokyo wall clock.
+        Booking::factory()->create( [
+            'start_time' => Carbon::parse( '2026-06-01 12:00:00', 'UTC' )->subDays( 30 )->addHours( 3 ),
+            'end_time'   => Carbon::parse( '2026-06-01 12:00:00', 'UTC' )->subDays( 30 )->addHours( 4 ),
+        ] );
+
+        $this->artisan( 'bookings:prune' )
+            ->expectsOutputToContain( '0 booking(s) soft-deleted.' )
+            ->assertSuccessful();
+
+        expect( Booking::query()->count() )->toBe( 1 );
+    } );
+
+    it( 'reports without deleting on a dry run', function (): void {
+        config()->set( 'artisanpack.bookings.retention.prune_after_days', 365 );
+
+        Booking::factory()->create( [
+            'start_time' => Carbon::parse( '-400 days' ),
+            'end_time'   => Carbon::parse( '-400 days' )->addHour(),
+        ] );
+
+        $this->artisan( 'bookings:prune', [ '--dry-run' => true ] )
+            ->expectsOutputToContain( '1 booking(s) would be soft-deleted.' )
+            ->assertSuccessful();
+
+        expect( Booking::query()->count() )->toBe( 1 );
+    } );
+
+    it( 'prunes nothing when the window is zero or missing', function ( mixed $window ): void {
+        config()->set( 'artisanpack.bookings.retention.prune_after_days', $window );
+
+        Booking::factory()->create( [
+            'start_time' => Carbon::parse( '-1000 days' ),
+            'end_time'   => Carbon::parse( '-1000 days' )->addHour(),
+        ] );
+
+        $this->artisan( 'bookings:prune' )
+            ->expectsOutputToContain( 'No booking retention window is configured' )
+            ->assertSuccessful();
+
+        expect( Booking::query()->count() )->toBe( 1 );
+    } )->with( [ 'zero' => 0, 'negative' => -1, 'null' => null, 'nonsense' => 'soon' ] );
+} );
+
 describe( 'bookings:prune-webhook-deliveries', function (): void {
     it( 'removes settled attempts past the retention window', function (): void {
         config()->set( 'artisanpack.bookings.retention.webhook_delivery_days', null );

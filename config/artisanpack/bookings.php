@@ -420,13 +420,12 @@ return [
     | default of three years is a starting point, not legal advice — set it to
     | whatever the retention policy you actually operate under requires.
     |
-    | "prune_after_days" is the window for the bookings themselves, and nothing
-    | reads it yet — booking retention is its own ticket. Setting it (or
-    | BOOKING_PRUNE_DAYS) today prunes nothing; the three windows below are the
-    | ones with a command behind them.
+    | Each window is read by one scheduled command:
     |
-    | Each of those is read by one scheduled command:
-    |
+    | - "prune_after_days" by "bookings:prune", which soft-deletes bookings whose
+    |   end time is past the window. The row and its personal data stay, for the
+    |   legal or accounting record; scrubbing that data is a separate request
+    |   served by "bookings:erase".
     | - "notification_log_days" by "bookings:prune-notification-log". Keep it
     |   comfortably longer than the longest reminder in "hours_before": the log
     |   row is what stops a reminder being sent twice, so pruning one inside its

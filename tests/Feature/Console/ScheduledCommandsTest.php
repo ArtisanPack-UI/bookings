@@ -14,9 +14,17 @@ it( 'schedules the reminder and completion sweeps out of the box', function (): 
 it( 'schedules every prune daily', function (): void {
     $schedule = bookingSchedule();
 
-    expect( $schedule['bookings:prune-notification-log'] )->toBe( '10 3 * * *' )
+    expect( $schedule['bookings:prune'] )->toBe( '0 3 * * *' )
+        ->and( $schedule['bookings:prune-notification-log'] )->toBe( '10 3 * * *' )
         ->and( $schedule['bookings:prune-webhook-deliveries'] )->toBe( '20 3 * * *' )
         ->and( $schedule['bookings:prune-calendar-events'] )->toBe( '30 3 * * *' );
+} );
+
+it( 'never schedules the erasure command', function (): void {
+    // Erasure answers a person's request against a named booking or address, so
+    // it is something an operator runs in front of the output — never something
+    // a clock decides to do.
+    expect( bookingSchedule() )->not->toHaveKey( 'bookings:erase' );
 } );
 
 it( 'never schedules the manage token rotation', function (): void {
@@ -72,7 +80,7 @@ it( 'guards every scheduled command against overlapping itself', function (): vo
 
     $events = bookingScheduleEvents();
 
-    expect( $events )->toHaveCount( 8 );
+    expect( $events )->toHaveCount( 9 );
 
     foreach ( $events as $event ) {
         expect( $event->withoutOverlapping )->toBeTrue();
