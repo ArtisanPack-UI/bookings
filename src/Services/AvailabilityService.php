@@ -383,7 +383,7 @@ class AvailabilityService implements SlotResolver
         $from     = $dayStart->subMinutes( $pad );
         $until    = $dayEnd->addMinutes( $pad );
         $bookings = $this->bookingsFor( $service, $provider, $date, $from, $until );
-        $busy     = $this->busyBlocksFor( $provider, $from, $until );
+        $busy     = $this->busyBlocksFor( $provider, $date, $from, $until );
 
         $slots = [];
 
@@ -488,7 +488,9 @@ class AvailabilityService implements SlotResolver
      *
      * `ap.bookings.availabilityQuery` runs here, on the query rather than on its
      * results, so a subscriber can widen or narrow what counts as taken without
-     * this method having to anticipate why.
+     * this method having to anticipate why. The same hook shapes the busy-block
+     * query too, so the criteria carry a `subject` of `bookings` here to tell the
+     * two apart — see {@see self::busyBlocksFor()}.
      *
      * @since 1.0.0
      *
@@ -531,6 +533,7 @@ class AvailabilityService implements SlotResolver
             ->where( 'end_time', '>', $from->utc() );
 
         $criteria = [
+            'subject'     => 'bookings',
             'service_id'  => (int) $service->getKey(),
             'provider_id' => (int) $provider->getKey(),
             'date'        => $date,
@@ -604,25 +607,65 @@ class AvailabilityService implements SlotResolver
      * letting those suppress availability would hand a calendar a power the
      * operator explicitly did not grant it.
      *
+     * `ap.bookings.availabilityQuery` runs here too, on the busy-block query
+     * rather than its results, so a plugin can inject busy time from a source of
+     * its own — including for a provider with no calendar connection at all,
+     * whose query starts matching nothing and is widened by the subscriber. The
+     * query is built and filtered even when there are no two-way connections for
+     * exactly that reason; the empty set of ids is the correct default, not a
+     * short circuit. The `subject` key on the criteria says which query is in
+     * hand, because the same hook shapes the bookings query with a different
+     * model behind it: a subscriber that touches columns must check it before
+     * assuming any exist. A bare `orWhere` escapes the window bounds just as it
+     * does on the bookings query — scoping the clause it adds is the subscriber's
+     * to do. And unlike a booking, a busy block carries no site scope of its own
+     * — the built-in query is safe because its connection ids are read off this
+     * one provider, but a subscriber that widens it on a multi-site install is
+     * the only thing left to confine the clause to the current tenant.
+     *
      * @since 1.0.0
      *
      * @param  ServiceProvider  $provider  The provider being resolved.
+     * @param  string  $date  The provider-local date, as `Y-m-d`.
      * @param  CarbonImmutable  $from  The earliest instant that could clash.
      * @param  CarbonImmutable  $until  The latest instant that could clash.
      *
+     * @throws UnexpectedValueException When a subscriber returns something other
+     *                                  than a query builder.
+     *
      * @return array<int, TimeRange> The busy spans.
      */
-    protected function busyBlocksFor( ServiceProvider $provider, CarbonImmutable $from, CarbonImmutable $until ): array
-    {
+    protected function busyBlocksFor(
+        ServiceProvider $provider,
+        string $date,
+        CarbonImmutable $from,
+        CarbonImmutable $until,
+    ): array {
         $connectionIds = $provider->calendarConnections()->twoWay()->pluck( 'id' )->all();
 
-        if ( [] === $connectionIds ) {
-            return [];
+        $query = CalendarBusyBlock::query()->overlapping( $connectionIds, $from, $until );
+
+        $criteria = [
+            'subject'        => 'busy_blocks',
+            'provider_id'    => (int) $provider->getKey(),
+            'date'           => $date,
+            'timezone'       => $provider->timezone,
+            'from'           => $from->utc()->toIso8601String(),
+            'until'          => $until->utc()->toIso8601String(),
+            'connection_ids' => $connectionIds,
+        ];
+
+        $filtered = applyFilters( 'ap.bookings.availabilityQuery', $query, $criteria );
+
+        if ( ! $filtered instanceof Builder ) {
+            throw new UnexpectedValueException( sprintf(
+                'ap.bookings.availabilityQuery must return %s, got %s.',
+                Builder::class,
+                get_debug_type( $filtered ),
+            ) );
         }
 
-        return CalendarBusyBlock::query()
-            ->overlapping( $connectionIds, $from, $until )
-            ->get()
+        return $filtered->get()
             ->map( static fn ( CalendarBusyBlock $block ): TimeRange => new TimeRange(
                 $block->starts_at_utc,
                 $block->ends_at_utc,
