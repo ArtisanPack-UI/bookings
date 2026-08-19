@@ -380,6 +380,30 @@ describe( 'booking', function (): void {
         expect( Booking::query()->count() )->toBe( 0 );
     } );
 
+    it( 'does not carry a stale field error into a rate-limited resubmission', function (): void {
+        config()->set( 'artisanpack.bookings.public.rate_limits.post', 1 );
+
+        [ $service ] = bookableService();
+
+        // The first submission fails validation and spends the only allowance;
+        // the second is refused before `validate()` can clear the bag. Without a
+        // reset up front, the stale `customerName` error would ride alongside the
+        // rate-limit message.
+        Livewire::test( BookingWidget::class, [ 'service' => $service->slug ] )
+            ->call( 'chooseSlot', bookingStart()->toIso8601String() )
+            ->set( 'customerName', '' )
+            ->set( 'customerEmail', 'sam@example.test' )
+            ->call( 'book' )
+            ->assertHasErrors( 'customerName' )
+            ->set( 'customerName', 'Sam Rivera' )
+            ->call( 'book' )
+            ->assertHasErrors( 'slotStart' )
+            ->assertHasNoErrors( 'customerName' )
+            ->assertSee( 'Too many requests.' );
+
+        expect( Booking::query()->count() )->toBe( 0 );
+    } );
+
     it( 'clears the form for a second booking', function (): void {
         [ $service ] = bookableService();
 
