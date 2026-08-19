@@ -356,6 +356,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Forms Integration
+    |--------------------------------------------------------------------------
+    |
+    | The "booking_slot" field type and the listener that turns a booking form
+    | submission into a booking are registered only when artisanpack-ui/forms is
+    | installed and "auto_register" is true. Turn it off to mount the field type
+    | or the submission listener yourself.
+    |
+    */
+    'forms' => [
+        'auto_register' => true,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Public Surface
     |--------------------------------------------------------------------------
     |

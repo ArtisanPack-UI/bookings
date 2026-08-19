@@ -134,7 +134,10 @@ class BookingService
      *
      * The intake answers are validated against the service's *current* schema
      * version and that version is snapshotted onto the booking, so the answers
-     * stay readable after an administrator edits the form.
+     * stay readable after an administrator edits the form. A caller that gathered
+     * those answers somewhere the schema does not describe — a form whose own
+     * fields are the questions — passes `$validateIntake` false to store what it
+     * has without measuring it against a schema it was never shown.
      *
      * @since 1.0.0
      *
@@ -144,6 +147,11 @@ class BookingService
      *                                          `ap.bookings.creating` and used for
      *                                          nothing else — a booking is keyed to
      *                                          an email address, not an account.
+     * @param  bool  $validateIntake  Whether to judge `intake_data` against the
+     *                                service's schema. False stores the answers as
+     *                                given — for a booking whose questions were
+     *                                asked by something other than the service's
+     *                                own intake form.
      *
      * @throws InvalidArgumentException When the attributes do not name a service
      *                                  and a start time.
@@ -155,7 +163,7 @@ class BookingService
      * @return Booking The booking, confirmed unless a listener cancelled it or
      *                 automatic confirmation is switched off.
      */
-    public function create( array $attributes, ?Authenticatable $customer = null ): Booking
+    public function create( array $attributes, ?Authenticatable $customer = null, bool $validateIntake = true ): Booking
     {
         $service = $this->resolveService( $attributes );
         $start   = $this->resolveStart( $attributes );
@@ -167,8 +175,90 @@ class BookingService
         // `site_id` stamp all speak of the service's tenant. {@see self::inSiteOf()}.
         return $this->inSiteOf(
             $service,
-            fn (): Booking => $this->place( $service, $start, $attributes, $customer ),
+            fn (): Booking => $this->place( $service, $start, $attributes, $customer, $validateIntake ),
         );
+    }
+
+    /**
+     * Creates a booking from the values a form submission carried.
+     *
+     * The entry point the forms integration (#48) reaches for once a submission
+     * has been stored: the listener that watches `FormSubmitted` pulls the
+     * booking-shaped values out of the submission and hands them here as a plain
+     * array, and this maps them onto {@see self::create()}. Routing through
+     * `create()` rather than writing the row itself is the whole point — a
+     * booking made this way fires `ap.bookings.creating`, `created`, and
+     * `confirmed`, is assigned a provider, and is guarded against a double-book,
+     * exactly as one made through the widget is. The two paths differ only in
+     * where the answers came from.
+     *
+     * The service's intake schema is *not* enforced here. A form booking's
+     * questions are the form's own fields, which the form already validated; the
+     * service's intake schema describes the standalone widget's questions, which
+     * this visitor was never shown. So `create()` is asked to store the answers
+     * as given rather than judge them against a schema that does not describe the
+     * form — a service whose intake requires a field the form did not ask would
+     * otherwise reject every booking the form could ever make.
+     *
+     * The array is deliberately not a forms model. `artisanpack-ui/forms` is a
+     * `suggest`, so this service — which every installation loads — cannot name
+     * a class that is only sometimes present. The listener owns the translation
+     * from the submission to these keys; this owns turning a slug into the
+     * service the booking is for and nothing more forms-shaped than that.
+     *
+     * Accepts a `service_slug` naming an active service, a `start_time`, the
+     * customer's details, and optionally a `provider_id`, `notes`, and
+     * `intake_data`. The slug is resolved to a service the same way the public
+     * booking pages resolve one — active only — so a submission naming a
+     * withdrawn or unknown service is refused here rather than booked against a
+     * service the customer could never have reached.
+     *
+     * @since 1.0.0
+     *
+     * @param  array<string, mixed>  $submission  The booking-shaped values a form
+     *                                            submission carried.
+     * @param  Authenticatable|null  $customer  The signed-in customer, when there
+     *                                          is one.
+     *
+     * @throws InvalidArgumentException When the values name no service slug, or
+     *                                  name one no active service answers to.
+     * @throws SlotUnavailableException When no provider could take the slot.
+     *
+     * @return Booking The booking the submission asked for.
+     */
+    public function createFromFormSubmission( array $submission, ?Authenticatable $customer = null ): Booking
+    {
+        $slug = trim( (string) ( $submission['service_slug'] ?? '' ) );
+
+        if ( '' === $slug ) {
+            throw new InvalidArgumentException( 'A booking from a form submission must name a service slug.' );
+        }
+
+        $service = Service::query()
+            ->active()
+            ->where( 'slug', $slug )
+            ->first();
+
+        if ( ! $service instanceof Service ) {
+            throw new InvalidArgumentException( sprintf(
+                'No active service answers to the slug [%s].',
+                $slug,
+            ) );
+        }
+
+        $providerId = $submission['provider_id'] ?? null;
+
+        return $this->create( [
+            'service'           => $service,
+            'provider_id'       => null === $providerId || '' === $providerId ? null : (int) $providerId,
+            'start_time'        => $submission['start_time'] ?? null,
+            'customer_name'     => (string) ( $submission['customer_name'] ?? '' ),
+            'customer_email'    => (string) ( $submission['customer_email'] ?? '' ),
+            'customer_phone'    => $submission['customer_phone'] ?? null,
+            'customer_timezone' => $submission['customer_timezone'] ?? null,
+            'notes'             => $submission['notes'] ?? null,
+            'intake_data'       => (array) ( $submission['intake_data'] ?? [] ),
+        ], $customer, false );
     }
 
     /**
@@ -526,6 +616,8 @@ class BookingService
      * @param  CarbonImmutable  $start  The instant the booking begins.
      * @param  array<string, mixed>  $attributes  The booking to create.
      * @param  Authenticatable|null  $customer  The signed-in customer, if any.
+     * @param  bool  $validateIntake  Whether to judge the intake answers against
+     *                                the service's schema. See {@see self::create()}.
      *
      * @throws SlotUnavailableException When no provider could take the slot.
      * @throws UnexpectedValueException When a subscriber to one of the
@@ -540,17 +632,17 @@ class BookingService
         CarbonImmutable $start,
         array $attributes,
         ?Authenticatable $customer,
+        bool $validateIntake = true,
     ): Booking {
         $version = (int) $service->intake_schema_version;
 
         [ $candidates, $assignment ] = $this->candidateProviders( $service, $attributes );
 
+        $answers             = $this->arrayValue( $attributes['intake_data'] ?? [] );
         $base                = $this->baseAttributes( $attributes, $service, $start, $version, $assignment );
-        $base['intake_data'] = $this->intake->validate(
-            $service,
-            $version,
-            $this->arrayValue( $attributes['intake_data'] ?? [] ),
-        );
+        $base['intake_data'] = $validateIntake
+            ? $this->intake->validate( $service, $version, $answers )
+            : $answers;
 
         $available = $this->filterAvailableProviders(
             $this->providersFreeAt( $service, $candidates, $start ),
