@@ -173,7 +173,9 @@ final class FormBookingListener
                 'customer_name'     => self::mapped( $submission, $config, BookingSlotField::CONFIG_NAME_FIELD, self::NAME_FIELDS ) ?? '',
                 'customer_email'    => self::email( $submission, $config ) ?? '',
                 'customer_phone'    => self::mapped( $submission, $config, BookingSlotField::CONFIG_PHONE_FIELD, self::PHONE_FIELDS ),
-                'customer_timezone' => self::firstValue( $submission, [ self::TIMEZONE_FIELD ] ),
+                'customer_timezone' => '' !== $slot['timezone']
+                    ? $slot['timezone']
+                    : self::firstValue( $submission, [ self::TIMEZONE_FIELD ] ),
             ] );
         } catch ( BookingException|InvalidArgumentException $exception ) {
             Log::warning( 'ArtisanPack UI Bookings: could not book a form submission.', [
@@ -222,7 +224,7 @@ final class FormBookingListener
      *
      * @param  string  $raw  The stored booking_slot value.
      *
-     * @return array{service_slug: string, start: string, provider_id: mixed}|null The slot, or null when empty.
+     * @return array{service_slug: string, start: string, provider_id: mixed, timezone: string}|null The slot, or null when empty.
      */
     private static function parseSlot( string $raw ): ?array
     {
@@ -239,6 +241,7 @@ final class FormBookingListener
                 'service_slug' => trim( (string) ( $decoded['service_slug'] ?? '' ) ),
                 'start'        => (string) $decoded['start'],
                 'provider_id'  => $decoded['provider_id'] ?? null,
+                'timezone'     => trim( (string) ( $decoded['timezone'] ?? '' ) ),
             ];
         }
 
@@ -246,6 +249,7 @@ final class FormBookingListener
             'service_slug' => '',
             'start'        => $raw,
             'provider_id'  => null,
+            'timezone'     => '',
         ];
     }
 
@@ -273,7 +277,10 @@ final class FormBookingListener
         if ( '' !== $mapped ) {
             $value = $submission->getValue( $mapped );
 
-            if ( null !== $value ) {
+            // A mapped field the visitor left blank falls through to the
+            // conventional names rather than booking with an empty answer another
+            // field on the form may hold.
+            if ( null !== $value && '' !== trim( (string) $value ) ) {
                 return (string) $value;
             }
         }

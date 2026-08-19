@@ -125,7 +125,7 @@
                                     <span class="block text-base font-medium" x-text="day.weekday"></span>
                                     <span class="block text-sm text-base-content/60" x-text="day.label"></span>
                                 </span>
-                                <span class="text-xs text-base-content/50" x-text="day.slots.length + ' {{ __( 'times' ) }}'"></span>
+                                <span class="text-xs text-base-content/50" x-text="day.slots.length + ' ' + @js( __( 'times' ) )"></span>
                             </button>
 
                             {{-- The chosen day's time slots. --}}
@@ -261,6 +261,7 @@
                         service_slug: this.serviceSlug,
                         start: slot.start,
                         provider_id: slot.providerId,
+                        timezone: this.timezone,
                     } ) );
                 },
                 previousMonth() {

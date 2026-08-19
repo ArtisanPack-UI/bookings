@@ -14,14 +14,17 @@
 --}}
 @php
     $config = (array) ( $field->field_config ?? [] );
-    $initial = [
+    // Overlay the normalized editable keys onto the whole stored config, so
+    // persistConfig() writes back a full field_config — a key the builder or
+    // another filter stored is preserved rather than dropped on the first edit.
+    $initial = array_merge( $config, [
         'service_slugs' => array_values( (array) ( $config['service_slugs'] ?? [] ) ),
         'name_field'    => (string) ( $config['name_field'] ?? '' ),
         'email_field'   => (string) ( $config['email_field'] ?? '' ),
         'phone_field'   => (string) ( $config['phone_field'] ?? '' ),
         'optin_field'   => (string) ( $config['optin_field'] ?? '' ),
         'description'   => (string) ( $config['description'] ?? '' ),
-    ];
+    ] );
 @endphp
 
 <div

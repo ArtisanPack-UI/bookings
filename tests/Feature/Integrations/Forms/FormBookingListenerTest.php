@@ -96,6 +96,43 @@ describe( 'the form booking listener', function (): void {
         expect( Booking::query()->first()?->service_id )->toBe( $service->id );
     } );
 
+    it( 'books with the timezone the picker carried in the slot', function (): void {
+        [ $service ] = bookableService();
+
+        $value = (string) json_encode( [
+            'service_slug' => $service->slug,
+            'start'        => bookingStart()->toIso8601String(),
+            'provider_id'  => null,
+            'timezone'     => 'Europe/London',
+        ] );
+
+        handleFormSubmission( [
+            [ 'name' => 'appointment', 'type' => 'booking_slot', 'value' => $value ],
+            [ 'name' => 'email', 'type' => 'email', 'value' => 'lee@example.test' ],
+            [ 'name' => 'name', 'type' => 'text', 'value' => 'Lee Park' ],
+        ] );
+
+        expect( Booking::query()->first()?->customer_timezone )->toBe( 'Europe/London' );
+    } );
+
+    it( 'falls through to a conventional field when the mapped field is blank', function (): void {
+        [ $service ] = bookableService();
+
+        handleFormSubmission( [
+            [
+                'name'   => 'appointment',
+                'type'   => 'booking_slot',
+                'value'  => bookingSlotValue( $service->slug ),
+                'config' => [ 'name_field' => 'full_name' ],
+            ],
+            [ 'name' => 'full_name', 'type' => 'text', 'value' => '' ],
+            [ 'name' => 'name', 'type' => 'text', 'value' => 'Fallback Name' ],
+            [ 'name' => 'email', 'type' => 'email', 'value' => 'lee@example.test' ],
+        ] );
+
+        expect( Booking::query()->first()?->customer_name )->toBe( 'Fallback Name' );
+    } );
+
     it( 'falls back to conventional fields when the mappings are unset', function (): void {
         [ $service ] = bookableService();
 
