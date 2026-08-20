@@ -51,6 +51,34 @@ jobs:
         continue-on-error: true
         run: ./vendor/bin/phpcs
 
+  js:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    name: JS (core + React + Vue)
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run JS tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15

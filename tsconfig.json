@@ -4,6 +4,8 @@
 		"lib": ["ESNext", "DOM", "DOM.Iterable"],
 		"module": "NodeNext",
 		"moduleResolution": "NodeNext",
+		"jsx": "react-jsx",
+		"jsxImportSource": "react",
 		"declaration": true,
 		"strict": true,
 		"noImplicitOverride": true,

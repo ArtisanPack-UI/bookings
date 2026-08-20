@@ -1,0 +1,187 @@
+:root {
+	font-family: system-ui, sans-serif;
+	line-height: 1.5;
+	color: #1f2937;
+}
+
+body {
+	margin: 0;
+	padding: 2rem;
+	background: #f9fafb;
+}
+
+.demo-header {
+	max-width: 40rem;
+	margin: 0 auto 2rem;
+}
+
+.demo-header a {
+	color: #4f46e5;
+}
+
+.demo-grid {
+	display: grid;
+	gap: 2rem;
+	grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+	max-width: 60rem;
+	margin: 0 auto;
+}
+
+.demo-panel {
+	background: #fff;
+	border: 1px solid #e5e7eb;
+	border-radius: 0.75rem;
+	padding: 1.5rem;
+}
+
+.demo-panel h2 {
+	margin-top: 0;
+}
+
+.apbk-step-title {
+	margin: 0 0 0.75rem;
+	font-size: 1.1rem;
+}
+
+.apbk-service-list,
+.apbk-provider-list,
+.apbk-day-list,
+.apbk-slot-list {
+	list-style: none;
+	margin: 0 0 1rem;
+	padding: 0;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
+
+.apbk-service,
+.apbk-provider,
+.apbk-day,
+.apbk-slot {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	padding: 0.5rem 0.75rem;
+	border: 1px solid #d1d5db;
+	border-radius: 0.5rem;
+	background: #fff;
+	cursor: pointer;
+	text-align: left;
+}
+
+.apbk-service[aria-pressed='true'],
+.apbk-provider[aria-pressed='true'],
+.apbk-day[aria-pressed='true'],
+.apbk-slot[aria-pressed='true'] {
+	border-color: #4f46e5;
+	background: #eef2ff;
+}
+
+.apbk-service-description,
+.apbk-provider-bio {
+	font-size: 0.85rem;
+	color: #6b7280;
+}
+
+.apbk-calendar-nav {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 0.75rem;
+}
+
+.apbk-month-prev,
+.apbk-month-next {
+	border: 1px solid #d1d5db;
+	background: #fff;
+	border-radius: 0.5rem;
+	width: 2rem;
+	height: 2rem;
+	cursor: pointer;
+}
+
+.apbk-field {
+	margin-bottom: 0.75rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+}
+
+.apbk-label {
+	font-weight: 600;
+	font-size: 0.9rem;
+}
+
+.apbk-input {
+	padding: 0.5rem;
+	border: 1px solid #d1d5db;
+	border-radius: 0.5rem;
+	font: inherit;
+}
+
+.apbk-options {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.75rem;
+}
+
+.apbk-option {
+	display: flex;
+	align-items: center;
+	gap: 0.35rem;
+	font-weight: 400;
+}
+
+.apbk-actions,
+.apbk-manage-actions {
+	display: flex;
+	gap: 0.75rem;
+	align-items: flex-start;
+	margin-top: 1rem;
+}
+
+.apbk-submit,
+.apbk-book-another,
+.apbk-cancel-submit,
+.apbk-reschedule-start,
+.apbk-reschedule-submit {
+	padding: 0.5rem 1rem;
+	border: none;
+	border-radius: 0.5rem;
+	background: #4f46e5;
+	color: #fff;
+	cursor: pointer;
+}
+
+.apbk-back,
+.apbk-reschedule-cancel {
+	padding: 0.5rem 1rem;
+	border: 1px solid #d1d5db;
+	border-radius: 0.5rem;
+	background: #fff;
+	cursor: pointer;
+}
+
+.apbk-error {
+	color: #b91c1c;
+	font-size: 0.85rem;
+	margin: 0.25rem 0 0;
+}
+
+.apbk-error-general {
+	background: #fef2f2;
+	border: 1px solid #fecaca;
+	border-radius: 0.5rem;
+	padding: 0.5rem 0.75rem;
+}
+
+.apbk-manage-status {
+	display: inline-block;
+	padding: 0.15rem 0.5rem;
+	border-radius: 0.35rem;
+	background: #ecfdf5;
+	color: #065f46;
+	font-size: 0.8rem;
+	text-transform: capitalize;
+}
