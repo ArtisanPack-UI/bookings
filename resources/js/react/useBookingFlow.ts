@@ -9,7 +9,7 @@
  * @packageDocumentation
  */
 
-import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 
 import {
 	type BookingFlow,
@@ -69,23 +69,24 @@ export function useBookingFlow(
 ): { state: BookingFlowState; flow: BookingFlow } {
 	const { client, baseUrl, service, timezone, locale, onBooked } = options;
 
+	// The flow is built once and captures its `onBooked` for its lifetime, so a
+	// new callback identity on a later render would otherwise fire the stale
+	// one. Holding the latest in a ref and giving the flow a stable dispatcher
+	// keeps the callback current without rebuilding the whole flow.
+	const onBookedRef = useRef(onBooked);
+	onBookedRef.current = onBooked;
+
 	const flow = useMemo(
 		() => {
-			const resolved =
-				client ??
-				createBookingsClient({ baseUrl: baseUrl ?? '' });
+			const resolved = client ?? createBookingsClient({ baseUrl: baseUrl ?? '' });
 
 			return createBookingFlow({
 				client: resolved,
 				pinnedServiceSlug: service ?? null,
 				timezone,
 				locale,
-				onBooked,
+				onBooked: (booking) => onBookedRef.current?.(booking),
 			});
-			// The flow is deliberately rebuilt only when the connection or the
-			// pinning changes; `onBooked` is read through the closure so a new
-			// function identity each render does not tear the whole flow down.
-			// eslint-disable-next-line react-hooks/exhaustive-deps
 		},
 		[client, baseUrl, service, timezone, locale],
 	);

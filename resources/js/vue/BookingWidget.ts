@@ -11,7 +11,7 @@
  * @packageDocumentation
  */
 
-import { defineComponent, h, type PropType, type VNode } from 'vue';
+import { defineComponent, h, type PropType, useId, type VNode } from 'vue';
 
 import { type BookingFlow, type BookingFlowState, formatDate, formatTime } from '../core/index.js';
 import type { Booking } from '../core/index.js';
@@ -30,8 +30,9 @@ function field(
 	label: string,
 	type: string,
 	required: boolean,
+	idPrefix: string,
 ): VNode {
-	const id = `apbk-${name}`;
+	const id = `${idPrefix}${name}`;
 	const error = state.errors[name]?.[0];
 
 	return h('div', { class: 'apbk-field' }, [
@@ -91,6 +92,10 @@ export const BookingWidget = defineComponent({
 			locale: props.locale,
 			onBooked: props.onBooked,
 		});
+
+		// Namespaces this instance's field ids so two widgets on one page do not
+		// mint colliding DOM ids and break their label associations.
+		const idPrefix = `${useId() ?? 'apbk'}-`;
 
 		return (): VNode => {
 			const snapshot = state.value;
@@ -152,13 +157,13 @@ export const BookingWidget = defineComponent({
 						},
 						[
 							h('h3', { class: 'apbk-step-title' }, 'Your details'),
-							field(flow, snapshot, 'customerName', 'Name', 'text', true),
-							field(flow, snapshot, 'customerEmail', 'Email', 'email', true),
-							field(flow, snapshot, 'customerPhone', 'Telephone', 'tel', false),
+							field(flow, snapshot, 'customerName', 'Name', 'text', true, idPrefix),
+							field(flow, snapshot, 'customerEmail', 'Email', 'email', true, idPrefix),
+							field(flow, snapshot, 'customerPhone', 'Telephone', 'tel', false, idPrefix),
 							h('div', { class: 'apbk-field' }, [
-								h('label', { class: 'apbk-label', for: 'apbk-notes' }, 'Notes'),
+								h('label', { class: 'apbk-label', for: `${idPrefix}notes` }, 'Notes'),
 								h('textarea', {
-									id: 'apbk-notes',
+									id: `${idPrefix}notes`,
 									class: 'apbk-input',
 									value: snapshot.details.notes,
 									onInput: (event: Event) => {
@@ -169,7 +174,7 @@ export const BookingWidget = defineComponent({
 									? h('p', { class: 'apbk-error' }, snapshot.errors.notes[0])
 									: null,
 							]),
-							h(IntakeForm, { flow, state: snapshot }),
+							h(IntakeForm, { flow, state: snapshot, idPrefix }),
 							h('div', { class: 'apbk-actions' }, [
 								backButton(flow),
 								h(

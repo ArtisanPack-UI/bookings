@@ -11,7 +11,7 @@
  * @packageDocumentation
  */
 
-import type { ChangeEvent, JSX } from 'react';
+import { type ChangeEvent, type JSX, useId } from 'react';
 
 import { formatDate, formatTime } from '../core/index.js';
 import { AvailabilityCalendar } from './AvailabilityCalendar.js';
@@ -32,6 +32,9 @@ export type BookingWidgetProps = UseBookingFlowOptions;
  */
 export function BookingWidget(props: BookingWidgetProps): JSX.Element {
 	const { state, flow } = useBookingFlow(props);
+	// Namespaces this instance's field ids so two widgets on one page do not
+	// mint colliding DOM ids and break their label associations.
+	const idPrefix = `${useId()}-`;
 
 	return (
 		<div className="apbk-widget" data-step={state.step}>
@@ -90,6 +93,7 @@ export function BookingWidget(props: BookingWidgetProps): JSX.Element {
 						label="Name"
 						type="text"
 						required
+						idPrefix={idPrefix}
 						value={state.details.customerName}
 						error={state.errors.customerName?.[0]}
 						onChange={(value) => {
@@ -102,6 +106,7 @@ export function BookingWidget(props: BookingWidgetProps): JSX.Element {
 						label="Email"
 						type="email"
 						required
+						idPrefix={idPrefix}
 						value={state.details.customerEmail}
 						error={state.errors.customerEmail?.[0]}
 						onChange={(value) => {
@@ -113,6 +118,7 @@ export function BookingWidget(props: BookingWidgetProps): JSX.Element {
 						name="customerPhone"
 						label="Telephone"
 						type="tel"
+						idPrefix={idPrefix}
 						value={state.details.customerPhone}
 						error={state.errors.customerPhone?.[0]}
 						onChange={(value) => {
@@ -121,11 +127,11 @@ export function BookingWidget(props: BookingWidgetProps): JSX.Element {
 					/>
 
 					<div className="apbk-field">
-						<label className="apbk-label" htmlFor="apbk-notes">
+						<label className="apbk-label" htmlFor={`${idPrefix}notes`}>
 							Notes
 						</label>
 						<textarea
-							id="apbk-notes"
+							id={`${idPrefix}notes`}
 							className="apbk-input"
 							value={state.details.notes}
 							onChange={(event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -137,7 +143,7 @@ export function BookingWidget(props: BookingWidgetProps): JSX.Element {
 						)}
 					</div>
 
-					<IntakeForm flow={flow} state={state} />
+					<IntakeForm flow={flow} state={state} idPrefix={idPrefix} />
 
 					<div className="apbk-actions">
 						<BackButton flow={flow} />
@@ -187,6 +193,7 @@ function Field({
 	value,
 	error,
 	required,
+	idPrefix,
 	onChange,
 }: {
 	name: string;
@@ -195,9 +202,10 @@ function Field({
 	value: string;
 	error?: string;
 	required?: boolean;
+	idPrefix: string;
 	onChange: (value: string) => void;
 }): JSX.Element {
-	const id = `apbk-${name}`;
+	const id = `${idPrefix}${name}`;
 
 	return (
 		<div className="apbk-field">

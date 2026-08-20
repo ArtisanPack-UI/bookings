@@ -9,9 +9,14 @@
  * @packageDocumentation
  */
 
-import { type JSX, useState } from 'react';
+import { type JSX, useId, useState } from 'react';
 
-import { formatDate, formatTime } from '../core/index.js';
+import {
+	formatDate,
+	formatTime,
+	instantToZonedInput,
+	zonedInputToInstant,
+} from '../core/index.js';
 import { type UseManageBookingOptions, useManageBooking } from './useManageBooking.js';
 
 /**
@@ -29,6 +34,8 @@ export function ManageBooking(props: ManageBookingProps): JSX.Element {
 	const { state, flow } = useManageBooking(props);
 	const [reason, setReason] = useState('');
 	const [when, setWhen] = useState('');
+	const [whenError, setWhenError] = useState<string | null>(null);
+	const idPrefix = `${useId()}-`;
 
 	const booking = state.booking;
 
@@ -73,6 +80,14 @@ export function ManageBooking(props: ManageBookingProps): JSX.Element {
 									type="button"
 									className="apbk-reschedule-start"
 									onClick={() => {
+										// Seed the field with the current time, drawn in the same
+										// zone the rest of the widget shows it in.
+										setWhen(
+											booking?.start_time != null
+												? instantToZonedInput(booking.start_time, state.timezone)
+												: '',
+										);
+										setWhenError(null);
 										flow.startReschedule();
 									}}
 								>
@@ -88,11 +103,11 @@ export function ManageBooking(props: ManageBookingProps): JSX.Element {
 										void flow.cancel(reason === '' ? undefined : reason);
 									}}
 								>
-									<label className="apbk-label" htmlFor="apbk-cancel-reason">
+									<label className="apbk-label" htmlFor={`${idPrefix}cancel-reason`}>
 										Reason (optional)
 									</label>
 									<textarea
-										id="apbk-cancel-reason"
+										id={`${idPrefix}cancel-reason`}
 										className="apbk-input"
 										value={reason}
 										onChange={(event) => {
@@ -112,20 +127,29 @@ export function ManageBooking(props: ManageBookingProps): JSX.Element {
 							className="apbk-reschedule"
 							onSubmit={(event) => {
 								event.preventDefault();
-								const parsed = new Date(when);
 
-								if (Number.isNaN(parsed.getTime())) {
+								let instant: string;
+
+								try {
+									// The entered wall time is read in the booking's display
+									// zone, not the browser's, so the instant sent matches the
+									// time the customer picked wherever they happen to be.
+									instant = zonedInputToInstant(when, state.timezone);
+								} catch {
+									setWhenError('Please choose a valid date and time.');
+
 									return;
 								}
 
-								void flow.reschedule(parsed.toISOString());
+								setWhenError(null);
+								void flow.reschedule(instant);
 							}}
 						>
-							<label className="apbk-label" htmlFor="apbk-reschedule-when">
+							<label className="apbk-label" htmlFor={`${idPrefix}reschedule-when`}>
 								New time
 							</label>
 							<input
-								id="apbk-reschedule-when"
+								id={`${idPrefix}reschedule-when`}
 								className="apbk-input"
 								type="datetime-local"
 								value={when}
@@ -133,8 +157,9 @@ export function ManageBooking(props: ManageBookingProps): JSX.Element {
 									setWhen(event.target.value);
 								}}
 							/>
-							{state.errors.start_time?.[0] !== undefined && (
-								<p className="apbk-error">{state.errors.start_time[0]}</p>
+							{whenError !== null && <p className="apbk-error">{whenError}</p>}
+							{state.errors.startTime?.[0] !== undefined && (
+								<p className="apbk-error">{state.errors.startTime[0]}</p>
 							)}
 
 							<div className="apbk-actions">

@@ -26,6 +26,12 @@ export interface IntakeFormProps {
 	 * The flow's current snapshot.
 	 */
 	state: BookingFlowState;
+
+	/**
+	 * A prefix for the fields' DOM ids, so two widgets on one page do not mint
+	 * colliding ids. Defaults to `apbk-`.
+	 */
+	idPrefix?: string;
 }
 
 /**
@@ -50,7 +56,7 @@ function answersFor(state: BookingFlowState, name: string): string[] {
  * @param props - The flow and its snapshot.
  * @returns The intake fields, or an empty fragment when the service asks none.
  */
-export function IntakeForm({ flow, state }: IntakeFormProps): JSX.Element | null {
+export function IntakeForm({ flow, state, idPrefix = 'apbk-' }: IntakeFormProps): JSX.Element | null {
 	const fields = state.selectedService?.intake_schema?.fields ?? [];
 
 	if (fields.length === 0) {
@@ -60,7 +66,7 @@ export function IntakeForm({ flow, state }: IntakeFormProps): JSX.Element | null
 	return (
 		<div className="apbk-intake">
 			{fields.map((field) => (
-				<IntakeField key={field.name} field={field} flow={flow} state={state} />
+				<IntakeField key={field.name} field={field} flow={flow} state={state} idPrefix={idPrefix} />
 			))}
 		</div>
 	);
@@ -73,14 +79,16 @@ function IntakeField({
 	field,
 	flow,
 	state,
+	idPrefix,
 }: {
 	field: IntakeFieldSchema;
 	flow: BookingFlow;
 	state: BookingFlowState;
+	idPrefix: string;
 }): JSX.Element {
 	const label = field.label ?? field.name;
 	const error = state.errors[`intake.${field.name}`]?.[0];
-	const fieldId = `apbk-intake-${field.name}`;
+	const fieldId = `${idPrefix}intake-${field.name}`;
 	const options = field.options ?? [];
 	const value = state.intake[field.name];
 
@@ -188,12 +196,18 @@ function IntakeField({
 					type={field.type}
 					value={typeof value === 'string' || typeof value === 'number' ? String(value) : ''}
 					onChange={(event: ChangeEvent<HTMLInputElement>) => {
-						flow.setIntake(
-							field.name,
-							field.type === 'number' && event.target.value !== ''
-								? Number(event.target.value)
-								: event.target.value,
-						);
+						const raw = event.target.value;
+
+						if (field.type === 'number') {
+							// An emptied number field stores null, not '', so the intake
+							// payload carries a missing value rather than a string where the
+							// schema declares a number.
+							flow.setIntake(field.name, raw === '' ? null : Number(raw));
+
+							return;
+						}
+
+						flow.setIntake(field.name, raw);
 					}}
 				/>
 			)}

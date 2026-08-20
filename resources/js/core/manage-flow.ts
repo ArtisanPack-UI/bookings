@@ -55,6 +55,11 @@ export interface ManageFlowState {
 
 	/**
 	 * Field-keyed validation messages from the last refused action.
+	 *
+	 * Keyed by the flow's own field names — the reschedule form's new time is
+	 * `startTime` — not the API's `start_time`, so a widget looks each message
+	 * up under the same name it bound its input to. This mirrors the booking
+	 * flow's contract on `BookingFlowState.errors`.
 	 */
 	errors: ValidationErrors;
 
@@ -157,6 +162,24 @@ export function createManageFlow(options: ManageFlowOptions): ManageFlow & Manag
 	}
 
 	/**
+	 * Re-keys a manage endpoint's error bag onto the flow's field names.
+	 *
+	 * The reschedule endpoint answers a 422 keyed `start_time`; the flow, and so
+	 * the widget, works in `startTime`. Kept in step with the booking flow's own
+	 * `normaliseErrors` rather than left in API form.
+	 */
+	function normaliseErrors(errors: ValidationErrors): ValidationErrors {
+		const mapping: Record<string, string> = { start_time: 'startTime' };
+		const mapped: ValidationErrors = {};
+
+		for (const [key, messages] of Object.entries(errors)) {
+			mapped[mapping[key] ?? key] = messages;
+		}
+
+		return mapped;
+	}
+
+	/**
 	 * Turns a refused action into either field errors or a general message.
 	 *
 	 * A 422 is the reschedule form's own problem to show inline; a 403, 409, or
@@ -166,7 +189,7 @@ export function createManageFlow(options: ManageFlowOptions): ManageFlow & Manag
 	async function handleActionError(error: unknown): Promise<void> {
 		if (error instanceof BookingsApiError) {
 			if (error.isValidation && error.errors !== undefined) {
-				setState({ loading: false, errors: error.errors });
+				setState({ loading: false, errors: normaliseErrors(error.errors) });
 
 				return;
 			}

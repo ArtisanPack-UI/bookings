@@ -112,7 +112,7 @@ describe('createManageFlow', () => {
 		flow.startReschedule();
 		await flow.reschedule('nope');
 
-		expect(flow.getState().errors.start_time).toEqual(['Not a valid time.']);
+		expect(flow.getState().errors.startTime).toEqual(['Not a valid time.']);
 		expect(flow.getState().view).toBe('reschedule');
 	});
 

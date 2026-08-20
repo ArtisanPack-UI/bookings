@@ -87,3 +87,42 @@ describe('ManageBooking (Vue)', () => {
 		expect(wrapper.find('.apbk-cancel-submit').exists()).toBe(false);
 	});
 });
+
+describe('ManageBooking (Vue) reschedule', () => {
+	it('sends the new time as an instant in the booking timezone', async () => {
+		const api = client();
+		const wrapper = mount(ManageBooking, {
+			props: { client: api, token: 'tok', timezone: 'America/New_York', locale: 'en-US' },
+		});
+
+		await flushPromises();
+		await wrapper.get('.apbk-reschedule-start').trigger('click');
+		await wrapper.get('.apbk-reschedule input').setValue('2025-12-01T09:00');
+		await wrapper.get('.apbk-reschedule').trigger('submit');
+		await flushPromises();
+
+		// 09:00 in New York in December is EST (UTC-5), i.e. 14:00 UTC.
+		expect(api.rescheduleBooking).toHaveBeenCalledWith('tok', {
+			startTime: '2025-12-01T14:00:00.000Z',
+		});
+	});
+
+	it('shows a reschedule validation error under the startTime key', async () => {
+		const api = client();
+		const { BookingsApiError } = await import('../../core/index.js');
+		(api.rescheduleBooking as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+			new BookingsApiError('Invalid.', 422, { start_time: ['That time is taken.'] }),
+		);
+		const wrapper = mount(ManageBooking, {
+			props: { client: api, token: 'tok', timezone: 'America/New_York' },
+		});
+
+		await flushPromises();
+		await wrapper.get('.apbk-reschedule-start').trigger('click');
+		await wrapper.get('.apbk-reschedule input').setValue('2025-12-01T09:00');
+		await wrapper.get('.apbk-reschedule').trigger('submit');
+		await flushPromises();
+
+		expect(wrapper.text()).toContain('That time is taken.');
+	});
+});

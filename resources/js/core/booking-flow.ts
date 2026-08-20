@@ -312,7 +312,7 @@ export function createBookingFlow(options: BookingFlowOptions): BookingFlow {
 			: null;
 	const timezone =
 		typeof options.timezone === 'string' && options.timezone.trim() !== ''
-			? options.timezone
+			? options.timezone.trim()
 			: captureTimezone();
 
 	const listeners = new Set<() => void>();
@@ -322,6 +322,11 @@ export function createBookingFlow(options: BookingFlowOptions): BookingFlow {
 	// clicked past — is recognised as stale and dropped rather than painting an
 	// older month's slots over the newer one.
 	let slotsRequest = 0;
+
+	// The same guard for the service transition: two quick clicks on different
+	// services must not let the slower `listProviders` response settle its
+	// service over the one the customer actually landed on.
+	let serviceRequest = 0;
 
 	let state: BookingFlowState = {
 		step: 'service',
@@ -487,10 +492,16 @@ export function createBookingFlow(options: BookingFlowOptions): BookingFlow {
 		},
 
 		async start(): Promise<void> {
+			const request = ++serviceRequest;
+
 			setState({ loading: true, error: null });
 
 			try {
 				const services = await client.listServices();
+
+				if (request !== serviceRequest) {
+					return;
+				}
 
 				if (pinnedServiceSlug !== null) {
 					const pinned = services.find((service) => service.slug === pinnedServiceSlug) ?? null;
@@ -503,6 +514,10 @@ export function createBookingFlow(options: BookingFlowOptions): BookingFlow {
 
 					const providers = await client.listProviders(pinned.slug);
 
+					if (request !== serviceRequest) {
+						return;
+					}
+
 					setState({ loading: false, services });
 					await settleService(pinned, providers);
 
@@ -514,6 +529,10 @@ export function createBookingFlow(options: BookingFlowOptions): BookingFlow {
 					const only = services[0] as Service;
 					const providers = await client.listProviders(only.slug);
 
+					if (request !== serviceRequest) {
+						return;
+					}
+
 					setState({ loading: false, services });
 					await settleService(only, providers);
 
@@ -522,6 +541,10 @@ export function createBookingFlow(options: BookingFlowOptions): BookingFlow {
 
 				setState({ loading: false, services });
 			} catch (error) {
+				if (request !== serviceRequest) {
+					return;
+				}
+
 				setState({ loading: false, error: messageFor(error) });
 			}
 		},
@@ -537,15 +560,25 @@ export function createBookingFlow(options: BookingFlowOptions): BookingFlow {
 				return;
 			}
 
+			const request = ++serviceRequest;
+
 			// The new service asks its own questions, so the old answers go.
 			setState({ loading: true, intake: {}, error: null, errors: {} });
 
 			try {
 				const providers = await client.listProviders(slug);
 
+				if (request !== serviceRequest) {
+					return;
+				}
+
 				setState({ loading: false });
 				await settleService(service, providers);
 			} catch (error) {
+				if (request !== serviceRequest) {
+					return;
+				}
+
 				setState({ loading: false, error: messageFor(error) });
 			}
 		},
@@ -697,6 +730,11 @@ export function createBookingFlow(options: BookingFlowOptions): BookingFlow {
 				errors: {},
 				error: null,
 			});
+
+			// The slot just taken is still in `slotDays`; re-read the month so the
+			// customer is not offered a time that no longer exists. `bookAnother`
+			// is synchronous by contract, so the reload runs in the background.
+			void loadSlots();
 		},
 	};
 }

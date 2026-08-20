@@ -32,10 +32,15 @@ function answersFor(state: BookingFlowState, name: string): string[] {
 /**
  * Renders one intake field, dispatched on its declared type.
  */
-function renderField(field: IntakeFieldSchema, flow: BookingFlow, state: BookingFlowState): VNode {
+function renderField(
+	field: IntakeFieldSchema,
+	flow: BookingFlow,
+	state: BookingFlowState,
+	idPrefix: string,
+): VNode {
 	const label = field.label ?? field.name;
 	const error = state.errors[`intake.${field.name}`]?.[0];
-	const fieldId = `apbk-intake-${field.name}`;
+	const fieldId = `${idPrefix}intake-${field.name}`;
 	const options = field.options ?? [];
 	const value = state.intake[field.name];
 
@@ -151,7 +156,16 @@ function renderField(field: IntakeFieldSchema, flow: BookingFlow, state: Booking
 				onInput: (event: Event) => {
 					const raw = (event.target as HTMLInputElement).value;
 
-					flow.setIntake(field.name, field.type === 'number' && raw !== '' ? Number(raw) : raw);
+					if (field.type === 'number') {
+						// An emptied number field stores null, not '', so the intake
+						// payload carries a missing value rather than a string where the
+						// schema declares a number.
+						flow.setIntake(field.name, raw === '' ? null : Number(raw));
+
+						return;
+					}
+
+					flow.setIntake(field.name, raw);
 				},
 			}),
 		);
@@ -172,10 +186,11 @@ export const IntakeForm = defineComponent({
 	props: {
 		flow: { type: Object as PropType<BookingFlow>, required: true },
 		state: { type: Object as PropType<BookingFlowState>, required: true },
+		idPrefix: { type: String, default: 'apbk-' },
 	},
 	setup(props) {
 		return (): VNode | null => {
-			const { flow, state } = props;
+			const { flow, state, idPrefix } = props;
 			const fields = state.selectedService?.intake_schema?.fields ?? [];
 
 			if (fields.length === 0) {
@@ -185,7 +200,7 @@ export const IntakeForm = defineComponent({
 			return h(
 				'div',
 				{ class: 'apbk-intake' },
-				fields.map((field) => renderField(field, flow, state)),
+				fields.map((field) => renderField(field, flow, state, idPrefix)),
 			);
 		};
 	},

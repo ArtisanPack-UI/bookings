@@ -60,8 +60,8 @@ describe('BookingWidget (Vue)', () => {
 		expect(wrapper.get('.apbk-slot').text()).toBe('9:00 AM');
 		await wrapper.get('.apbk-slot').trigger('click');
 
-		await wrapper.get('#apbk-customerName').setValue('Sam');
-		await wrapper.get('#apbk-customerEmail').setValue('sam@example.test');
+		await wrapper.get('.apbk-details input[type="text"]').setValue('Sam');
+		await wrapper.get('.apbk-details input[type="email"]').setValue('sam@example.test');
 		await wrapper.get('.apbk-details').trigger('submit');
 		await flushPromises();
 
@@ -85,8 +85,8 @@ describe('BookingWidget (Vue)', () => {
 
 		await flushPromises();
 		await wrapper.get('.apbk-slot').trigger('click');
-		await wrapper.get('#apbk-customerName').setValue('Sam');
-		await wrapper.get('#apbk-customerEmail').setValue('sam@example.test');
+		await wrapper.get('.apbk-details input[type="text"]').setValue('Sam');
+		await wrapper.get('.apbk-details input[type="email"]').setValue('sam@example.test');
 		await wrapper.get('.apbk-details').trigger('submit');
 		await flushPromises();
 

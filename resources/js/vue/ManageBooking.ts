@@ -9,9 +9,14 @@
  * @packageDocumentation
  */
 
-import { defineComponent, h, type PropType, ref, type VNode } from 'vue';
+import { defineComponent, h, type PropType, ref, useId, type VNode } from 'vue';
 
-import { formatDate, formatTime } from '../core/index.js';
+import {
+	formatDate,
+	formatTime,
+	instantToZonedInput,
+	zonedInputToInstant,
+} from '../core/index.js';
 import type { BookingsClient } from '../core/index.js';
 import { useManageBooking } from './useManageBooking.js';
 
@@ -38,6 +43,8 @@ export const ManageBooking = defineComponent({
 
 		const reason = ref('');
 		const when = ref('');
+		const whenError = ref<string | null>(null);
+		const idPrefix = `${useId() ?? 'apbk'}-`;
 
 		return (): VNode => {
 			const snapshot = state.value;
@@ -87,6 +94,13 @@ export const ManageBooking = defineComponent({
 									type: 'button',
 									class: 'apbk-reschedule-start',
 									onClick: () => {
+										// Seed the field with the current time, drawn in the same
+										// zone the rest of the widget shows it in.
+										when.value =
+											booking.start_time !== null
+												? instantToZonedInput(booking.start_time, snapshot.timezone)
+												: '';
+										whenError.value = null;
 										flow.startReschedule();
 									},
 								},
@@ -107,9 +121,13 @@ export const ManageBooking = defineComponent({
 									},
 								},
 								[
-									h('label', { class: 'apbk-label', for: 'apbk-cancel-reason' }, 'Reason (optional)'),
+									h(
+										'label',
+										{ class: 'apbk-label', for: `${idPrefix}cancel-reason` },
+										'Reason (optional)',
+									),
 									h('textarea', {
-										id: 'apbk-cancel-reason',
+										id: `${idPrefix}cancel-reason`,
 										class: 'apbk-input',
 										value: reason.value,
 										onInput: (event: Event) => {
@@ -137,19 +155,32 @@ export const ManageBooking = defineComponent({
 								class: 'apbk-reschedule',
 								onSubmit: (event: Event) => {
 									event.preventDefault();
-									const parsed = new Date(when.value);
 
-									if (Number.isNaN(parsed.getTime())) {
+									let instant: string;
+
+									try {
+										// The entered wall time is read in the booking's display
+										// zone, not the browser's, so the instant sent matches the
+										// time the customer picked wherever they happen to be.
+										instant = zonedInputToInstant(when.value, snapshot.timezone);
+									} catch {
+										whenError.value = 'Please choose a valid date and time.';
+
 										return;
 									}
 
-									void flow.reschedule(parsed.toISOString());
+									whenError.value = null;
+									void flow.reschedule(instant);
 								},
 							},
 							[
-								h('label', { class: 'apbk-label', for: 'apbk-reschedule-when' }, 'New time'),
+								h(
+									'label',
+									{ class: 'apbk-label', for: `${idPrefix}reschedule-when` },
+									'New time',
+								),
 								h('input', {
-									id: 'apbk-reschedule-when',
+									id: `${idPrefix}reschedule-when`,
 									class: 'apbk-input',
 									type: 'datetime-local',
 									value: when.value,
@@ -157,8 +188,11 @@ export const ManageBooking = defineComponent({
 										when.value = (event.target as HTMLInputElement).value;
 									},
 								}),
-								snapshot.errors.start_time?.[0] !== undefined
-									? h('p', { class: 'apbk-error' }, snapshot.errors.start_time[0])
+								whenError.value !== null
+									? h('p', { class: 'apbk-error' }, whenError.value)
+									: null,
+								snapshot.errors.startTime?.[0] !== undefined
+									? h('p', { class: 'apbk-error' }, snapshot.errors.startTime[0])
 									: null,
 								h('div', { class: 'apbk-actions' }, [
 									h(

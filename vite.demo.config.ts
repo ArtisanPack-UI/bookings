@@ -1,4 +1,9 @@
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { defineConfig } from 'vite';
+
+const packageRoot = dirname(fileURLToPath(import.meta.url));
 
 /**
  * Dev-only config for the browser demo under `demo/`.
@@ -15,10 +20,11 @@ export default defineConfig({
 	server: {
 		open: '/index.html',
 		// The demo imports the built widgets from the sibling `dist/` directory,
-		// which sits outside the `demo/` root, so the dev server has to be allowed
-		// to read past it.
+		// which sits outside the `demo/` root. Rather than lift the strict
+		// filesystem guard wholesale, allow only the two directories the demo
+		// actually reads from.
 		fs: {
-			strict: false,
+			allow: [resolve(packageRoot, 'demo'), resolve(packageRoot, 'dist')],
 		},
 	},
 });

@@ -301,3 +301,59 @@ describe('createBookingFlow', () => {
 		expect(listener.mock.calls.length).toBe(seen);
 	});
 });
+
+describe('createBookingFlow race handling', () => {
+	it('drops a stale service response when a newer service is chosen', async () => {
+		const resolvers: Record<string, (providers: Provider[]) => void> = {};
+		const client = fakeClient({
+			services: [service({ slug: 'haircut' }), service({ id: 2, slug: 'colour', name: 'Colour' })],
+		});
+		client.listProviders = vi.fn(
+			(slug: string) =>
+				new Promise<Provider[]>((resolve) => {
+					resolvers[slug] = resolve;
+				}),
+		);
+		const flow = createBookingFlow({ client, timezone: 'America/New_York' });
+
+		await flow.start();
+
+		const first = flow.selectService('haircut');
+		const second = flow.selectService('colour');
+
+		// The newer choice resolves first; the older one resolves last and must
+		// not overwrite it.
+		(resolvers.colour as (providers: Provider[]) => void)([
+			provider(),
+			provider({ id: 11, slug: 'blair' }),
+		]);
+		(resolvers.haircut as (providers: Provider[]) => void)([
+			provider({ id: 20, slug: 'x' }),
+			provider({ id: 21, slug: 'y' }),
+		]);
+
+		await Promise.all([first, second]);
+
+		expect(flow.getState().selectedService?.slug).toBe('colour');
+	});
+
+	it('reloads the month when the customer books another', async () => {
+		const client = fakeClient({
+			services: [service()],
+			slots: [slot('2025-09-01T13:00:00Z', '2025-09-01T13:30:00Z')],
+		});
+		const flow = createBookingFlow({ client, timezone: 'America/New_York' });
+
+		await flow.start();
+		flow.selectSlot(slot('2025-09-01T13:00:00Z', '2025-09-01T13:30:00Z'));
+		flow.setDetail('customerName', 'Sam');
+		await flow.submit();
+
+		const before = (client.listSlots as ReturnType<typeof vi.fn>).mock.calls.length;
+		flow.bookAnother();
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect((client.listSlots as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before + 1);
+	});
+});
