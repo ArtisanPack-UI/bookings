@@ -195,4 +195,30 @@ describe( 'formSubmissionIsBookable', function (): void {
             'service_slug' => $service->slug,
         ] ) )->toBeFalse();
     } );
+
+    it( 'is false for a non-string service slug rather than coercing it', function (): void {
+        expect( bookingService()->formSubmissionIsBookable( [
+            'service_slug' => [ 'discovery-call' ],
+            'start_time'   => bookingStart()->toIso8601String(),
+        ] ) )->toBeFalse();
+    } );
+
+    it( 'is false for an array-valued start rather than fataling in Carbon', function (): void {
+        [ $service ] = bookableService();
+
+        expect( bookingService()->formSubmissionIsBookable( [
+            'service_slug' => $service->slug,
+            'start_time'   => [ bookingStart()->toIso8601String() ],
+        ] ) )->toBeFalse();
+    } );
+
+    it( 'is false for an array-valued provider rather than coercing it to 1', function (): void {
+        [ $service ] = bookableService();
+
+        expect( bookingService()->formSubmissionIsBookable( [
+            'service_slug' => $service->slug,
+            'provider_id'  => [ 1, 2 ],
+            'start_time'   => bookingStart()->toIso8601String(),
+        ] ) )->toBeFalse();
+    } );
 } );

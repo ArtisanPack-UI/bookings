@@ -294,7 +294,22 @@ class BookingService
      */
     public function formSubmissionIsBookable( array $submission ): bool
     {
-        $slug = trim( (string) ( $submission['service_slug'] ?? '' ) );
+        $slug       = $submission['service_slug'] ?? null;
+        $start      = $submission['start_time'] ?? null;
+        $providerId = $submission['provider_id'] ?? null;
+
+        // A form field never carries an array or object here; one that does is
+        // malformed rather than merely unavailable. Refuse it before it can be
+        // coerced — `(int) [ 1 ]` is `1`, and a non-scalar start would fatal in
+        // Carbon rather than resolve — so the malformed shape reports not-bookable
+        // instead of appearing to name a real slot.
+        if ( ! is_string( $slug )
+            || ( null !== $start && ! is_scalar( $start ) && ! $start instanceof CarbonInterface )
+            || ( null !== $providerId && ! is_scalar( $providerId ) ) ) {
+            return false;
+        }
+
+        $slug = trim( $slug );
 
         if ( '' === $slug ) {
             return false;
@@ -306,11 +321,10 @@ class BookingService
             return false;
         }
 
-        $providerId = $submission['provider_id'] ?? null;
         $attributes = [
             'service'     => $service,
             'provider_id' => null === $providerId || '' === $providerId ? null : (int) $providerId,
-            'start_time'  => $submission['start_time'] ?? null,
+            'start_time'  => $start,
         ];
 
         try {

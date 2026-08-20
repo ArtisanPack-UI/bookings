@@ -269,6 +269,13 @@ final class BookingSlotField
      * common case: the JavaScript picker's JSON slot, whose service and instant
      * are exactly what a re-check needs.
      *
+     * A value the picker could never have written — a JSON object missing its
+     * service or instant, or pinning a non-scalar provider — is neither an empty
+     * field nor a bare-instant fallback nor a slot that merely went unavailable.
+     * It is a tampered or broken payload, and letting it through would store the
+     * silent non-booking this rule exists to prevent, so it fails the field
+     * rather than being skipped.
+     *
      * @since 1.0.0
      *
      * @param  array<int, mixed>  $rules  The rules forms has for the field so far.
@@ -284,9 +291,15 @@ final class BookingSlotField
         }
 
         $rules[] = static function ( string $attribute, mixed $value, Closure $fail ): void {
-            $slot = self::slotToCheck( $value );
+            [ $status, $slot ] = self::readSlot( $value );
 
-            if ( null === $slot ) {
+            if ( 'skip' === $status ) {
+                return;
+            }
+
+            if ( 'malformed' === $status ) {
+                $fail( __( 'The chosen time could not be read. Please choose another slot.' ) );
+
                 return;
             }
 
@@ -355,47 +368,60 @@ final class BookingSlotField
     }
 
     /**
-     * Reads a submitted slot value into the shape the availability check takes.
+     * Classifies a submitted slot value for the availability rule.
      *
      * The JavaScript picker writes its choice as the same small JSON object
-     * {@see FormBookingListener} reads — the service, the instant, and the
-     * provider — and only that shape can be re-checked here: a bare instant names
-     * no service, so it is left to the listener and this returns null. An empty
-     * value is null too, so the check never fires on a field the visitor left
-     * blank.
+     * {@see FormBookingListener} reads — a string service and instant and a
+     * scalar (or null) provider — and only that shape can be re-checked here.
+     * The value is sorted into three outcomes:
+     *
+     * - `skip`: an empty value (the `required`/`nullable` rule owns it) or a
+     *   non-JSON bare instant that names no service (the listener owns it). The
+     *   rule stays silent so neither path is disturbed.
+     * - `malformed`: a JSON object the picker could not have written — a missing
+     *   or non-string service or instant, or a non-scalar provider. This is a
+     *   tampered or broken payload rather than a slot that went unavailable, so
+     *   the rule fails the field rather than storing the silent non-booking.
+     * - `ok`: a well-formed picked slot, returned as the array the availability
+     *   check takes.
      *
      * @since 1.0.0
      *
      * @param  mixed  $value  The submitted booking_slot value.
      *
-     * @return array{service_slug: string, start_time: string, provider_id: mixed}|null The slot to check, or null to skip.
+     * @return array{0: string, 1: array{service_slug: string, start_time: string, provider_id: scalar|null}|null} The status and, when `ok`, the slot.
      */
-    private static function slotToCheck( mixed $value ): ?array
+    private static function readSlot( mixed $value ): array
     {
-        $raw = trim( (string) $value );
+        $raw = is_scalar( $value ) ? trim( (string) $value ) : '';
 
         if ( '' === $raw ) {
-            return null;
+            return [ 'skip', null ];
         }
 
         $decoded = json_decode( $raw, true );
 
+        // A non-JSON value is the no-JavaScript bare-instant fallback the listener
+        // owns; leave it alone. `json_decode` returns null for a bare instant.
         if ( ! is_array( $decoded ) ) {
-            return null;
+            return [ 'skip', null ];
         }
 
-        $slug  = trim( (string) ( $decoded['service_slug'] ?? '' ) );
-        $start = trim( (string) ( $decoded['start'] ?? '' ) );
+        $slug       = $decoded['service_slug'] ?? null;
+        $start      = $decoded['start'] ?? null;
+        $providerId = $decoded['provider_id'] ?? null;
 
-        if ( '' === $slug || '' === $start ) {
-            return null;
+        if ( ! is_string( $slug ) || ! is_string( $start )
+            || '' === trim( $slug ) || '' === trim( $start )
+            || ( null !== $providerId && ! is_scalar( $providerId ) ) ) {
+            return [ 'malformed', null ];
         }
 
-        return [
-            'service_slug' => $slug,
-            'start_time'   => $start,
-            'provider_id'  => $decoded['provider_id'] ?? null,
-        ];
+        return [ 'ok', [
+            'service_slug' => trim( $slug ),
+            'start_time'   => trim( $start ),
+            'provider_id'  => $providerId,
+        ] ];
     }
 
     /**

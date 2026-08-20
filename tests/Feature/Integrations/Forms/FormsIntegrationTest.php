@@ -218,4 +218,42 @@ describe( 'the forms integration', function (): void {
 
         expect( $errors )->toBe( [] );
     } );
+
+    it( 'fails a JSON slot object missing its service', function (): void {
+        $errors = runSlotValidationRules(
+            unconfiguredBookingSlotField(),
+            (string) json_encode( [ 'start' => bookingStart()->toIso8601String() ] ),
+        );
+
+        expect( $errors )->toHaveCount( 1 )
+            ->and( $errors[0] )->toContain( 'could not be read' );
+    } );
+
+    it( 'fails a JSON slot object missing its instant', function (): void {
+        [ $service ] = bookableService();
+
+        $errors = runSlotValidationRules(
+            unconfiguredBookingSlotField(),
+            (string) json_encode( [ 'service_slug' => $service->slug ] ),
+        );
+
+        expect( $errors )->toHaveCount( 1 )
+            ->and( $errors[0] )->toContain( 'could not be read' );
+    } );
+
+    it( 'fails a JSON slot that pins a non-scalar provider', function (): void {
+        [ $service ] = bookableService();
+
+        $errors = runSlotValidationRules(
+            unconfiguredBookingSlotField(),
+            (string) json_encode( [
+                'service_slug' => $service->slug,
+                'start'        => bookingStart()->toIso8601String(),
+                'provider_id'  => [ 1, 2 ],
+            ] ),
+        );
+
+        expect( $errors )->toHaveCount( 1 )
+            ->and( $errors[0] )->toContain( 'could not be read' );
+    } );
 } );
