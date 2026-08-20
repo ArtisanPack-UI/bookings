@@ -21,15 +21,28 @@
 			"import": "./dist/vue/index.js"
 		}
 	},
+	"sideEffects": false,
 	"files": [
 		"dist"
 	],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/ArtisanPack-UI/bookings.git"
+	},
+	"homepage": "https://github.com/ArtisanPack-UI/bookings#readme",
+	"bugs": {
+		"url": "https://github.com/ArtisanPack-UI/bookings/issues"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
 	"scripts": {
-		"build": "tsc -p tsconfig.build.json",
+		"build": "vite build && tsc -p tsconfig.build.json --emitDeclarationOnly",
 		"typecheck": "tsc --noEmit",
 		"test": "vitest run",
 		"test:watch": "vitest",
-		"demo": "npm run build && vite --config vite.demo.config.ts"
+		"demo": "npm run build && vite --config vite.demo.config.ts",
+		"prepublishOnly": "npm run build"
 	},
 	"peerDependencies": {
 		"react": "^18.0.0 || ^19.0.0",
