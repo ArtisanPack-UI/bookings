@@ -23,7 +23,8 @@
   },
   "autoload-dev": {
     "psr-4": {
-      "Tests\\": "tests/"
+      "Tests\\": "tests/",
+      "ArtisanPackUI\\Bookings\\Benchmarks\\": "benchmarks/support/"
     }
   },
   "authors": [
@@ -86,7 +87,13 @@
     "test": "./vendor/bin/pest",
     "test:sqlite": "./vendor/bin/pest --exclude-group=mysql,postgres",
     "test:mysql": "./vendor/bin/pest --group=mysql",
-    "test:postgres": "./vendor/bin/pest --group=postgres"
+    "test:postgres": "./vendor/bin/pest --group=postgres",
+    "bench": [
+      "@php benchmarks/availability.php",
+      "@php benchmarks/calendar-sync.php"
+    ],
+    "bench:availability": "@php benchmarks/availability.php",
+    "bench:calendar-sync": "@php benchmarks/calendar-sync.php"
   },
   "config": {
     "allow-plugins": {
