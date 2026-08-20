@@ -234,10 +234,7 @@ class BookingService
             throw new InvalidArgumentException( 'A booking from a form submission must name a service slug.' );
         }
 
-        $service = Service::query()
-            ->active()
-            ->where( 'slug', $slug )
-            ->first();
+        $service = $this->activeServiceForSlug( $slug );
 
         if ( ! $service instanceof Service ) {
             throw new InvalidArgumentException( sprintf(
@@ -259,6 +256,98 @@ class BookingService
             'notes'             => $submission['notes'] ?? null,
             'intake_data'       => (array) ( $submission['intake_data'] ?? [] ),
         ], $customer, false );
+    }
+
+    /**
+     * Answers whether a form submission's picked slot could still be booked.
+     *
+     * The seam issue #118 needs: the forms integration re-asks this at submit
+     * time, before the submission is stored, so a slot that went while the form
+     * was open fails the form the way any other field validation does — a visible
+     * error the visitor can act on — rather than being caught and logged after a
+     * success they have already been shown.
+     *
+     * It mirrors the front half of {@see self::createFromFormSubmission()} exactly
+     * — the same active-only slug resolution, the same provider candidates, the
+     * same availability read — but stops short of writing anything: it reports
+     * whether a provider is free for the slot instead of taking it. A submission
+     * that names no bookable service, no parseable start, or a provider who does
+     * not offer the service is simply not bookable, so every malformed shape
+     * answers false rather than raising — the caller wants a yes-or-no, and the
+     * booking attempt the listener still makes is where a genuinely unexpected
+     * problem surfaces.
+     *
+     * Two callers can still disagree about one slot between this check and the
+     * booking that follows — the guarantee against a double-book is the advisory
+     * lock in {@see self::attempt()}, not this read. What this buys is the common
+     * case: the visitor who lost the slot minutes ago is told so at submit rather
+     * than left believing they booked.
+     *
+     * @since 1.0.0
+     *
+     * @param  array<string, mixed>  $submission  The booking-shaped values a form
+     *                                            submission carried, keyed as
+     *                                            {@see self::createFromFormSubmission()}
+     *                                            takes them.
+     *
+     * @return bool True when a provider is free to take the slot right now.
+     */
+    public function formSubmissionIsBookable( array $submission ): bool
+    {
+        $slug       = $submission['service_slug'] ?? null;
+        $start      = $submission['start_time'] ?? null;
+        $providerId = $submission['provider_id'] ?? null;
+
+        // A form field never carries an array or object here; one that does is
+        // malformed rather than merely unavailable. Refuse it before it can be
+        // coerced — `(int) [ 1 ]` is `1`, and a non-scalar start would fatal in
+        // Carbon rather than resolve — so the malformed shape reports not-bookable
+        // instead of appearing to name a real slot.
+        if ( ! is_string( $slug )
+            || ( null !== $start && ! is_scalar( $start ) && ! $start instanceof CarbonInterface )
+            || ( null !== $providerId && ! is_scalar( $providerId ) ) ) {
+            return false;
+        }
+
+        $slug = trim( $slug );
+
+        if ( '' === $slug ) {
+            return false;
+        }
+
+        $service = $this->activeServiceForSlug( $slug );
+
+        if ( ! $service instanceof Service ) {
+            return false;
+        }
+
+        $attributes = [
+            'service'     => $service,
+            'provider_id' => null === $providerId || '' === $providerId ? null : (int) $providerId,
+            'start_time'  => $start,
+        ];
+
+        try {
+            $start = $this->resolveStart( $attributes );
+        } catch ( InvalidArgumentException ) {
+            return false;
+        }
+
+        return $this->inSiteOf( $service, function () use ( $service, $start, $attributes ): bool {
+            try {
+                [ $candidates ] = $this->candidateProviders( $service, $attributes );
+            } catch ( InvalidArgumentException ) {
+                return false;
+            }
+
+            $available = $this->filterAvailableProviders(
+                $this->providersFreeAt( $service, $candidates, $start ),
+                $service,
+                $start,
+            );
+
+            return [] !== $available;
+        } );
     }
 
     /**
@@ -1401,5 +1490,27 @@ class BookingService
     protected function connection(): ConnectionInterface
     {
         return Booking::query()->getConnection();
+    }
+
+    /**
+     * Resolves an active service by its slug, or null when none answers to it.
+     *
+     * The one active-only lookup {@see self::createFromFormSubmission()} and
+     * {@see self::formSubmissionIsBookable()} share, so a submission naming a
+     * withdrawn or unknown service is refused the same way whether it is being
+     * booked or only being checked.
+     *
+     * @since 1.0.0
+     *
+     * @param  string  $slug  The service slug.
+     *
+     * @return Service|null The active service, or null when none matches.
+     */
+    private function activeServiceForSlug( string $slug ): ?Service
+    {
+        return Service::query()
+            ->active()
+            ->where( 'slug', $slug )
+            ->first();
     }
 }

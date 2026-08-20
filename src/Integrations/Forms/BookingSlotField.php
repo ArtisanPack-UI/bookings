@@ -16,6 +16,8 @@ declare( strict_types=1 );
 namespace ArtisanPackUI\Bookings\Integrations\Forms;
 
 use ArtisanPackUI\Bookings\Models\Service;
+use ArtisanPackUI\Bookings\Services\BookingService;
+use Closure;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\View as ViewFactory;
 
@@ -247,6 +249,69 @@ final class BookingSlotField
     }
 
     /**
+     * Re-checks the picked slot's availability as the form is submitted.
+     *
+     * Bound to `ap.forms.validationRules`, which forms applies to each field's
+     * rule list while building the validator that runs *before* a submission is
+     * stored — the pre-save seam issue #118 needed. For a `booking_slot` field
+     * this appends one closure rule that re-asks {@see BookingService} whether the
+     * slot the visitor chose is still bookable; a slot that went while the form
+     * was open fails validation with a visitor-facing message, exactly as a bad
+     * answer to any other field does, so the person is told to pick again rather
+     * than shown a success for a booking that never lands. Every other field type
+     * is handed straight back untouched.
+     *
+     * The rule is deliberately narrow. It stays silent for an empty value — the
+     * field's own `required`/`nullable` rule owns that — and for a bare-instant
+     * value that names no service, which carries nothing this can resolve an
+     * availability from; those fall through to {@see FormBookingListener}, which
+     * still catches and logs whatever it cannot place. What it closes is the
+     * common case: the JavaScript picker's JSON slot, whose service and instant
+     * are exactly what a re-check needs.
+     *
+     * A value the picker could never have written — a JSON object missing its
+     * service or instant, or pinning a non-scalar provider — is neither an empty
+     * field nor a bare-instant fallback nor a slot that merely went unavailable.
+     * It is a tampered or broken payload, and letting it through would store the
+     * silent non-booking this rule exists to prevent, so it fails the field
+     * rather than being skipped.
+     *
+     * @since 1.0.0
+     *
+     * @param  array<int, mixed>  $rules  The rules forms has for the field so far.
+     * @param  object  $field  The form field being validated.
+     *
+     * @return array<int, mixed> The rules, with the availability check appended
+     *                           for a booking_slot field, else $rules unchanged.
+     */
+    public static function validationRules( array $rules, object $field ): array
+    {
+        if ( self::TYPE !== ( $field->type ?? null ) ) {
+            return $rules;
+        }
+
+        $rules[] = static function ( string $attribute, mixed $value, Closure $fail ): void {
+            [ $status, $slot ] = self::readSlot( $value );
+
+            if ( 'skip' === $status ) {
+                return;
+            }
+
+            if ( 'malformed' === $status ) {
+                $fail( __( 'The chosen time could not be read. Please choose another slot.' ) );
+
+                return;
+            }
+
+            if ( ! app( BookingService::class )->formSubmissionIsBookable( $slot ) ) {
+                $fail( __( 'That time is no longer available. Please choose another slot.' ) );
+            }
+        };
+
+        return $rules;
+    }
+
+    /**
      * Draws the booking_slot field as a live preview on the builder canvas.
      *
      * Bound to `ap.forms.fieldCardPreview`. The same picker the public form
@@ -300,6 +365,63 @@ final class BookingSlotField
             'services'     => self::activeServices(),
             'fieldOptions' => self::formFieldOptions( $form, $field ),
         ] )->render();
+    }
+
+    /**
+     * Classifies a submitted slot value for the availability rule.
+     *
+     * The JavaScript picker writes its choice as the same small JSON object
+     * {@see FormBookingListener} reads — a string service and instant and a
+     * scalar (or null) provider — and only that shape can be re-checked here.
+     * The value is sorted into three outcomes:
+     *
+     * - `skip`: an empty value (the `required`/`nullable` rule owns it) or a
+     *   non-JSON bare instant that names no service (the listener owns it). The
+     *   rule stays silent so neither path is disturbed.
+     * - `malformed`: a JSON object the picker could not have written — a missing
+     *   or non-string service or instant, or a non-scalar provider. This is a
+     *   tampered or broken payload rather than a slot that went unavailable, so
+     *   the rule fails the field rather than storing the silent non-booking.
+     * - `ok`: a well-formed picked slot, returned as the array the availability
+     *   check takes.
+     *
+     * @since 1.0.0
+     *
+     * @param  mixed  $value  The submitted booking_slot value.
+     *
+     * @return array{0: string, 1: array{service_slug: string, start_time: string, provider_id: scalar|null}|null} The status and, when `ok`, the slot.
+     */
+    private static function readSlot( mixed $value ): array
+    {
+        $raw = is_scalar( $value ) ? trim( (string) $value ) : '';
+
+        if ( '' === $raw ) {
+            return [ 'skip', null ];
+        }
+
+        $decoded = json_decode( $raw, true );
+
+        // A non-JSON value is the no-JavaScript bare-instant fallback the listener
+        // owns; leave it alone. `json_decode` returns null for a bare instant.
+        if ( ! is_array( $decoded ) ) {
+            return [ 'skip', null ];
+        }
+
+        $slug       = $decoded['service_slug'] ?? null;
+        $start      = $decoded['start'] ?? null;
+        $providerId = $decoded['provider_id'] ?? null;
+
+        if ( ! is_string( $slug ) || ! is_string( $start )
+            || '' === trim( $slug ) || '' === trim( $start )
+            || ( null !== $providerId && ! is_scalar( $providerId ) ) ) {
+            return [ 'malformed', null ];
+        }
+
+        return [ 'ok', [
+            'service_slug' => trim( $slug ),
+            'start_time'   => trim( $start ),
+            'provider_id'  => $providerId,
+        ] ];
     }
 
     /**
