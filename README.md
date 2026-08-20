@@ -1307,6 +1307,51 @@ package's `major.minor` 1:1 — `@artisanpack-ui/bookings-js@1.2.x` targets
 `artisanpack-ui/bookings ^1.2` — so a change to the public API moves both
 together. The `patch` may diverge for JS-only fixes that need no PHP change.
 
+## Performance targets
+
+Two paths carry the load: the availability read behind the widget, and the
+calendar-sync jobs that fan a booking out to connected calendars. Both have a
+target, and a benchmark under `benchmarks/` that measures against it. These
+targets describe the shape the package is built to and are **not GA-gating** —
+they are a regression tripwire, not a release gate, and the numbers a run reports
+depend on the hardware, PHP build, and cache and queue drivers it runs on.
+
+| Path | Target |
+|------|--------|
+| Availability resolve | p95 **< 200ms warm** for 5 providers × 90 days × 15-minute intervals |
+| Calendar sync | sustained throughput with Google mocked, bounded by the queue driver and worker count |
+
+**Availability** is cached per service, provider, and provider-local date, so the
+warm path — every day a cache hit — is the one the 200ms target is written
+against. The cold path recomputes each day from the database and is naturally
+slower; the benchmark reports both so a change to the computation shows up even
+when the cache hides it. The warm number only means something against the cache
+store you run in production: back it with redis (`BOOKING_BENCH_CACHE=redis`)
+rather than the `array` store the benchmark defaults to.
+
+**Calendar sync** dispatches one `SyncBookingToCalendars` job per connection, and
+the benchmark drives that real job with Google faked in-process, so the figure it
+reports is the package's own per-push cost — the orchestrator, the ledger write,
+and the driver call. Real backpressure is then a function of the queue driver and
+worker count layered on top of that ceiling; the fake accepts a per-call latency
+(`BOOKING_BENCH_SYNC_LATENCY_MS`) to model a calendar round-trip and watch
+throughput fall under it.
+
+```bash
+composer bench                 # both benchmarks
+composer bench:availability    # availability resolve, warm and cold
+composer bench:calendar-sync   # calendar-sync throughput
+
+# Tune a run with environment variables, e.g. a redis-backed warm read:
+BOOKING_BENCH_CACHE=redis BOOKING_BENCH_WARM_ITERATIONS=500 composer bench:availability
+```
+
+The scripts boot a Testbench application, seed the scenario, and print min, mean,
+p50, p95, p99, and max. Every knob (`BOOKING_BENCH_PROVIDERS`,
+`BOOKING_BENCH_DAYS`, `BOOKING_BENCH_BOOKINGS_PER_PROVIDER`, the iteration counts,
+and the two above) has a default that reproduces the table, so a bare
+`composer bench` answers the targets directly.
+
 ## Development
 
 ```bash
