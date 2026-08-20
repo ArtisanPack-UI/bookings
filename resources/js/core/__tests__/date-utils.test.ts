@@ -5,8 +5,10 @@ import {
 	formatSlotRange,
 	formatTime,
 	groupSlotsByDay,
+	instantToZonedInput,
 	slotDurationMinutes,
 	toDayKey,
+	zonedInputToInstant,
 } from '../date-utils.js';
 import type { Slot } from '../types.js';
 
@@ -100,5 +102,49 @@ describe('groupSlotsByDay', () => {
 
 	it('returns no days for no slots', () => {
 		expect(groupSlotsByDay([], 'UTC')).toEqual([]);
+	});
+});
+
+describe('instantToZonedInput', () => {
+	it('renders the datetime-local wall clock in the target zone', () => {
+		expect(instantToZonedInput('2025-09-01T13:00:00Z', 'America/New_York')).toBe(
+			'2025-09-01T09:00',
+		);
+		expect(instantToZonedInput('2025-09-01T13:00:00Z', 'Europe/Berlin')).toBe('2025-09-01T15:00');
+	});
+
+	it('resolves the day in the target zone, not UTC', () => {
+		expect(instantToZonedInput('2025-09-01T03:30:00Z', 'America/New_York')).toBe(
+			'2025-08-31T23:30',
+		);
+	});
+});
+
+describe('zonedInputToInstant', () => {
+	it('reads a datetime-local value as an instant in the given zone', () => {
+		expect(zonedInputToInstant('2025-09-01T09:00', 'America/New_York')).toBe(
+			'2025-09-01T13:00:00.000Z',
+		);
+		expect(zonedInputToInstant('2025-09-01T09:00', 'America/Los_Angeles')).toBe(
+			'2025-09-01T16:00:00.000Z',
+		);
+	});
+
+	it('accounts for standard vs daylight time', () => {
+		// January is EST (UTC-5) in New York, not EDT (UTC-4).
+		expect(zonedInputToInstant('2025-01-01T09:00', 'America/New_York')).toBe(
+			'2025-01-01T14:00:00.000Z',
+		);
+	});
+
+	it('round-trips with instantToZonedInput', () => {
+		const iso = '2025-06-15T17:30:00.000Z';
+		const local = instantToZonedInput(iso, 'Europe/Berlin');
+
+		expect(zonedInputToInstant(local, 'Europe/Berlin')).toBe(iso);
+	});
+
+	it('throws on a value that is not a datetime-local string', () => {
+		expect(() => zonedInputToInstant('not-a-date', 'UTC')).toThrow(RangeError);
 	});
 });

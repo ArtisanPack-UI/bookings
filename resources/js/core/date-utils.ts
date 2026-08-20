@@ -175,3 +175,112 @@ export function groupSlotsByDay(slots: Slot[], timezone: string): SlotDay[] {
 
 	return Array.from(days, ([day, daySlots]) => ({ day, slots: daySlots }));
 }
+
+/**
+ * Gets a zone's offset from UTC, in milliseconds, at a given instant.
+ *
+ * The offset is `zone wall clock − UTC` at that moment, so it already accounts
+ * for daylight saving. Derived by formatting the instant in the zone and
+ * reading the wall-clock components back — the only offset a browser exposes
+ * for an arbitrary IANA zone.
+ *
+ * @param timestamp - The instant, in epoch milliseconds.
+ * @param timezone - The IANA zone.
+ * @returns The offset in milliseconds.
+ */
+function zoneOffsetMs(timestamp: number, timezone: string): number {
+	const parts = new Intl.DateTimeFormat('en-US', {
+		timeZone: timezone,
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit',
+		hour: '2-digit',
+		minute: '2-digit',
+		second: '2-digit',
+		hourCycle: 'h23',
+	}).formatToParts(new Date(timestamp));
+
+	const lookup = (type: Intl.DateTimeFormatPartTypes): number =>
+		Number(parts.find((part) => part.type === type)?.value ?? '0');
+
+	const asUtc = Date.UTC(
+		lookup('year'),
+		lookup('month') - 1,
+		lookup('day'),
+		lookup('hour'),
+		lookup('minute'),
+		lookup('second'),
+	);
+
+	return asUtc - timestamp;
+}
+
+/**
+ * Renders an instant as the `datetime-local` value for a given zone.
+ *
+ * The shape an `<input type="datetime-local">` reads and writes —
+ * `YYYY-MM-DDTHH:mm` — with the wall clock resolved in the target zone rather
+ * than the browser's, so a widget can seed the reschedule field with the time
+ * the customer already has in the zone the rest of the widget shows.
+ *
+ * @param iso - An ISO 8601 instant.
+ * @param timezone - The IANA zone to resolve the wall clock in.
+ * @returns The local datetime string, e.g. `2025-09-01T09:00`.
+ */
+export function instantToZonedInput(iso: string, timezone: string): string {
+	const parts = new Intl.DateTimeFormat('en-CA', {
+		timeZone: timezone,
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit',
+		hour: '2-digit',
+		minute: '2-digit',
+		hourCycle: 'h23',
+	}).formatToParts(parseInstant(iso));
+
+	const lookup = (type: Intl.DateTimeFormatPartTypes): string =>
+		parts.find((part) => part.type === type)?.value ?? '';
+
+	return `${lookup('year')}-${lookup('month')}-${lookup('day')}T${lookup('hour')}:${lookup('minute')}`;
+}
+
+/**
+ * Reads a `datetime-local` value as an instant in a given zone.
+ *
+ * The inverse of {@link instantToZonedInput}: a `datetime-local` value carries
+ * no zone, so this reads its wall clock as being in `timezone` and resolves the
+ * UTC instant it names — the instant the customer means when they pick a time
+ * in the zone the widget renders. The zone offset is taken at the resolved
+ * instant and re-checked once, so a time that lands on a daylight-saving change
+ * still maps to the right side of it.
+ *
+ * @param input - A `datetime-local` value, `YYYY-MM-DDTHH:mm` (seconds optional).
+ * @param timezone - The IANA zone the wall clock is read in.
+ * @returns The instant, as an ISO 8601 UTC string.
+ * @throws RangeError When the value is not a `datetime-local` string.
+ */
+export function zonedInputToInstant(input: string, timezone: string): string {
+	const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(input.trim());
+
+	if (match === null) {
+		throw new RangeError(`Cannot parse "${input}" as a datetime-local value.`);
+	}
+
+	const [year, month, day, hour, minute, second] = match
+		.slice(1)
+		.map((part) => Number(part ?? '0'));
+
+	const wallAsUtc = Date.UTC(
+		year as number,
+		(month as number) - 1,
+		day as number,
+		hour as number,
+		minute as number,
+		second ?? 0,
+	);
+
+	const firstGuess = wallAsUtc - zoneOffsetMs(wallAsUtc, timezone);
+	const timestamp = wallAsUtc - zoneOffsetMs(firstGuess, timezone);
+
+	return new Date(timestamp).toISOString();
+}
