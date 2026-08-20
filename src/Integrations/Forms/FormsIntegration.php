@@ -22,12 +22,12 @@ use Illuminate\Support\Facades\Event;
  * Subscribes this package to `artisanpack-ui/forms`, when forms is installed.
  *
  * The one place the forms integration attaches itself to the running
- * application. It binds three seams, all behind the same gate: the palette
- * filter that adds the `booking_slot` type, the render filter that draws its
- * picker, and the event listener that books what the picker captured. Grouping
- * them here means a single call from the service provider stands the whole
- * integration up, and the parts that are only meaningful together are wired
- * together.
+ * application. It binds every seam behind the same gate: the palette filters
+ * that add the `booking_slot` type, the render filters that draw its picker, the
+ * validation filter that re-checks the picked slot before a submission is stored,
+ * and the event listener that books what the picker captured. Grouping them here
+ * means a single call from the service provider stands the whole integration up,
+ * and the parts that are only meaningful together are wired together.
  *
  * The gate is {@see HookSubscriptions::whenInstalled()} rather than a bare
  * `addFilter()`, for the reason the whole {@see HookSubscriptions} class exists:
@@ -82,6 +82,7 @@ final class FormsIntegration
             addFilter( 'ap.forms.fieldSettings', [ BookingSlotField::class, 'settings' ] );
             addFilter( 'ap.forms.fieldCardPreview', [ BookingSlotField::class, 'preview' ] );
             addFilter( 'ap.forms.fieldRender', [ BookingSlotField::class, 'render' ] );
+            addFilter( 'ap.forms.validationRules', [ BookingSlotField::class, 'validationRules' ] );
 
             Event::listen( self::SUBMITTED_EVENT, [ FormBookingListener::class, 'handle' ] );
         } );

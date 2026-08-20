@@ -4,6 +4,7 @@ declare( strict_types=1 );
 
 use ArtisanPackUI\Bookings\Enums\BookingStatus;
 use ArtisanPackUI\Bookings\Models\Booking;
+use ArtisanPackUI\Bookings\Models\ServiceProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Concerns\TestsWithSqlite;
 
@@ -124,5 +125,74 @@ describe( 'createFromFormSubmission', function (): void {
             'service_slug' => $service->slug,
             'start_time'   => bookingStart()->toIso8601String(),
         ] ) )->toThrow( InvalidArgumentException::class, 'No active service' );
+    } );
+} );
+
+describe( 'formSubmissionIsBookable', function (): void {
+    it( 'is true for a slot a provider is still free to take', function (): void {
+        [ $service ] = bookableService();
+
+        expect( bookingService()->formSubmissionIsBookable( [
+            'service_slug' => $service->slug,
+            'start_time'   => bookingStart()->toIso8601String(),
+        ] ) )->toBeTrue();
+    } );
+
+    it( 'is false once the slot has been taken', function (): void {
+        [ $service ] = bookableService();
+
+        bookingService()->create( bookingCustomer( [
+            'service'    => $service,
+            'start_time' => bookingStart(),
+        ] ) );
+
+        expect( bookingService()->formSubmissionIsBookable( [
+            'service_slug' => $service->slug,
+            'start_time'   => bookingStart()->toIso8601String(),
+        ] ) )->toBeFalse();
+    } );
+
+    it( 'is false for a slot outside every provider\'s working window', function (): void {
+        [ $service ] = bookableService();
+
+        expect( bookingService()->formSubmissionIsBookable( [
+            'service_slug' => $service->slug,
+            'start_time'   => bookingStart( '03:00' )->toIso8601String(),
+        ] ) )->toBeFalse();
+    } );
+
+    it( 'is false when the slot pins a provider who does not offer the service', function (): void {
+        [ $service ]  = bookableService();
+        $stranger     = ServiceProvider::factory()->create();
+
+        expect( bookingService()->formSubmissionIsBookable( [
+            'service_slug' => $service->slug,
+            'provider_id'  => $stranger->getKey(),
+            'start_time'   => bookingStart()->toIso8601String(),
+        ] ) )->toBeFalse();
+    } );
+
+    it( 'is false for a submission that names no service slug', function (): void {
+        expect( bookingService()->formSubmissionIsBookable( [
+            'start_time' => bookingStart()->toIso8601String(),
+        ] ) )->toBeFalse();
+    } );
+
+    it( 'is false for a slug no active service answers to', function (): void {
+        [ $service ] = bookableService();
+        $service->forceFill( [ 'is_active' => false ] )->save();
+
+        expect( bookingService()->formSubmissionIsBookable( [
+            'service_slug' => $service->slug,
+            'start_time'   => bookingStart()->toIso8601String(),
+        ] ) )->toBeFalse();
+    } );
+
+    it( 'is false for a submission with no parseable start time', function (): void {
+        [ $service ] = bookableService();
+
+        expect( bookingService()->formSubmissionIsBookable( [
+            'service_slug' => $service->slug,
+        ] ) )->toBeFalse();
     } );
 } );

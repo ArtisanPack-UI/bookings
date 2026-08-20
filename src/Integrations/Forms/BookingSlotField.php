@@ -16,6 +16,8 @@ declare( strict_types=1 );
 namespace ArtisanPackUI\Bookings\Integrations\Forms;
 
 use ArtisanPackUI\Bookings\Models\Service;
+use ArtisanPackUI\Bookings\Services\BookingService;
+use Closure;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\View as ViewFactory;
 
@@ -247,6 +249,56 @@ final class BookingSlotField
     }
 
     /**
+     * Re-checks the picked slot's availability as the form is submitted.
+     *
+     * Bound to `ap.forms.validationRules`, which forms applies to each field's
+     * rule list while building the validator that runs *before* a submission is
+     * stored — the pre-save seam issue #118 needed. For a `booking_slot` field
+     * this appends one closure rule that re-asks {@see BookingService} whether the
+     * slot the visitor chose is still bookable; a slot that went while the form
+     * was open fails validation with a visitor-facing message, exactly as a bad
+     * answer to any other field does, so the person is told to pick again rather
+     * than shown a success for a booking that never lands. Every other field type
+     * is handed straight back untouched.
+     *
+     * The rule is deliberately narrow. It stays silent for an empty value — the
+     * field's own `required`/`nullable` rule owns that — and for a bare-instant
+     * value that names no service, which carries nothing this can resolve an
+     * availability from; those fall through to {@see FormBookingListener}, which
+     * still catches and logs whatever it cannot place. What it closes is the
+     * common case: the JavaScript picker's JSON slot, whose service and instant
+     * are exactly what a re-check needs.
+     *
+     * @since 1.0.0
+     *
+     * @param  array<int, mixed>  $rules  The rules forms has for the field so far.
+     * @param  object  $field  The form field being validated.
+     *
+     * @return array<int, mixed> The rules, with the availability check appended
+     *                           for a booking_slot field, else $rules unchanged.
+     */
+    public static function validationRules( array $rules, object $field ): array
+    {
+        if ( self::TYPE !== ( $field->type ?? null ) ) {
+            return $rules;
+        }
+
+        $rules[] = static function ( string $attribute, mixed $value, Closure $fail ): void {
+            $slot = self::slotToCheck( $value );
+
+            if ( null === $slot ) {
+                return;
+            }
+
+            if ( ! app( BookingService::class )->formSubmissionIsBookable( $slot ) ) {
+                $fail( __( 'That time is no longer available. Please choose another slot.' ) );
+            }
+        };
+
+        return $rules;
+    }
+
+    /**
      * Draws the booking_slot field as a live preview on the builder canvas.
      *
      * Bound to `ap.forms.fieldCardPreview`. The same picker the public form
@@ -300,6 +352,50 @@ final class BookingSlotField
             'services'     => self::activeServices(),
             'fieldOptions' => self::formFieldOptions( $form, $field ),
         ] )->render();
+    }
+
+    /**
+     * Reads a submitted slot value into the shape the availability check takes.
+     *
+     * The JavaScript picker writes its choice as the same small JSON object
+     * {@see FormBookingListener} reads — the service, the instant, and the
+     * provider — and only that shape can be re-checked here: a bare instant names
+     * no service, so it is left to the listener and this returns null. An empty
+     * value is null too, so the check never fires on a field the visitor left
+     * blank.
+     *
+     * @since 1.0.0
+     *
+     * @param  mixed  $value  The submitted booking_slot value.
+     *
+     * @return array{service_slug: string, start_time: string, provider_id: mixed}|null The slot to check, or null to skip.
+     */
+    private static function slotToCheck( mixed $value ): ?array
+    {
+        $raw = trim( (string) $value );
+
+        if ( '' === $raw ) {
+            return null;
+        }
+
+        $decoded = json_decode( $raw, true );
+
+        if ( ! is_array( $decoded ) ) {
+            return null;
+        }
+
+        $slug  = trim( (string) ( $decoded['service_slug'] ?? '' ) );
+        $start = trim( (string) ( $decoded['start'] ?? '' ) );
+
+        if ( '' === $slug || '' === $start ) {
+            return null;
+        }
+
+        return [
+            'service_slug' => $slug,
+            'start_time'   => $start,
+            'provider_id'  => $decoded['provider_id'] ?? null,
+        ];
     }
 
     /**
