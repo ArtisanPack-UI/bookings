@@ -151,6 +151,102 @@ describe( 'writing', function (): void {
     } )->throws( CalendarSyncException::class );
 } );
 
+describe( 'surfacing Google error detail', function (): void {
+    /**
+     * A 403 body shaped like the one Google returns for a disabled API.
+     *
+     * @return array<string, mixed> The `error` envelope.
+     */
+    function accessNotConfiguredBody(): array
+    {
+        return [
+            'error' => [
+                'code'    => 403,
+                'message' => 'Google Calendar API has not been used in project 8917 before or it is disabled.',
+                'errors'  => [ [ 'reason' => 'accessNotConfigured', 'domain' => 'usageLimits' ] ],
+            ],
+        ];
+    }
+
+    it( 'folds the reason and message into a refused create', function (): void {
+        Http::fake( [ 'https://www.googleapis.com/*' => Http::response( accessNotConfiguredBody(), 403 ) ] );
+
+        $connection = CalendarConnection::factory()->google()->create();
+        $booking    = Booking::factory()->create();
+
+        expect( fn (): mixed => googleDriver()->createEvent( $connection, $booking ) )
+            ->toThrow(
+                CalendarSyncException::class,
+                'accessNotConfigured',
+            );
+    } );
+
+    it( 'includes the status, reason, and message together', function (): void {
+        Http::fake( [ 'https://www.googleapis.com/*' => Http::response( accessNotConfiguredBody(), 403 ) ] );
+
+        $connection = CalendarConnection::factory()->google()->create();
+        $booking    = Booking::factory()->create();
+
+        try {
+            googleDriver()->createEvent( $connection, $booking );
+            $message = null;
+        } catch ( CalendarSyncException $e ) {
+            $message = $e->getMessage();
+        }
+
+        expect( $message )
+            ->toContain( 'HTTP 403' )
+            ->toContain( 'accessNotConfigured' )
+            ->toContain( 'has not been used in project' );
+    } );
+
+    it( 'surfaces the reason on a refused delete, list, watch, and sync too', function (): void {
+        Http::fake( [ 'https://www.googleapis.com/*' => Http::response( accessNotConfiguredBody(), 403 ) ] );
+
+        $connection = CalendarConnection::factory()->google()->twoWay()->create( [ 'sync_token' => 'token-here' ] );
+        $window     = new TimeRange(
+            CarbonImmutable::parse( '2026-06-01T00:00:00Z' ),
+            CarbonImmutable::parse( '2026-06-02T00:00:00Z' ),
+        );
+
+        expect( fn (): mixed => googleDriver()->deleteEvent( $connection, 'apbk-whatever' ) )
+            ->toThrow( CalendarSyncException::class, 'accessNotConfigured' );
+        expect( fn (): mixed => googleDriver()->busyPeriods( $connection, $window ) )
+            ->toThrow( CalendarSyncException::class, 'accessNotConfigured' );
+        expect( fn (): mixed => googleDriver()->subscribeToChanges( $connection, 'https://app.test/webhook' ) )
+            ->toThrow( CalendarSyncException::class, 'accessNotConfigured' );
+        expect( fn (): mixed => googleDriver()->incrementalSync( $connection ) )
+            ->toThrow( CalendarSyncException::class, 'accessNotConfigured' );
+    } );
+
+    it( 'falls back to the raw body when Google sends no structured message', function (): void {
+        Http::fake( [ 'https://www.googleapis.com/*' => Http::response( 'upstream connect error', 502 ) ] );
+
+        $connection = CalendarConnection::factory()->google()->create();
+        $booking    = Booking::factory()->create();
+
+        expect( fn (): mixed => googleDriver()->createEvent( $connection, $booking ) )
+            ->toThrow( CalendarSyncException::class, 'upstream connect error' );
+    } );
+
+    it( 'bounds a very long body so last_sync_error cannot run away', function (): void {
+        Http::fake( [ 'https://www.googleapis.com/*' => Http::response( str_repeat( 'x', 5000 ), 500 ) ] );
+
+        $connection = CalendarConnection::factory()->google()->create();
+        $booking    = Booking::factory()->create();
+
+        try {
+            googleDriver()->createEvent( $connection, $booking );
+            $message = '';
+        } catch ( CalendarSyncException $e ) {
+            $message = $e->getMessage();
+        }
+
+        expect( strlen( $message ) )->toBeLessThan( 700 )
+            ->and( $message )->toContain( '...' );
+    } );
+} );
+
 describe( 'building the event', function (): void {
     it( 'maps the booking to a Google event body', function (): void {
         $booking = Booking::factory()->confirmed()->create();
