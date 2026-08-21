@@ -200,23 +200,39 @@ describe( 'surfacing Google error detail', function (): void {
             ->toContain( 'has not been used in project' );
     } );
 
-    it( 'surfaces the reason on a refused delete, list, watch, and sync too', function (): void {
+    it( 'surfaces the reason on an update, delete, list, watch, incremental sync, and full resync too', function (): void {
         Http::fake( [ 'https://www.googleapis.com/*' => Http::response( accessNotConfiguredBody(), 403 ) ] );
 
         $connection = CalendarConnection::factory()->google()->twoWay()->create( [ 'sync_token' => 'token-here' ] );
+        $booking    = Booking::factory()->create();
         $window     = new TimeRange(
             CarbonImmutable::parse( '2026-06-01T00:00:00Z' ),
             CarbonImmutable::parse( '2026-06-02T00:00:00Z' ),
         );
 
-        expect( fn (): mixed => googleDriver()->deleteEvent( $connection, 'apbk-whatever' ) )
+        // busyPeriods returns an array and subscribeToChanges returns a model, so
+        // those expectations read the value; deleteEvent, incrementalSync, and the
+        // full resync return void, so they use block closures that return nothing.
+        expect( fn (): string => googleDriver()->updateEvent( $connection, $booking, 'apbk-whatever' ) )
             ->toThrow( CalendarSyncException::class, 'accessNotConfigured' );
-        expect( fn (): mixed => googleDriver()->busyPeriods( $connection, $window ) )
+        expect( function () use ( $connection ): void {
+            googleDriver()->deleteEvent( $connection, 'apbk-whatever' );
+        } )->toThrow( CalendarSyncException::class, 'accessNotConfigured' );
+        expect( fn (): array => googleDriver()->busyPeriods( $connection, $window ) )
             ->toThrow( CalendarSyncException::class, 'accessNotConfigured' );
         expect( fn (): mixed => googleDriver()->subscribeToChanges( $connection, 'https://app.test/webhook' ) )
             ->toThrow( CalendarSyncException::class, 'accessNotConfigured' );
-        expect( fn (): mixed => googleDriver()->incrementalSync( $connection ) )
-            ->toThrow( CalendarSyncException::class, 'accessNotConfigured' );
+        expect( function () use ( $connection ): void {
+            googleDriver()->incrementalSync( $connection );
+        } )->toThrow( CalendarSyncException::class, 'accessNotConfigured' );
+
+        // A connection with no cursor drives incrementalSync straight into the
+        // full-resync branch, so this exercises that throw site specifically.
+        $uncursored = CalendarConnection::factory()->google()->twoWay()->create( [ 'sync_token' => null ] );
+
+        expect( function () use ( $uncursored ): void {
+            googleDriver()->incrementalSync( $uncursored );
+        } )->toThrow( CalendarSyncException::class, 'accessNotConfigured' );
     } );
 
     it( 'falls back to the raw body when Google sends no structured message', function (): void {
@@ -225,11 +241,37 @@ describe( 'surfacing Google error detail', function (): void {
         $connection = CalendarConnection::factory()->google()->create();
         $booking    = Booking::factory()->create();
 
-        expect( fn (): mixed => googleDriver()->createEvent( $connection, $booking ) )
+        expect( fn (): string => googleDriver()->createEvent( $connection, $booking ) )
             ->toThrow( CalendarSyncException::class, 'upstream connect error' );
     } );
 
-    it( 'bounds a very long body so last_sync_error cannot run away', function (): void {
+    it( 'collapses control characters so a raw body cannot inject into last_sync_error', function (): void {
+        Http::fake( [
+            'https://www.googleapis.com/*' => Http::response(
+                "<html>\n<body>\r\n  upstream\tconnect\x00error</body>\n</html>",
+                502,
+            ),
+        ] );
+
+        $connection = CalendarConnection::factory()->google()->create();
+        $booking    = Booking::factory()->create();
+
+        try {
+            googleDriver()->createEvent( $connection, $booking );
+            $message = '';
+        } catch ( CalendarSyncException $e ) {
+            $message = $e->getMessage();
+        }
+
+        expect( $message )
+            ->not->toContain( "\n" )
+            ->not->toContain( "\r" )
+            ->not->toContain( "\t" )
+            ->not->toContain( "\x00" )
+            ->toContain( 'upstream connect error' );
+    } );
+
+    it( 'bounds a very long body to the configured limit', function (): void {
         Http::fake( [ 'https://www.googleapis.com/*' => Http::response( str_repeat( 'x', 5000 ), 500 ) ] );
 
         $connection = CalendarConnection::factory()->google()->create();
@@ -242,8 +284,11 @@ describe( 'surfacing Google error detail', function (): void {
             $message = $e->getMessage();
         }
 
-        expect( strlen( $message ) )->toBeLessThan( 700 )
-            ->and( $message )->toContain( '...' );
+        // The detail is truncated at exactly the 500-character limit and marked
+        // with an ellipsis; one more character past the limit must not survive.
+        expect( $message )
+            ->toContain( str_repeat( 'x', 500 ) . '...' )
+            ->not->toContain( str_repeat( 'x', 501 ) );
     } );
 } );
 

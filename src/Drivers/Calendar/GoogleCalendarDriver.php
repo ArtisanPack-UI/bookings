@@ -1126,18 +1126,48 @@ class GoogleCalendarDriver implements CalendarSyncDriver
      */
     protected function refusal( Response $response ): string
     {
-        $reason  = $response->json( 'error.errors.0.reason' );
-        $message = $response->json( 'error.message' );
-
-        if ( ! is_string( $message ) || '' === $message ) {
-            $message = $response->body();
-        }
+        $reason = $response->json( 'error.errors.0.reason' );
 
         return sprintf(
             '(HTTP %d%s): %s',
             $response->status(),
             is_string( $reason ) && '' !== $reason ? ', ' . $reason : '',
-            Str::limit( trim( (string) $message ), self::ERROR_DETAIL_LIMIT ),
+            $this->errorDetail( $response ),
         );
+    }
+
+    /**
+     * Reads a bounded, sanitised description out of a refused response.
+     *
+     * Google's own structured fields are preferred — `error.message`, then the
+     * `error.status` code — because they are the reason the operator needs and
+     * are known not to echo the bearer token, which rides in the request header
+     * and never in the body. Only when neither is present does the raw body
+     * stand in, and it is treated as untrusted: control characters and runs of
+     * whitespace are collapsed so an intermediary's HTML or multi-line error
+     * cannot inject newlines into `last_sync_error`, and the result is truncated
+     * to {@see self::ERROR_DETAIL_LIMIT} so a pathological body cannot run away.
+     *
+     * @since 1.0.0
+     *
+     * @param  Response  $response  The response Google refused with.
+     *
+     * @return string The sanitised, bounded detail.
+     */
+    protected function errorDetail( Response $response ): string
+    {
+        $detail = $response->json( 'error.message' );
+
+        if ( ! is_string( $detail ) || '' === $detail ) {
+            $detail = $response->json( 'error.status' );
+        }
+
+        if ( ! is_string( $detail ) || '' === $detail ) {
+            $detail = $response->body();
+        }
+
+        $detail = trim( (string) preg_replace( '/[[:cntrl:]\s]+/', ' ', (string) $detail ) );
+
+        return Str::limit( $detail, self::ERROR_DETAIL_LIMIT );
     }
 }
