@@ -159,7 +159,7 @@ filter (`ap.bookings.calendarSync.eventPayload`).
 `ap.bookings.notification.channels` filters the channel keys a given event sends
 on. `sms` ships but is not in the default list — texts cost money and reach a real
 phone, so the package never adds it on your behalf. Turn it on for the events you
-choose, or only for customers who asked to be texted:
+choose, and only for customers who have a phone number on the booking:
 
 ```php
 use ArtisanPackUI\Bookings\Models\Booking;
