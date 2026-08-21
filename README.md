@@ -3,10 +3,10 @@
 Appointment scheduling and booking management for Laravel — services, providers,
 availability, bookings, calendar sync, and a public booking widget.
 
-> **Status: pre-release.** This is the package foundation. The service provider,
-> configuration, database schema, and code-style/test toolchain are in place;
-> the domain layer, HTTP surface, and frontend land in the `v1.0.0-alpha.*`
-> series.
+> **Status: v1.0 development.** The domain layer, HTTP surface, notifications,
+> calendar sync, GDPR tooling, and the Livewire and React/Vue frontends are all
+> in place and documented below. Work on the `release/1.0` branch is the run-up to
+> the first tagged release.
 
 ## Requirements
 
@@ -167,8 +167,8 @@ Bookings::getFacadeRoot();
 bookings();
 ```
 
-The booking, availability, and calendar APIs are added on top of this entry point
-in the alpha releases.
+The booking, availability, and calendar APIs sit on top of this entry point and
+are covered in the sections that follow.
 
 ### Creating a booking
 
@@ -1047,10 +1047,14 @@ Every lifecycle change dispatches a typed event under
 `ArtisanPackUI\Bookings\Events`. Payloads are serializable, so a listener may be
 queued:
 
-`BookingRequested`, `BookingConfirmed`, `BookingRescheduled`, `BookingCancelled`,
-`BookingCompleted`, `BookingNoShow`, `SeriesCreated`, `SeriesCancelled`,
-`SeriesEdited`, `CalendarSynced`, `CalendarSyncFailed`,
+`BookingRequested`, `BookingConfirmed`, `BookingRescheduled`, `BookingReassigned`,
+`BookingCancelled`, `BookingCompleted`, `BookingNoShow`, `SeriesCreated`,
+`SeriesCancelled`, `SeriesEdited`, `CalendarSynced`, `CalendarSyncFailed`,
 `CalendarConnectionDisabled`, and `WebhookDisabled`.
+
+Every one implements `ShouldDispatchAfterCommit`, so a listener never runs before
+the row it describes is committed. `BookingReassigned` carries the
+`previousProviderId` (null when the booking was previously unassigned).
 
 `BookingCancelled` carries a `BookingActor` because "the customer cancelled" and
 "we cancelled on the customer" are the same status change and completely
