@@ -1,5 +1,13 @@
 # ArtisanPack UI Bookings Changelog
 
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Hook additions and payload changes are consumer-facing API: they are logged under
+Added or Changed with the exact `ap.bookings.*` name, and a payload change on a
+shipped hook is treated as breaking.
+
 ## [Unreleased]
 
 ### Changed
