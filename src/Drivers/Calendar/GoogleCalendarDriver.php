@@ -122,6 +122,19 @@ class GoogleCalendarDriver implements CalendarSyncDriver
     protected const MAX_PAGES = 100;
 
     /**
+     * How much of Google's error detail a refusal message keeps.
+     *
+     * Google's `error.message` is a sentence, but the body it falls back to when
+     * that field is absent can be arbitrarily long. The detail is truncated so a
+     * pathological response cannot bloat `last_sync_error` without bound.
+     *
+     * @since 1.0.0
+     *
+     * @var int
+     */
+    protected const ERROR_DETAIL_LIMIT = 500;
+
+    /**
      * Constructs the driver.
      *
      * @since 1.0.0
@@ -245,10 +258,10 @@ class GoogleCalendarDriver implements CalendarSyncDriver
         }
 
         throw new CalendarSyncException( sprintf(
-            'Google refused to delete event %s on calendar connection %d (HTTP %d).',
+            'Google refused to delete event %s on calendar connection %d %s',
             $externalEventId,
             $connection->getKey(),
-            $response->status(),
+            $this->refusal( $response ),
         ) );
     }
 
@@ -290,9 +303,9 @@ class GoogleCalendarDriver implements CalendarSyncDriver
 
             if ( ! $response->successful() ) {
                 throw new CalendarSyncException( sprintf(
-                    'Google refused to list events on calendar connection %d (HTTP %d).',
+                    'Google refused to list events on calendar connection %d %s',
                     $connection->getKey(),
-                    $response->status(),
+                    $this->refusal( $response ),
                 ) );
             }
 
@@ -444,9 +457,9 @@ class GoogleCalendarDriver implements CalendarSyncDriver
 
             if ( ! $response->successful() ) {
                 throw new CalendarSyncException( sprintf(
-                    'Google refused an incremental sync on calendar connection %d (HTTP %d).',
+                    'Google refused an incremental sync on calendar connection %d %s',
                     $connection->getKey(),
-                    $response->status(),
+                    $this->refusal( $response ),
                 ) );
             }
 
@@ -542,9 +555,9 @@ class GoogleCalendarDriver implements CalendarSyncDriver
 
         if ( ! $response->successful() ) {
             throw new CalendarSyncException( sprintf(
-                'Google refused to register a watch channel on calendar connection %d (HTTP %d).',
+                'Google refused to register a watch channel on calendar connection %d %s',
                 $connection->getKey(),
-                $response->status(),
+                $this->refusal( $response ),
             ) );
         }
 
@@ -631,9 +644,9 @@ class GoogleCalendarDriver implements CalendarSyncDriver
 
             if ( ! $response->successful() ) {
                 throw new CalendarSyncException( sprintf(
-                    'Google refused a full resync on calendar connection %d (HTTP %d).',
+                    'Google refused a full resync on calendar connection %d %s',
                     $connection->getKey(),
-                    $response->status(),
+                    $this->refusal( $response ),
                 ) );
             }
 
@@ -1086,10 +1099,75 @@ class GoogleCalendarDriver implements CalendarSyncDriver
     protected function failed( string $action, Booking $booking, Response $response ): CalendarSyncException
     {
         return new CalendarSyncException( sprintf(
-            'Google refused to %s booking %d (HTTP %d).',
+            'Google refused to %s booking %d %s',
             $action,
             $booking->getKey(),
-            $response->status(),
+            $this->refusal( $response ),
         ) );
+    }
+
+    /**
+     * Builds the trailing detail that names why Google refused a call.
+     *
+     * Every throw site ends with this, so a rejection reads with Google's own
+     * reason and message rather than a bare status: the `accessNotConfigured` of
+     * a disabled API, the `insufficientPermissions` of a revoked scope, and a
+     * `rateLimitExceeded` become distinguishable in the exception and the
+     * `last_sync_error` it lands in, instead of collapsing to the same
+     * `(HTTP 403)`. When Google sends no structured `error.message` — a bare body
+     * or none at all — the raw body stands in, bounded by
+     * {@see self::ERROR_DETAIL_LIMIT} so a pathological response cannot run away.
+     *
+     * @since 1.0.0
+     *
+     * @param  Response  $response  The response Google refused with.
+     *
+     * @return string The `(HTTP <status>[, <reason>]): <detail>` tail.
+     */
+    protected function refusal( Response $response ): string
+    {
+        $reason = $response->json( 'error.errors.0.reason' );
+
+        return sprintf(
+            '(HTTP %d%s): %s',
+            $response->status(),
+            is_string( $reason ) && '' !== $reason ? ', ' . $reason : '',
+            $this->errorDetail( $response ),
+        );
+    }
+
+    /**
+     * Reads a bounded, sanitised description out of a refused response.
+     *
+     * Google's own structured fields are preferred — `error.message`, then the
+     * `error.status` code — because they are the reason the operator needs and
+     * are known not to echo the bearer token, which rides in the request header
+     * and never in the body. Only when neither is present does the raw body
+     * stand in, and it is treated as untrusted: control characters and runs of
+     * whitespace are collapsed so an intermediary's HTML or multi-line error
+     * cannot inject newlines into `last_sync_error`, and the result is truncated
+     * to {@see self::ERROR_DETAIL_LIMIT} so a pathological body cannot run away.
+     *
+     * @since 1.0.0
+     *
+     * @param  Response  $response  The response Google refused with.
+     *
+     * @return string The sanitised, bounded detail.
+     */
+    protected function errorDetail( Response $response ): string
+    {
+        $detail = $response->json( 'error.message' );
+
+        if ( ! is_string( $detail ) || '' === $detail ) {
+            $detail = $response->json( 'error.status' );
+        }
+
+        if ( ! is_string( $detail ) || '' === $detail ) {
+            $detail = $response->body();
+        }
+
+        $detail = trim( (string) preg_replace( '/[[:cntrl:]\s]+/', ' ', (string) $detail ) );
+
+        return Str::limit( $detail, self::ERROR_DETAIL_LIMIT );
     }
 }
