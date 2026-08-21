@@ -8,6 +8,54 @@ availability, bookings, calendar sync, and a public booking widget.
 > in place and documented below. Work on the `release/1.0` branch is the run-up to
 > the first tagged release.
 
+## Documentation
+
+This README is the complete reference. The [documentation site][docs-home]
+expands each topic into its own page with deeper worked examples — start there
+when you want more than the summary below.
+
+- **Getting started** — [Quick start][docs-getting-started]
+- **Usage** — [Creating a booking][docs-creating] · [Recurring bookings][docs-recurring] · [Public booking widget][docs-widget] · [Manage tokens][docs-manage-tokens] · [Self-serve page][docs-self-serve] · [iCal feeds][docs-ical] · [Admin surface][docs-admin]
+- **Notifications & webhooks** — [Email][docs-email] · [Reminders][docs-reminders] · [Text messages (SMS)][docs-sms] · [Outbound webhooks][docs-webhooks]
+- **Integrations** — [Calendar sync (two-way)][docs-calendar-sync] · [CMS framework][docs-cms] · [Forms][docs-forms] · [Media library][docs-media]
+- **Frontend** — [React][docs-react] · [Vue][docs-vue] · [Headless client][docs-headless]
+- **API reference** — [REST API][docs-rest] · [Services][docs-services] · [Models][docs-models] · [Events][docs-events] · [Hooks & filters][docs-hooks] · [Contracts][docs-contracts]
+- **Advanced** — [Artisan commands][docs-commands] · [GDPR & data retention][docs-gdpr] · [Multi-site][docs-multi-site] · [Performance][docs-performance] · [Rate limiting][docs-rate-limiting] · [Trusted proxies][docs-proxies] · [Webhook security][docs-webhook-security]
+
+[docs-home]: https://github.com/ArtisanPack-UI/bookings/wiki
+[docs-getting-started]: https://github.com/ArtisanPack-UI/bookings/wiki/Getting-Started
+[docs-creating]: https://github.com/ArtisanPack-UI/bookings/wiki/Usage-Creating-Bookings
+[docs-recurring]: https://github.com/ArtisanPack-UI/bookings/wiki/Usage-Recurring-Bookings
+[docs-widget]: https://github.com/ArtisanPack-UI/bookings/wiki/Usage-Booking-Widget
+[docs-manage-tokens]: https://github.com/ArtisanPack-UI/bookings/wiki/Usage-Manage-Tokens
+[docs-self-serve]: https://github.com/ArtisanPack-UI/bookings/wiki/Usage-Self-Serve-Page
+[docs-ical]: https://github.com/ArtisanPack-UI/bookings/wiki/Usage-Ical-Feeds
+[docs-admin]: https://github.com/ArtisanPack-UI/bookings/wiki/Usage-Admin-Surface
+[docs-email]: https://github.com/ArtisanPack-UI/bookings/wiki/Notifications-Email
+[docs-reminders]: https://github.com/ArtisanPack-UI/bookings/wiki/Notifications-Reminders
+[docs-sms]: https://github.com/ArtisanPack-UI/bookings/wiki/Notifications-Sms
+[docs-webhooks]: https://github.com/ArtisanPack-UI/bookings/wiki/Notifications-Webhooks
+[docs-calendar-sync]: https://github.com/ArtisanPack-UI/bookings/wiki/Integrations-Calendar-Sync
+[docs-cms]: https://github.com/ArtisanPack-UI/bookings/wiki/Integrations-Cms-Framework
+[docs-forms]: https://github.com/ArtisanPack-UI/bookings/wiki/Integrations-Forms
+[docs-media]: https://github.com/ArtisanPack-UI/bookings/wiki/Integrations-Media-Library
+[docs-react]: https://github.com/ArtisanPack-UI/bookings/wiki/Frontend-React
+[docs-vue]: https://github.com/ArtisanPack-UI/bookings/wiki/Frontend-Vue
+[docs-headless]: https://github.com/ArtisanPack-UI/bookings/wiki/Frontend-Headless-Client
+[docs-rest]: https://github.com/ArtisanPack-UI/bookings/wiki/Api-Rest-Api
+[docs-services]: https://github.com/ArtisanPack-UI/bookings/wiki/Api-Services
+[docs-models]: https://github.com/ArtisanPack-UI/bookings/wiki/Api-Models
+[docs-events]: https://github.com/ArtisanPack-UI/bookings/wiki/Api-Events
+[docs-hooks]: https://github.com/ArtisanPack-UI/bookings/wiki/Api-Hooks
+[docs-contracts]: https://github.com/ArtisanPack-UI/bookings/wiki/Api-Contracts
+[docs-commands]: https://github.com/ArtisanPack-UI/bookings/wiki/Advanced-Artisan-Commands
+[docs-gdpr]: https://github.com/ArtisanPack-UI/bookings/wiki/Advanced-Gdpr-Data-Retention
+[docs-multi-site]: https://github.com/ArtisanPack-UI/bookings/wiki/Advanced-Multi-Site
+[docs-performance]: https://github.com/ArtisanPack-UI/bookings/wiki/Advanced-Performance
+[docs-rate-limiting]: https://github.com/ArtisanPack-UI/bookings/wiki/Advanced-Rate-Limiting
+[docs-proxies]: https://github.com/ArtisanPack-UI/bookings/wiki/Advanced-Trusted-Proxies
+[docs-webhook-security]: https://github.com/ArtisanPack-UI/bookings/wiki/Advanced-Webhook-Security
+
 ## Requirements
 
 - PHP 8.2+ (Laravel 13 itself requires PHP 8.3+)

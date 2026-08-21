@@ -94,6 +94,93 @@ addFilter( 'ap.bookings.registeredMeetingTypes', function ( array $types ): arra
 
 Pass the label and description untranslated — they are used as translation keys and run through `__()` when read. The filter runs on every read, so registering from a later-booting service provider still works. Entries are keyed by the type's own `key()`, so registering under an existing key (`one_to_one`, `group`, `recurring`, `round_robin`) replaces the built-in.
 
+## Worked extension examples
+
+Three of the most common extensions, each through the filter named for it. The
+meeting-type example above registers a *new* value; these three change a decision
+the package is already making.
+
+### Blocking a slot from an external source
+
+`ap.bookings.slotBookable` runs once per candidate slot, and returning `false`
+drops that slot from everything the package offers — the API, the widget, and the
+no-JavaScript form alike. Use it to veto a slot against a source the package does
+not know about, such as a room that a separate system has booked:
+
+```php
+use ArtisanPackUI\Bookings\Support\Slot;
+use Illuminate\Contracts\Auth\Authenticatable;
+
+addFilter(
+    'ap.bookings.slotBookable',
+    function ( bool $bookable, Slot $slot, ?Authenticatable $customer ): bool {
+        if ( ! $bookable ) {
+            return false; // Already vetoed — do not resurrect it.
+        }
+
+        return ! app( RoomSchedule::class )->isBusy(
+            $slot->period->start,
+            $slot->period->end,
+        );
+    },
+);
+```
+
+The filter **must** return a boolean; anything else throws. `$slot->period->start`
+and `$slot->period->end` are `CarbonImmutable`, and `$slot->providerId` is the
+provider who would serve it (or `null`). To hide a whole span rather than probe it
+slot by slot, filter `ap.bookings.availableSlots` instead.
+
+### Adding a calendar backend
+
+`ap.bookings.calendarSync.providers` filters the driver registry, keyed by each
+driver's own `driver()->value`. It is applied on every read, so a driver
+registered from a late-booting provider package still lands:
+
+```php
+use ArtisanPackUI\Bookings\Contracts\CalendarSyncDriver;
+
+addFilter( 'ap.bookings.calendarSync.providers', function ( array $drivers ): array {
+    $drivers[] = app( MyCalDavDriver::class );
+
+    return $drivers;
+} );
+```
+
+The registry re-keys the result by each driver's own `driver()->value`, so the
+key you set is not load-bearing. A driver implements `Contracts\CalendarSyncDriver`
+and is wrapped by the retry the orchestrator owns, so it never fires
+`calendarSync.pushing` itself. See
+[Calendar Sync](Integrations-Calendar-Sync) for the full contract and the payload
+filter (`ap.bookings.calendarSync.eventPayload`).
+
+### Adding an SMS channel
+
+`ap.bookings.notification.channels` filters the channel keys a given event sends
+on. `sms` ships but is not in the default list — texts cost money and reach a real
+phone, so the package never adds it on your behalf. Turn it on for the events you
+choose, and only for customers who have a phone number on the booking:
+
+```php
+use ArtisanPackUI\Bookings\Models\Booking;
+
+addFilter(
+    'ap.bookings.notification.channels',
+    function ( array $channels, string $event, Booking $booking ): array {
+        if ( 'confirmed' === $event && null !== $booking->customer_phone ) {
+            $channels[] = 'sms';
+        }
+
+        return $channels;
+    },
+);
+```
+
+A channel key nothing is registered for is skipped, so listing `sms` without a
+gateway sends nothing; the channel also declines a booking with no phone number.
+See [Text messages (SMS)](Notifications-Sms) for writing a driver and the
+null-driver disclosure.
+
 ## The machine-readable registry
 
 `Support\HookRegistry` is the machine-readable version of the table above — including hooks whose surfaces (calendar sync, notifications) may not be built yet, so a subscriber can be written against a name before the code that fires it exists:
