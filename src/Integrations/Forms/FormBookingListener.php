@@ -176,6 +176,7 @@ final class FormBookingListener
                 'customer_timezone' => '' !== $slot['timezone']
                     ? $slot['timezone']
                     : self::firstValue( $submission, [ self::TIMEZONE_FIELD ] ),
+                'intake_data'       => self::intakeData( $submission, $config ),
             ] );
         } catch ( BookingException|InvalidArgumentException $exception ) {
             Log::warning( 'ArtisanPack UI Bookings: could not book a form submission.', [
@@ -286,6 +287,58 @@ final class FormBookingListener
         }
 
         return self::firstValue( $submission, $fallbacks );
+    }
+
+    /**
+     * Builds the booking's intake answers from the mapped form fields.
+     *
+     * The appointment field can map a form field to a marketing opt-in, and the
+     * answer is recorded under `intake_data.opt_in` so it travels with the booking
+     * and reaches the lifecycle events a consuming application listens on. The key
+     * is only added when the opt-in field is actually mapped — an unmapped one
+     * asserts nothing about the customer's consent either way. The form is its own
+     * intake, so no service schema is enforced over this ({@see
+     * \ArtisanPackUI\Bookings\Services\BookingService::createFromFormSubmission()}
+     * stores it unvalidated).
+     *
+     * @since 1.0.0
+     *
+     * @param  object  $submission  The form submission.
+     * @param  array<string, mixed>  $config  The booking_slot field's config.
+     *
+     * @return array<string, mixed> The intake answers, empty when none are mapped.
+     */
+    private static function intakeData( object $submission, array $config ): array
+    {
+        $optInField = trim( (string) ( $config[ BookingSlotField::CONFIG_OPTIN_FIELD ] ?? '' ) );
+
+        if ( '' === $optInField ) {
+            return [];
+        }
+
+        return [ 'opt_in' => self::isChecked( $submission->getValue( $optInField ) ) ];
+    }
+
+    /**
+     * Reads a form answer as an opt-in checkbox.
+     *
+     * A consent checkbox contributes its value only when it is ticked, so any
+     * non-empty answer — a scalar or a non-empty group — is read as opted in, and
+     * an absent or blank one as not.
+     *
+     * @since 1.0.0
+     *
+     * @param  mixed  $value  The submitted answer.
+     *
+     * @return bool True when the customer opted in.
+     */
+    private static function isChecked( mixed $value ): bool
+    {
+        if ( is_array( $value ) ) {
+            return [] !== array_filter( $value, static fn ( $entry ): bool => '' !== trim( (string) $entry ) );
+        }
+
+        return null !== $value && '' !== trim( (string) $value );
     }
 
     /**

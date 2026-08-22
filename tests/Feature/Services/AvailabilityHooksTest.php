@@ -13,6 +13,7 @@ use Carbon\CarbonImmutable;
 use Carbon\CarbonPeriod;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\Concerns\TestsWithSqlite;
 
 uses( TestsWithSqlite::class, RefreshDatabase::class );
@@ -235,6 +236,16 @@ describe( 'ap.bookings.slotDuration', function (): void {
 
         expect( fn () => availability()->resolve( $this->service, $this->provider, $this->window ) )
             ->toThrow( UnexpectedValueException::class );
+    } );
+
+    it( 'blames the service, not the hook, for a non-positive base duration', function (): void {
+        // A zero-length service reached the filter as 0 and failed as though a
+        // subscriber had returned it — a misdirection that sent an operator
+        // hunting a hook that never ran. The message now names the service.
+        DB::table( 'services' )->where( 'id', $this->service->getKey() )->update( [ 'duration' => 0 ] );
+
+        expect( fn () => availability()->resolve( $this->service->fresh(), $this->provider, $this->window ) )
+            ->toThrow( UnexpectedValueException::class, 'bookable service must be at least one minute long' );
     } );
 } );
 

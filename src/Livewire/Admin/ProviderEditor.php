@@ -408,7 +408,7 @@ class ProviderEditor extends Component
     {
         $siteId = BelongsToSiteScope::currentSiteId();
 
-        return [
+        $rules = [
             'name'             => [ 'required', 'string', 'max:255' ],
             'slug'             => [
                 'nullable',
@@ -455,5 +455,20 @@ class ProviderEditor extends Component
                 },
             ],
         ];
+
+        // Where the media library is installed, an image id must resolve through
+        // its own model — a positive integer alone would accept any id, including
+        // one the picker never offered or one belonging to another tenant. The
+        // rule is added only when the model is loadable, so a plain-URL install
+        // (`imageUrl` only) never references a class it does not have.
+        if ( $this->mediaLibraryAvailable() ) {
+            $rules['imageMediaId'][] = function ( string $attribute, mixed $value, Closure $fail ): void {
+                if ( null !== $value && ! \ArtisanPackUI\MediaLibrary\Models\Media::query()->whereKey( $value )->exists() ) {
+                    $fail( __( 'The selected image is unavailable.' ) );
+                }
+            };
+        }
+
+        return $rules;
     }
 }

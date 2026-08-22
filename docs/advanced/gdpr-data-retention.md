@@ -42,6 +42,15 @@ php artisan bookings:erase --booking=BK-7F3A9C --dry-run
 
 Erasure reaches soft-deleted bookings too, so a booking already pruned for retention is still reachable by the request to scrub it. A booking already erased reports success and does nothing.
 
+### What one erasure scrubs
+
+Each booking is scrubbed inside a single transaction, which reaches further than the booking row:
+
+- **The booking's own columns.** `customer_name` and `customer_email` are overwritten with a placeholder (they stay NOT NULL — a booking has a customer, and that is not a fact the schema should stop asserting), and `customer_phone`, `intake_data`, and `notes` are nulled. `pii_erased_at` is stamped in the same write.
+- **The notification log** (`booking_notification_log`) for that booking, on every channel **except `database`**: the `recipient` is replaced with the placeholder and the stored `error` is cleared. The `database` rows are left alone deliberately — they record an internal staff reference (for example `App\Models\User:12`), not a customer address, so they remain the record of who was notified.
+- **Webhook deliveries** (`booking_webhook_deliveries`) whose stored payload names the booking are **deleted outright**. The payload is JSON carrying the customer's name and email, and there is no reliable in-place redaction of a value buried in stored JSON, so the row is removed rather than rewritten.
+- **The parent series.** When the booking is the last intact (non-erased) occurrence of a recurring series, the series row is redacted too, so a series is not left naming a customer after its every occurrence has been scrubbed.
+
 > **There is no data-export / subject-access command.** GDPR support here is deletion and anonymisation only. Build an export from the models if you need to answer an access request.
 
 ## What erasure does not reach

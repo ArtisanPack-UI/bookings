@@ -8,7 +8,9 @@ it( 'schedules the reminder and completion sweeps out of the box', function (): 
     expect( $schedule )->toHaveKey( 'bookings:send-reminders' )
         ->and( $schedule['bookings:send-reminders'] )->toBe( '*/15 * * * *' )
         ->and( $schedule )->toHaveKey( 'bookings:complete-past' )
-        ->and( $schedule['bookings:complete-past'] )->toBe( '0 * * * *' );
+        ->and( $schedule['bookings:complete-past'] )->toBe( '0 * * * *' )
+        ->and( $schedule )->toHaveKey( 'bookings:retry-webhook-deliveries' )
+        ->and( $schedule['bookings:retry-webhook-deliveries'] )->toBe( '*/15 * * * *' );
 } );
 
 it( 'schedules every prune daily', function (): void {
@@ -80,7 +82,7 @@ it( 'guards every scheduled command against overlapping itself', function (): vo
 
     $events = bookingScheduleEvents();
 
-    expect( $events )->toHaveCount( 9 );
+    expect( $events )->toHaveCount( 10 );
 
     foreach ( $events as $event ) {
         expect( $event->withoutOverlapping )->toBeTrue();

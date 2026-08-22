@@ -169,10 +169,10 @@ describe( 'the manage link', function (): void {
         expect( hash( 'sha256', $matches[ 1 ] ) )->toBe( $booking->manage_token_hash );
     } );
 
-    it( 'keeps the manage link out of the staff copy', function (): void {
+    it( 'keeps the manage link out of the provider copy', function (): void {
         // The token is the customer's whole credential. A copy of it sitting in
-        // a staff mailbox is a copy the customer never agreed to.
-        $html = renderEmail( NotificationType::Confirmation, NotificationAudience::Admin, templateBooking() );
+        // a provider mailbox is a copy the customer never agreed to.
+        $html = renderEmail( NotificationType::ProviderAssigned, NotificationAudience::Provider, templateBooking() );
 
         expect( $html )->not->toContain( 'https://example.test/bookings/manage/' )
             ->and( $html )->not->toContain( 'Manage your booking' );
@@ -236,15 +236,15 @@ describe( 'the timezone each audience reads', function (): void {
             ->and( $html )->toContain( '(' . $local->format( 'T' ) . ')' );
     } );
 
-    it( 'shows staff the provider timezone, and names the customer\'s alongside it', function (): void {
-        // An administrator scanning the morning needs the times the provider
-        // will actually work them; the customer's zone is there so nobody rings
-        // Chicago at nine in the morning Auckland time.
+    it( 'shows the provider their own timezone, and names the customer\'s alongside it', function (): void {
+        // A provider scanning the morning needs the times they will actually work
+        // them; the customer's zone is there so nobody rings Chicago at nine in
+        // the morning Auckland time.
         $booking  = templateBooking();
         $provider = $booking->startTimeForProvider();
         $customer = $booking->startTimeForCustomer();
 
-        $html = renderEmail( NotificationType::Confirmation, NotificationAudience::Admin, $booking );
+        $html = renderEmail( NotificationType::ProviderAssigned, NotificationAudience::Provider, $booking );
 
         expect( $html )->toContain( $provider->format( 'l, j F Y \a\t H:i' ) )
             ->and( $html )->toContain( $customer->format( 'l, j F Y \a\t H:i' ) )
@@ -310,22 +310,22 @@ describe( 'the subject', function (): void {
 
         $booking = templateBooking();
 
-        ( new BookingConfirmation( $booking ) )->for( NotificationAudience::Admin )->subject();
+        ( new BookingConfirmation( $booking ) )->for( NotificationAudience::Provider )->subject();
 
-        expect( $seen )->toBe( [ BookingConfirmation::class, $booking->getKey(), NotificationAudience::Admin ] );
+        expect( $seen )->toBe( [ BookingConfirmation::class, $booking->getKey(), NotificationAudience::Provider ] );
     } );
 
     it( 'words the staff subject for staff', function (): void {
         // "Your booking is confirmed" is a sentence about the reader's own
-        // appointment, which is not what an administrator is being told.
+        // appointment, which is not what a staff reader is being told.
         $booking = templateBooking();
 
         $customer = ( new BookingConfirmation( $booking ) )->subject();
-        $admin    = ( new BookingConfirmation( $booking ) )->for( NotificationAudience::Admin )->subject();
+        $staff    = ( new BookingConfirmation( $booking ) )->for( NotificationAudience::Provider )->subject();
 
         expect( $customer )->toContain( 'confirmed' )
-            ->and( $admin )->toContain( 'Jamie Rivera' )
-            ->and( $admin )->not->toBe( $customer );
+            ->and( $staff )->toContain( 'Jamie Rivera' )
+            ->and( $staff )->not->toBe( $customer );
     } );
 
     it( 'leaves the audience of the copy it was asked for alone', function (): void {
@@ -333,7 +333,7 @@ describe( 'the subject', function (): void {
         // whichever channel renders next sends staff wording to the customer.
         $notification = new BookingConfirmation( templateBooking() );
 
-        $notification->for( NotificationAudience::Admin );
+        $notification->for( NotificationAudience::Provider );
 
         expect( $notification->audience() )->toBe( NotificationAudience::Customer );
     } );
@@ -406,13 +406,13 @@ describe( 'sending the confirmation', function (): void {
 } );
 
 dataset( 'lifecycleMessages', static function (): iterable {
-    // Customer lifecycle messages are written for the customer and the staff
-    // (admin) reader; the two provider-facing messages are written only for the
-    // provider. Pairing a customer type with the provider audience — or a
-    // provider type with the customer audience — has no template and no meaning,
-    // so the matrix is built from the audiences each type actually renders for.
-    $customerAudiences = [ NotificationAudience::Customer, NotificationAudience::Admin ];
-
+    // Customer lifecycle messages are written for the customer; the two
+    // provider-facing messages are written only for the provider. Staff who are
+    // not the provider are notified through the database channel, not by email,
+    // so there is no staff email audience. Pairing a customer type with the
+    // provider audience — or a provider type with the customer audience — has no
+    // template and no meaning, so the matrix is built from the audiences each
+    // type actually renders for.
     foreach ( [
         NotificationType::Confirmation,
         NotificationType::Reminder,
@@ -420,9 +420,7 @@ dataset( 'lifecycleMessages', static function (): iterable {
         NotificationType::Reschedule,
         NotificationType::NoShow,
     ] as $type ) {
-        foreach ( $customerAudiences as $audience ) {
-            yield $type->value . ' / ' . $audience->value => [ $type, $audience ];
-        }
+        yield $type->value . ' / ' . NotificationAudience::Customer->value => [ $type, NotificationAudience::Customer ];
     }
 
     foreach ( [ NotificationType::ProviderAssigned, NotificationType::ProviderUnassigned ] as $type ) {

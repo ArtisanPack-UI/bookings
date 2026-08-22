@@ -20,17 +20,19 @@ Learn how to model, take, and manage bookings in your Laravel application. There
 - [iCal Feeds](Usage-Ical-Feeds) - Subscribable provider and customer calendars
 - [Admin Surface](Usage-Admin-Surface) - The staff-facing screens
 
-## The entry point
+## The entry points
 
-The package entry point resolves through the container, a facade, or a helper — all three return the same instance:
+The package's behaviour lives in its domain services, which you resolve from the container:
 
 ```php
-use ArtisanPackUI\Bookings\Facades\Bookings;
+use ArtisanPackUI\Bookings\Services\BookingService;
+use ArtisanPackUI\Bookings\Services\SeriesService;
 
-app( 'bookings' );
-Bookings::getFacadeRoot();
-bookings();
+$bookings = app( BookingService::class );   // create, confirm, reschedule, cancel, complete, no-show
+$series   = app( SeriesService::class );    // recurring bookings and scoped edits
 ```
+
+The `Bookings` facade and the `bookings()` helper exist for ecosystem consistency and resolve the package's container binding, but the work is done through the services above.
 
 ## The domain model
 

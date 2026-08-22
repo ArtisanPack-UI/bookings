@@ -33,6 +33,7 @@ use ArtisanPackUI\Bookings\Exceptions\SlotUnavailableException;
 use ArtisanPackUI\Bookings\Models\Booking;
 use ArtisanPackUI\Bookings\Models\Service;
 use ArtisanPackUI\Bookings\Models\ServiceProvider;
+use ArtisanPackUI\Bookings\Support\BookingWindow;
 use ArtisanPackUI\Bookings\Support\Slot;
 use ArtisanPackUI\Bookings\Support\TimeRange;
 use ArtisanPackUI\Core\MultiTenancy\SiteContext;
@@ -245,6 +246,17 @@ class BookingService
 
         $providerId = $submission['provider_id'] ?? null;
 
+        // Availability knows nothing about "now", so without this a stale or
+        // tampered submission could book a slot in the past or inside the
+        // minimum-notice window — one the widget and the HTTP API would both
+        // refuse. Applied here on the write path so the guard holds even for a
+        // caller that skipped {@see self::formSubmissionIsBookable()}.
+        $start = $this->resolveStart( [ 'start_time' => $submission['start_time'] ?? null ] );
+
+        if ( ! $this->startWithinBookingWindow( $start ) ) {
+            throw SlotUnavailableException::for( $service, $start );
+        }
+
         return $this->create( [
             'service'           => $service,
             'provider_id'       => null === $providerId || '' === $providerId ? null : (int) $providerId,
@@ -330,6 +342,14 @@ class BookingService
         try {
             $start = $this->resolveStart( $attributes );
         } catch ( InvalidArgumentException ) {
+            return false;
+        }
+
+        // A slot in the past or inside the minimum-notice window is not bookable
+        // however free the provider is: availability ignores "now", so this is
+        // what stops a stale or tampered submission naming a time the widget and
+        // the HTTP API would both refuse.
+        if ( ! $this->startWithinBookingWindow( $start ) ) {
             return false;
         }
 
@@ -1490,6 +1510,33 @@ class BookingService
     protected function connection(): ConnectionInterface
     {
         return Booking::query()->getConnection();
+    }
+
+    /**
+     * Answers whether a start instant falls inside the bookable window.
+     *
+     * Availability is computed with no notion of the current time, so the
+     * forms path — which re-checks availability but nothing else — needs this to
+     * refuse a past slot or one inside `min_advance_minutes`. It applies the same
+     * clip {@see \ArtisanPackUI\Bookings\Http\Requests\Public\StoreBookingRequest::validateBookingWindow()}
+     * applies on the HTTP path.
+     *
+     * @since 1.0.0
+     *
+     * @param  CarbonImmutable  $start  The start instant, in UTC.
+     *
+     * @return bool True when the instant is bookable right now.
+     */
+    private function startWithinBookingWindow( CarbonImmutable $start ): bool
+    {
+        $now    = CarbonImmutable::now()->utc();
+        $latest = BookingWindow::latest( $now );
+
+        if ( $start->lessThan( BookingWindow::earliest( $now ) ) ) {
+            return false;
+        }
+
+        return null === $latest || ! $start->greaterThan( $latest );
     }
 
     /**

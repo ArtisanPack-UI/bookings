@@ -37,13 +37,19 @@ use Illuminate\Support\Facades\Route;
 Route::prefix( 'api/' . trim( (string) config( 'artisanpack.bookings.public.route_prefix', 'bookings' ), '/' ) )
     ->name( 'artisanpack.bookings.api.' )
     ->group( static function (): void {
+        // The unauthenticated reads are bounded per address by the `read` bucket:
+        // slot resolution is the most expensive read in the package, and without
+        // it a script could walk a provider's whole calendar unbounded.
         Route::get( 'services', [ ServiceController::class, 'index' ] )
+            ->middleware( 'bookings.rate-limit:read' )
             ->name( 'services.index' );
 
         Route::get( 'services/{slug}/providers', [ ServiceController::class, 'providers' ] )
+            ->middleware( 'bookings.rate-limit:read' )
             ->name( 'services.providers' );
 
         Route::get( 'services/{slug}/slots', [ ServiceController::class, 'slots' ] )
+            ->middleware( 'bookings.rate-limit:read' )
             ->name( 'services.slots' );
 
         Route::post( '/', [ BookingController::class, 'store' ] )
@@ -56,9 +62,11 @@ Route::prefix( 'api/' . trim( (string) config( 'artisanpack.bookings.public.rout
         // token costs an indexed lookup that an unguarded route would happily
         // pay for anybody walking the path.
         //
-        // Reads carry two limits — one per address, one per token — because they
-        // bound different abuses: a machine grinding through guesses, and a link
-        // that has escaped into the world being fetched from everywhere at once.
+        // Every one of these carries two limits — one per address, one per token
+        // — because they bound different abuses: a machine grinding through
+        // guesses, and a link that has escaped into the world being hit from
+        // everywhere at once. The writes spend the `post` bucket per address and
+        // the `manage_token` bucket per link, matching the read's stack.
         //
         // The limiters are listed before the resolver on every route, and the
         // order is load-bearing: middleware runs in the order it is declared, so
@@ -76,11 +84,19 @@ Route::prefix( 'api/' . trim( (string) config( 'artisanpack.bookings.public.rout
                     ->name( 'show' );
 
                 Route::post( 'cancel', [ ManageBookingController::class, 'cancel' ] )
-                    ->middleware( [ 'bookings.rate-limit:post', 'bookings.manage-token' ] )
+                    ->middleware( [
+                        'bookings.rate-limit:post',
+                        'bookings.rate-limit:manage_token',
+                        'bookings.manage-token',
+                    ] )
                     ->name( 'cancel' );
 
                 Route::post( 'reschedule', [ ManageBookingController::class, 'reschedule' ] )
-                    ->middleware( [ 'bookings.rate-limit:post', 'bookings.manage-token' ] )
+                    ->middleware( [
+                        'bookings.rate-limit:post',
+                        'bookings.rate-limit:manage_token',
+                        'bookings.manage-token',
+                    ] )
                     ->name( 'reschedule' );
             } );
     } );
@@ -93,30 +109,36 @@ Route::prefix( 'api/' . trim( (string) config( 'artisanpack.bookings.public.rout
 // The `.ics` is part of the path rather than a query string or a content
 // negotiation: clients guess how to treat a subscription URL from its extension,
 // and one without it gets offered as a download or refused outright.
-Route::prefix( trim( (string) config( 'artisanpack.bookings.public.route_prefix', 'bookings' ), '/' ) . '/ical' )
-    ->name( 'artisanpack.bookings.ical.' )
-    ->group( static function (): void {
-        // Addressed by a token rather than by the provider's slug. The slug is
-        // published by `GET api/bookings/services/{slug}/providers`, so a slug
-        // route is a diary anybody who can read the booking widget can
-        // construct. Limited per address and per token for the reason the
-        // customer feed is: one bucket bounds a machine walking the path, the
-        // other bounds one leaked URL fetched from everywhere at once.
-        Route::get( 'providers/{token}.ics', [ IcalFeedController::class, 'provider' ] )
-            ->middleware( [ 'bookings.rate-limit:ical', 'bookings.rate-limit:ical_token' ] )
-            ->where( 'token', '[0-9a-f]{64}' )
-            ->name( 'provider' );
+//
+// The whole feed surface is gated on `calendar.ical_feed.enabled`: an
+// installation that switches it off registers no iCal routes at all, so a feed
+// URL 404s rather than being served — the documented off-switch, made real.
+if ( (bool) config( 'artisanpack.bookings.calendar.ical_feed.enabled', true ) ) {
+    Route::prefix( trim( (string) config( 'artisanpack.bookings.public.route_prefix', 'bookings' ), '/' ) . '/ical' )
+        ->name( 'artisanpack.bookings.ical.' )
+        ->group( static function (): void {
+            // Addressed by a token rather than by the provider's slug. The slug is
+            // published by `GET api/bookings/services/{slug}/providers`, so a slug
+            // route is a diary anybody who can read the booking widget can
+            // construct. Limited per address and per token for the reason the
+            // customer feed is: one bucket bounds a machine walking the path, the
+            // other bounds one leaked URL fetched from everywhere at once.
+            Route::get( 'providers/{token}.ics', [ IcalFeedController::class, 'provider' ] )
+                ->middleware( [ 'bookings.rate-limit:ical', 'bookings.rate-limit:ical_token' ] )
+                ->where( 'token', '[0-9a-f]{64}' )
+                ->name( 'provider' );
 
-        // Limited twice for the same reason, and with the resolver declared
-        // last: middleware runs in declaration order, so written the other way
-        // round each guess would cost an indexed lookup before anything counted
-        // how many guesses had been made.
-        Route::get( 'customers/{token}.ics', [ IcalFeedController::class, 'customer' ] )
-            ->middleware( [
-                'bookings.rate-limit:ical',
-                'bookings.rate-limit:manage_token',
-                'bookings.manage-token',
-            ] )
-            ->where( 'token', '[0-9a-f]{64}' )
-            ->name( 'customer' );
-    } );
+            // Limited twice for the same reason, and with the resolver declared
+            // last: middleware runs in declaration order, so written the other way
+            // round each guess would cost an indexed lookup before anything counted
+            // how many guesses had been made.
+            Route::get( 'customers/{token}.ics', [ IcalFeedController::class, 'customer' ] )
+                ->middleware( [
+                    'bookings.rate-limit:ical',
+                    'bookings.rate-limit:manage_token',
+                    'bookings.manage-token',
+                ] )
+                ->where( 'token', '[0-9a-f]{64}' )
+                ->name( 'customer' );
+        } );
+}

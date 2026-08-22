@@ -11,6 +11,7 @@
 
 import type { ChangeEvent, JSX } from 'react';
 
+import { answersFor, isMultiAnswer } from '../core/index.js';
 import type { BookingFlow, BookingFlowState, IntakeFieldSchema } from '../core/index.js';
 
 /**
@@ -32,22 +33,6 @@ export interface IntakeFormProps {
 	 * colliding ids. Defaults to `apbk-`.
 	 */
 	idPrefix?: string;
-}
-
-/**
- * Whether a field type collects more than one answer.
- */
-function isMultiAnswer(type: string): boolean {
-	return type === 'multiselect' || type === 'checkboxes';
-}
-
-/**
- * Reads the current answers for a multi-answer field as an array.
- */
-function answersFor(state: BookingFlowState, name: string): string[] {
-	const value = state.intake[name];
-
-	return Array.isArray(value) ? value.map((entry) => String(entry)) : [];
 }
 
 /**

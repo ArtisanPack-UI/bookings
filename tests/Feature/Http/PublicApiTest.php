@@ -484,11 +484,29 @@ describe( 'rate limiting', function (): void {
         ) )->toThrow( InvalidArgumentException::class );
     } );
 
-    it( 'leaves the read endpoints alone', function (): void {
+    it( 'bounds the read endpoints with the read bucket', function (): void {
+        config()->set( 'artisanpack.bookings.public.rate_limits.read', 2 );
+
         Service::factory()->create();
 
-        for ( $attempt = 0; $attempt < 8; $attempt++ ) {
-            $this->getJson( '/api/bookings/services' )->assertOk();
-        }
+        $this->getJson( '/api/bookings/services' )->assertOk();
+        $this->getJson( '/api/bookings/services' )->assertOk();
+
+        $this->getJson( '/api/bookings/services' )
+            ->assertStatus( 429 )
+            ->assertHeader( 'Retry-After' );
+    } );
+
+    it( 'counts the slot read against the same read bucket', function (): void {
+        config()->set( 'artisanpack.bookings.public.rate_limits.read', 1 );
+
+        [ $service ] = bookableService();
+
+        // One read spends the whole allowance; the second, on any read route,
+        // is refused — the three GET endpoints share the per-address bucket.
+        $this->getJson( '/api/bookings/services' )->assertOk();
+
+        $this->getJson( '/api/bookings/services/' . $service->slug . '/providers' )
+            ->assertStatus( 429 );
     } );
 } );

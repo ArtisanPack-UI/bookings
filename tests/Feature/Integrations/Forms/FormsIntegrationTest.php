@@ -4,12 +4,21 @@ declare( strict_types=1 );
 
 use ArtisanPackUI\Bookings\Integrations\Forms\BookingSlotField;
 use ArtisanPackUI\Bookings\Integrations\Forms\FormsIntegration;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Concerns\TestsWithSqlite;
 
 uses( TestsWithSqlite::class, RefreshDatabase::class );
 
+beforeEach( function (): void {
+    // The booking-window guard needs "now" pinned before the fixed slots
+    // {@see bookingStart()} names, or a still-bookable slot reads as in the past.
+    CarbonImmutable::setTestNow( '2026-06-01 00:00:00' );
+} );
+
 afterEach( function (): void {
+    CarbonImmutable::setTestNow();
+
     removeAllFilters( 'ap.forms.fieldTypes' );
     removeAllFilters( 'ap.forms.fieldCategories' );
     removeAllFilters( 'ap.forms.fieldSettings' );
@@ -42,11 +51,11 @@ function unconfiguredBookingSlotField(): object
  * Encodes a picked slot the way the JavaScript picker writes it.
  *
  * @param  string  $serviceSlug  The service the visitor chose.
- * @param  Carbon\CarbonImmutable  $start  The instant they picked.
+ * @param  CarbonImmutable  $start  The instant they picked.
  *
  * @return string The JSON slot value.
  */
-function pickedSlotValue( string $serviceSlug, Carbon\CarbonImmutable $start ): string
+function pickedSlotValue( string $serviceSlug, CarbonImmutable $start ): string
 {
     return (string) json_encode( [
         'service_slug' => $serviceSlug,

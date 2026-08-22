@@ -71,14 +71,57 @@ describe( 'writing', function (): void {
         expect( $driver->eventIdFor( $booking ) )->toBe( $driver->eventIdFor( $booking->fresh() ) );
     } );
 
-    it( 'treats a 409 on create as the success it is', function (): void {
-        Http::fake( [ 'https://www.googleapis.com/*' => Http::response( [ 'error' => 'duplicate' ], 409 ) ] );
+    it( 'resurrects the event with a PUT when a create hits a 409', function (): void {
+        // A 409 means the id already exists — a live event on a retried create, or
+        // a tombstone from a previous assignment of this booking. Either way the
+        // POST is refused and a PUT to the same id writes the current body, so the
+        // create cannot report a success that leaves the appointment cancelled.
+        Http::fake( [
+            'https://www.googleapis.com/*' => function ( Request $request ) {
+                return 'PUT' === $request->method()
+                    ? Http::response( [], 200 )
+                    : Http::response( [ 'error' => 'duplicate' ], 409 );
+            },
+        ] );
 
         $connection = CalendarConnection::factory()->google()->create();
-        $booking    = Booking::factory()->create();
+        $booking    = Booking::factory()->confirmed()->create();
         $driver     = googleDriver();
 
         expect( $driver->createEvent( $connection, $booking ) )->toBe( $driver->eventIdFor( $booking ) );
+
+        Http::assertSent( fn ( Request $request ): bool => 'PUT' === $request->method()
+            && str_ends_with( $request->url(), $driver->eventIdFor( $booking ) )
+            && 'confirmed' === $request['status'] );
+    } );
+
+    it( 'throws when the resurrecting PUT after a 409 also fails', function (): void {
+        // The 409 fallback is not a licence to swallow a genuine failure: if the
+        // PUT cannot land either, the create is a real failure the sync must retry.
+        Http::fake( [ 'https://www.googleapis.com/*' => Http::response( [ 'error' => 'nope' ], 409 ) ] );
+
+        $connection = CalendarConnection::factory()->google()->create();
+        $booking    = Booking::factory()->create();
+
+        googleDriver()->createEvent( $connection, $booking );
+    } )->throws( CalendarSyncException::class );
+
+    it( 'resurrects on update when a re-insert hits a tombstone', function (): void {
+        // PUT is gone (404), the re-insert POST hits a tombstone (409), and the
+        // second PUT resurrects — the reassign-away-then-back path end to end.
+        Http::fake( [
+            'https://www.googleapis.com/*' => Http::sequence()
+                ->push( [ 'error' => 'gone' ], 404 )
+                ->push( [ 'error' => 'duplicate' ], 409 )
+                ->push( [], 200 ),
+        ] );
+
+        $connection = CalendarConnection::factory()->google()->create();
+        $booking    = Booking::factory()->confirmed()->create();
+        $driver     = googleDriver();
+
+        expect( $driver->updateEvent( $connection, $booking, $driver->eventIdFor( $booking ) ) )
+            ->toBe( $driver->eventIdFor( $booking ) );
     } );
 
     it( 'fires pushed with the external id, and leaves pushing to the orchestrator', function (): void {

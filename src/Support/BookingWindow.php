@@ -65,7 +65,7 @@ final class BookingWindow
             return null;
         }
 
-        return self::clip( $start->utc(), $start->utc()->addMonth() );
+        return self::clip( $start->utc(), $start->addMonth()->utc() );
     }
 
     /**
@@ -92,7 +92,7 @@ final class BookingWindow
             return null;
         }
 
-        return self::clip( $start->utc(), $start->utc()->addDay() );
+        return self::clip( $start->utc(), $start->addDay()->utc() );
     }
 
     /**

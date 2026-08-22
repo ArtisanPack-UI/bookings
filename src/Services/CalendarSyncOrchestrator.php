@@ -182,6 +182,33 @@ class CalendarSyncOrchestrator
     }
 
     /**
+     * Dispatches a removal job for every calendar the booking is recorded on.
+     *
+     * Called when a booking is cancelled: unlike {@see unsync()}, which is scoped
+     * to a single former provider during a reassignment, cancellation wants the
+     * appointment off every calendar it was ever written to. The ledger is the
+     * authority on that — a connection since switched off still holds an event
+     * that ought to come down — so the removal is driven straight off the ledger
+     * rows rather than off the provider's current connections.
+     *
+     * @since 1.0.0
+     *
+     * @param  Booking  $booking  The booking that was cancelled.
+     *
+     * @return void
+     */
+    public function unsyncAll( Booking $booking ): void
+    {
+        $events = CalendarEvent::query()
+            ->where( 'booking_id', $booking->getKey() )
+            ->get();
+
+        foreach ( $events as $event ) {
+            RemoveBookingFromCalendars::dispatch( (int) $booking->getKey(), (int) $event->connection_id );
+        }
+    }
+
+    /**
      * Makes one attempt at writing a booking to one connection's calendar.
      *
      * Called from the job's `handle()`, so a throw here is the job's failure and

@@ -1,12 +1,31 @@
-# Ignore all test and documentation with "export-ignore".
+# Keep test, build, and development files out of the Composer dist archive.
+# resources/js is deliberately kept so composer consumers get the widget source;
+# the npm package (@artisanpack-ui/bookings-js) ships the built dist/ separately.
 
-/.gitlab export-ignore
-/.gitignore         export-ignore
-/tests              export-ignore
-/.idea export-ignore
-/src/**/Tests       export-ignore
-/src/**/*Test.php   export-ignore
-/src/**/Test.php    export-ignore
-/phpunit.xml   export-ignore
-/.gitlab-ci.yml export-ignore
-/docs export-ignore
+/.github                export-ignore
+/tests                  export-ignore
+/docs                   export-ignore
+/benchmarks             export-ignore
+/demo                   export-ignore
+/.idea                  export-ignore
+/src/**/Tests           export-ignore
+/src/**/*Test.php       export-ignore
+/src/**/Test.php        export-ignore
+
+/.coderabbit.yaml       export-ignore
+/.php-cs-fixer.dist.php  export-ignore
+/phpcs.xml              export-ignore
+/pint.json              export-ignore
+/phpunit.xml            export-ignore
+
+/package.json           export-ignore
+/package-lock.json      export-ignore
+/tsconfig.json          export-ignore
+/tsconfig.build.json    export-ignore
+/vite.config.ts         export-ignore
+/vite.demo.config.ts    export-ignore
+/vitest.config.ts       export-ignore
+
+/CONTRIBUTING.md        export-ignore
+/.gitignore             export-ignore
+/.gitattributes         export-ignore

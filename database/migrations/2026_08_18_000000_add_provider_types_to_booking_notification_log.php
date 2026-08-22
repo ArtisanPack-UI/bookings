@@ -81,6 +81,15 @@ return new class extends Migration {
      */
     public function down(): void
     {
+        // Rows holding the values the column is about to stop accepting have to go
+        // first. Narrowing the set around them fails outright on PostgreSQL — the
+        // new CHECK constraint refuses to add while existing rows violate it — and
+        // on MySQL an ENUM MODIFY coerces the now-invalid values to an empty
+        // string, silently corrupting the log rather than reversing the change.
+        DB::table( 'booking_notification_log' )
+            ->whereIn( 'type', [ 'provider_assigned', 'provider_unassigned' ] )
+            ->delete();
+
         $this->setTypeValues( $this->withoutProviderTypes );
     }
 

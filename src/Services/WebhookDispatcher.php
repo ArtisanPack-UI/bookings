@@ -220,14 +220,13 @@ class WebhookDispatcher
      * redelivers a job whose attempt already succeeded finds a `success` row and
      * does nothing rather than sending the consumer the same event again.
      *
-     * **That check is a terminal-state guard, not a claim.** Two callers holding
-     * the same still-pending row would both send, and nothing here stops them.
-     * It holds today because exactly one job exists per delivery — `$tries` is 1
-     * on {@see DispatchWebhookDelivery}, and the retry is queued by the attempt
-     * that failed rather than swept up by anything else. Whoever adds the retry
-     * sweep {@see WebhookDelivery::scopeDue()} was written for is adding a second
-     * producer, and needs a real claim first: a compare-and-set on the row, so
-     * the sweep and an in-flight job cannot both take the same delivery.
+     * **That check is a terminal-state guard, not a claim** — but the caller has
+     * claimed before it reaches here. {@see DispatchWebhookDelivery} calls
+     * {@see WebhookDelivery::claim()} first, a compare-and-set that leases the
+     * still-due row, so the two producers of a delivery — the in-flight job and
+     * the retry sweep {@see WebhookDelivery::scopeDue()} feeds — cannot both send
+     * the consumer the same event. This method assumes that claim was won and
+     * simply records the outcome.
      *
      * @since 1.0.0
      *
@@ -445,14 +444,30 @@ class WebhookDispatcher
             $url = $webhook->url;
 
             if ( $decision->pinnable && [] !== $decision->addresses ) {
-                $request = $request->withOptions( [
-                    'curl' => [ CURLOPT_RESOLVE => self::pinnedResolution( $decision ) ],
-                ] );
+                if ( self::canPinAddresses() ) {
+                    $request = $request->withOptions( [
+                        'curl' => [ CURLOPT_RESOLVE => self::pinnedResolution( $decision ) ],
+                    ] );
 
-                // Posted under the host the address was pinned to rather than the
-                // stored one, so the client resolves the string the pin was keyed
-                // on — the same host, canonicalised to the ASCII, dot-free form.
-                $url = $decision->requestUrl ?? $url;
+                    // Posted under the host the address was pinned to rather than
+                    // the stored one, so the client resolves the string the pin
+                    // was keyed on — the same host, canonicalised to the ASCII,
+                    // dot-free form.
+                    $url = $decision->requestUrl ?? $url;
+                } else {
+                    // The guard vetted an address to pin, but `CURLOPT_RESOLVE`
+                    // needs ext-curl with libcurl 7.59+ and the curl transport in
+                    // use. Without it the pin silently no-ops and curl resolves
+                    // the name a second time — the DNS-rebinding gap the pin
+                    // exists to close. The delivery still goes out (the address
+                    // was vetted moments ago), but the operator has to know the
+                    // rebinding protection is not in force.
+                    Log::warning( 'A booking webhook address could not be pinned; ext-curl with libcurl 7.59+ is required. The delivery proceeds without DNS-rebinding protection.', [
+                        'delivery_id' => $delivery->getKey(),
+                        'webhook_id'  => $webhook->getKey(),
+                        'host'        => $decision->host,
+                    ] );
+                }
             }
 
             return $request->post( $url );
@@ -502,6 +517,32 @@ class WebhookDispatcher
         );
 
         return [ sprintf( '%s:%d:%s', $decision->host, $decision->port, implode( ',', $addresses ) ) ];
+    }
+
+    /**
+     * Determines whether a vetted address can actually be pinned.
+     *
+     * `CURLOPT_RESOLVE` with a comma-joined multi-address entry needs `ext-curl`
+     * (which is also what makes the curl transport the one Guzzle reaches for by
+     * default) and libcurl 7.59+. Where either is missing the option is silently
+     * ignored and curl resolves the name a second time — so the caller has to know
+     * the pin did not take rather than believing the DNS-rebinding gap is closed.
+     *
+     * @since 1.0.0
+     *
+     * @return bool True when an address pin will be honoured.
+     */
+    protected static function canPinAddresses(): bool
+    {
+        if ( ! defined( 'CURLOPT_RESOLVE' ) || ! function_exists( 'curl_version' ) ) {
+            return false;
+        }
+
+        $version = curl_version();
+
+        // 0x073b00 is libcurl 7.59.0, where a single CURLOPT_RESOLVE entry gained
+        // the comma-joined multi-address form pinnedResolution() relies on.
+        return is_array( $version ) && (int) ( $version['version_number'] ?? 0 ) >= 0x073B00;
     }
 
     /**

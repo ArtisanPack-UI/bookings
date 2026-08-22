@@ -17,7 +17,9 @@ Beyond the subscribable [iCal feeds](Usage-Ical-Feeds), the package supports two
 
 The `IcalFeedDriver` and `GoogleCalendarDriver` are implemented in this package. Microsoft and Apple are recognised by the `CalendarDriver` enum but delivered by companion packages — a connection whose driver package is not installed simply has nothing to sync it.
 
-Google and Microsoft support push registrations ("watch channels"), renewed by `bookings:calendar-watch-renew`. Apple has no push, so it is polled by `bookings:calendar-apple-poll`. Two-way busy blocks are re-read by `bookings:calendar-refresh`. See [Artisan Commands](Advanced-Artisan-Commands).
+Two-way busy blocks are re-read by `bookings:calendar-refresh`, which routes each due connection to its driver and runs the driver's own incremental read — the bundled Google driver reads its change feed in as busy blocks here, so a dropped push notification still leaves availability correct within a day.
+
+Google and Microsoft support push registrations ("watch channels"). Registering those channels, receiving the calendar's notifications, and renewing the channels all need a callback URL and an inbound route that belong to the driver package, not to this one — so `bookings:calendar-watch-renew` does not renew channels itself. It finds the channels that are due and offers them to the `ap.bookings.calendarSync.renewChannels` filter, which the driver package subscribes to; with no subscriber (the state as this package ships, since it registers no channels of its own) the sweep reports the due channels as unrenewable. Apple has no push, so it is polled by `bookings:calendar-apple-poll`. See [Artisan Commands](Advanced-Artisan-Commands).
 
 ## Enabling a driver
 

@@ -66,6 +66,20 @@ class DispatchWebhookDelivery implements ShouldQueue
     use Queueable;
 
     /**
+     * How long a claimed delivery is leased before it falls due again, in seconds.
+     *
+     * A visibility timeout: comfortably longer than one attempt (a 5s connect and
+     * 10s read timeout, plus queue latency) so a live attempt is never re-swept,
+     * and short enough that a worker that died mid-attempt has its delivery picked
+     * up again within a few minutes rather than stranded.
+     *
+     * @since 1.0.0
+     *
+     * @var int
+     */
+    protected const CLAIM_LEASE_SECONDS = 600;
+
+    /**
      * How many times the queue may run this job.
      *
      * @since 1.0.0
@@ -100,6 +114,16 @@ class DispatchWebhookDelivery implements ShouldQueue
         $delivery = WebhookDelivery::query()->whereKey( $this->deliveryId )->first();
 
         if ( null === $delivery || ! $delivery->isRetryable() ) {
+            return;
+        }
+
+        // Claimed before it is attempted, so this job and the retry sweep — the
+        // two producers that can hold the same due delivery — cannot both send
+        // the consumer the same event. The loser of the claim finds the row no
+        // longer due and steps aside. The lease is a visibility timeout: a crash
+        // mid-attempt lets the row fall due again for the next sweep rather than
+        // stranding it.
+        if ( ! $delivery->claim( Carbon::now()->addSeconds( self::CLAIM_LEASE_SECONDS ) ) ) {
             return;
         }
 

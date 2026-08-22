@@ -15,6 +15,7 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Listeners;
 
+use ArtisanPackUI\Bookings\Events\BookingCancelled;
 use ArtisanPackUI\Bookings\Events\BookingConfirmed;
 use ArtisanPackUI\Bookings\Events\BookingReassigned;
 use ArtisanPackUI\Bookings\Events\BookingRescheduled;
@@ -50,11 +51,13 @@ use Illuminate\Events\Dispatcher;
  * the ledger and dispatches a {@see \ArtisanPackUI\Bookings\Jobs\RemoveBookingFromCalendars}
  * job per calendar.
  *
- * **No listener for `BookingCancelled`.** Removing a cancelled booking from its
- * calendars is tracked separately; the removal machinery `BookingReassigned` uses
- * is per-provider, and cancellation wants every calendar the booking is on. A
- * booking whose provider has no active, event-writing connection is unaffected,
- * since the orchestrator no-ops on it.
+ * `BookingCancelled` takes the appointment back off every calendar it was written
+ * to. The removal `BookingReassigned` uses is per-provider — it takes a booking
+ * off the diary it has left — whereas cancellation wants every calendar the
+ * booking is on, whichever provider connected it, so it goes through
+ * {@see CalendarSyncOrchestrator::unsyncAll()}, which drives the removal straight
+ * off the calendar-event ledger. A booking that was never written to a calendar
+ * has no ledger rows and is unaffected.
  *
  * The events are `ShouldDispatchAfterCommit`, so by the time this runs the
  * booking is committed and readable by the queue worker each push is dispatched
@@ -93,6 +96,7 @@ class SyncBookingToCalendar
             BookingConfirmed::class   => 'handleConfirmed',
             BookingRescheduled::class => 'handleRescheduled',
             BookingReassigned::class  => 'handleReassigned',
+            BookingCancelled::class   => 'handleCancelled',
         ];
     }
 
@@ -150,5 +154,19 @@ class SyncBookingToCalendar
         if ( null !== $previousProviderId && $previousProviderId !== $event->booking->provider_id ) {
             $this->orchestrator->unsync( $event->booking, $previousProviderId );
         }
+    }
+
+    /**
+     * Takes a cancelled booking back off every calendar it was written to.
+     *
+     * @since 1.0.0
+     *
+     * @param  BookingCancelled  $event  The event.
+     *
+     * @return void
+     */
+    public function handleCancelled( BookingCancelled $event ): void
+    {
+        $this->orchestrator->unsyncAll( $event->booking );
     }
 }

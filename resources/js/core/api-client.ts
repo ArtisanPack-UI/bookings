@@ -54,7 +54,11 @@ export interface BookingsClientOptions {
 	fetch?: FetchLike;
 
 	/**
-	 * Extra headers sent on every request, e.g. a locale or a custom token.
+	 * Extra headers sent on every request, e.g. a locale.
+	 *
+	 * These are read from the page that configures the client, so any value put
+	 * here ships in the public page source. Never place a secret — an API key or
+	 * a bearer token — in this map; treat every value as world-readable.
 	 */
 	headers?: Record<string, string>;
 }

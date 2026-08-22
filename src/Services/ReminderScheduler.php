@@ -157,10 +157,36 @@ class ReminderScheduler
      */
     protected function dueMomentsFor( Booking $booking, CarbonImmutable $now ): array
     {
+        $floor = $this->catchUpFloor( $now );
+
         return array_values( array_filter(
             $this->momentsFor( $booking ),
-            static fn ( CarbonImmutable $moment ): bool => $moment->lessThanOrEqualTo( $now ),
+            static fn ( CarbonImmutable $moment ): bool => $moment->lessThanOrEqualTo( $now )
+                && ( null === $floor || $moment->greaterThanOrEqualTo( $floor ) ),
         ) );
+    }
+
+    /**
+     * Gets the earliest past moment a reminder may still be sent from.
+     *
+     * After cron downtime a run finds reminders whose moment passed while it was
+     * gone. Sending a "24-hour" reminder twenty-three hours late — minutes before
+     * the appointment — is a reminder worse than none, so an installation can set
+     * `notifications.reminder.max_catch_up_hours` to skip anything staler than
+     * that. Zero or less means no floor: a late reminder still beats no reminder,
+     * which is the default the catch-up behaviour has always had.
+     *
+     * @since 1.0.0
+     *
+     * @param  CarbonImmutable  $now  The moment to treat as now.
+     *
+     * @return CarbonImmutable|null The staleness floor, or null when unconfigured.
+     */
+    protected function catchUpFloor( CarbonImmutable $now ): ?CarbonImmutable
+    {
+        $hours = (int) config( 'artisanpack.bookings.notifications.reminder.max_catch_up_hours', 0 );
+
+        return $hours > 0 ? $now->subHours( $hours ) : null;
     }
 
     /**

@@ -35,9 +35,18 @@ use Illuminate\Database\Eloquent\Builder;
  * channels too — a lapsed one is the most urgent thing in the table, not
  * something to skip past.
  *
- * **The renewal itself lands with the driver packages**, for the reason set out
- * in {@see SweepsCalendarConnections}: registering a channel is a call to
- * Google or Microsoft, and neither driver ships here.
+ * **The renewal itself is deferred to whoever owns the callback URL.** Renewing
+ * a push channel is a fresh watch registered against an inbound-notification URL,
+ * and where that URL lives — the route that receives the calendar's POST and
+ * resolves it back to a connection — is not this package's concern; the push side
+ * of two-way sync (registering channels in the first place, receiving the
+ * notifications, renewing them) belongs to the driver package that stands up that
+ * route. So this sweep finds the due channels and offers them to the
+ * `ap.bookings.calendarSync.renewChannels` filter: a subscriber renews the ones
+ * it can and returns how many it handled. With nothing subscribed — the state as
+ * this package ships, since it registers no channels itself — the count stays
+ * zero and the sweep reports the channels as unrenewable rather than exiting
+ * silently.
  *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
@@ -84,18 +93,33 @@ class RenewCalendarWatchChannelsCommand extends Command
      */
     public function handle(): int
     {
-        $due = $this->dueChannels()->count();
+        $due = $this->dueChannels()->get();
 
-        if ( 0 === $due ) {
+        if ( $due->isEmpty() ) {
             $this->info( __( 'No calendar watch channels are due for renewal.' ) );
 
             return self::SUCCESS;
         }
 
-        return $this->reportUnsyncable( __(
-            ':count calendar watch channel(s) are due for renewal.',
-            [ 'count' => $due ],
+        // The renewal is a call to the external calendar against a callback URL
+        // only the driver package owns, so it is deferred to whatever subscribes
+        // here. A subscriber renews the channels it can and returns how many it
+        // handled; with nothing subscribed the count stays zero.
+        $renewed = (int) applyFilters( 'ap.bookings.calendarSync.renewChannels', 0, $due );
+
+        if ( $renewed < 1 ) {
+            return $this->reportUnsyncable( __(
+                ':count calendar watch channel(s) are due for renewal.',
+                [ 'count' => $due->count() ],
+            ) );
+        }
+
+        $this->info( __(
+            'Renewed :renewed of :total calendar watch channel(s).',
+            [ 'renewed' => $renewed, 'total' => $due->count() ],
         ) );
+
+        return self::SUCCESS;
     }
 
     /**

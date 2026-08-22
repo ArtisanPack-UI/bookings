@@ -15,6 +15,8 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Services\Concerns;
 
+use Illuminate\Database\Eloquent\Model;
+
 /**
  * How this package mints, stores, and checks a credential nobody logs in with.
  *
@@ -84,6 +86,42 @@ trait MintsOpaqueTokens
             'token' => $token,
             'hash'  => $this->hash( $token ),
         ];
+    }
+
+    /**
+     * Mints a token, stores its hash in a model's column, and returns the token.
+     *
+     * The write is a base-builder update on the primary key rather than a model
+     * save, so a persisted model is rotated without touching `updated_at` or
+     * firing model events; only the one attribute is then synced back onto the
+     * instance, because `syncOriginal()` would tell an instance carrying the
+     * caller's other pending edits they had already been written and leave the
+     * save that meant to persist them with nothing dirty to do. A model that does
+     * not yet exist takes only the in-memory attribute, so a create that follows
+     * writes the hash.
+     *
+     * @since 1.0.0
+     *
+     * @param  Model  $model  The model to store the hash on.
+     * @param  string  $column  The column that holds the token hash.
+     *
+     * @return string The plain token, the only time it is readable.
+     */
+    public function issueOn( Model $model, string $column ): string
+    {
+        $minted = $this->mint();
+
+        if ( $model->exists ) {
+            $model->newQueryWithoutScopes()
+                ->whereKey( $model->getKey() )
+                ->toBase()
+                ->update( [ $column => $minted['hash'] ] );
+        }
+
+        $model->setAttribute( $column, $minted['hash'] );
+        $model->syncOriginalAttribute( $column );
+
+        return $minted['token'];
     }
 
     /**

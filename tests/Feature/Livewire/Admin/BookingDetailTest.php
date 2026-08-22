@@ -121,12 +121,12 @@ describe( 'cancelling a booking', function (): void {
         expect( $ran )->toBeTrue();
     } );
 
-    it( 'shows why a cancellation was refused rather than throwing', function (): void {
+    it( 'shows a translated message rather than the raw exception when a cancellation is refused', function (): void {
         $booking = Booking::factory()->cancelled()->create();
 
         Livewire::test( BookingDetail::class, [ 'booking' => $booking ] )
             ->call( 'cancel' )
-            ->assertHasErrors( 'booking' );
+            ->assertHasErrors( [ 'booking' => __( 'That change can no longer be made to this booking.' ) ] );
     } );
 } );
 

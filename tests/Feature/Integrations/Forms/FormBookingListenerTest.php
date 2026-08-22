@@ -5,13 +5,22 @@ declare( strict_types=1 );
 use ArtisanPackUI\Bookings\Integrations\Forms\FormBookingListener;
 use ArtisanPackUI\Bookings\Models\Booking;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Tests\Concerns\TestsWithSqlite;
 use Tests\Fixtures\FakeFormSubmission;
 
 uses( TestsWithSqlite::class, RefreshDatabase::class );
 
+beforeEach( function (): void {
+    // The booking-window guard needs "now" pinned before the fixed slots
+    // {@see bookingStart()} names, or every form booking reads as in the past.
+    Carbon::setTestNow( '2026-06-01 00:00:00' );
+} );
+
 afterEach( function (): void {
+    Carbon::setTestNow();
+
     removeAllActions( 'ap.bookings.creating' );
     removeAllActions( 'ap.bookings.created' );
     removeAllActions( 'ap.bookings.confirmed' );
@@ -82,6 +91,54 @@ describe( 'the form booking listener', function (): void {
             ->and( $booking->customer_phone )->toBe( '555-0100' )
             ->and( $booking->start_time->equalTo( bookingStart() ) )->toBeTrue()
             ->and( $fired )->toBeTrue();
+    } );
+
+    it( 'records the mapped opt-in answer on the booking intake data', function (): void {
+        [ $service ] = bookableService();
+
+        handleFormSubmission( [
+            [
+                'name'   => 'appointment',
+                'type'   => 'booking_slot',
+                'value'  => bookingSlotValue( $service->slug ),
+                'config' => [ 'optin_field' => 'newsletter' ],
+            ],
+            [ 'name' => 'name', 'type' => 'text', 'value' => 'Lee Park' ],
+            [ 'name' => 'email', 'type' => 'email', 'value' => 'lee@example.test' ],
+            [ 'name' => 'newsletter', 'type' => 'checkbox', 'value' => 'yes' ],
+        ] );
+
+        expect( Booking::query()->first()?->intake_data )->toBe( [ 'opt_in' => true ] );
+    } );
+
+    it( 'records opt-in false when the mapped opt-in field was left unticked', function (): void {
+        [ $service ] = bookableService();
+
+        handleFormSubmission( [
+            [
+                'name'   => 'appointment',
+                'type'   => 'booking_slot',
+                'value'  => bookingSlotValue( $service->slug ),
+                'config' => [ 'optin_field' => 'newsletter' ],
+            ],
+            [ 'name' => 'name', 'type' => 'text', 'value' => 'Lee Park' ],
+            [ 'name' => 'email', 'type' => 'email', 'value' => 'lee@example.test' ],
+            [ 'name' => 'newsletter', 'type' => 'checkbox', 'value' => '' ],
+        ] );
+
+        expect( Booking::query()->first()?->intake_data )->toBe( [ 'opt_in' => false ] );
+    } );
+
+    it( 'records no opt-in key when no opt-in field is mapped', function (): void {
+        [ $service ] = bookableService();
+
+        handleFormSubmission( [
+            [ 'name' => 'appointment', 'type' => 'booking_slot', 'value' => bookingSlotValue( $service->slug ) ],
+            [ 'name' => 'name', 'type' => 'text', 'value' => 'Lee Park' ],
+            [ 'name' => 'email', 'type' => 'email', 'value' => 'lee@example.test' ],
+        ] );
+
+        expect( Booking::query()->first()?->intake_data )->toBe( [] );
     } );
 
     it( 'resolves the service from the picked slot rather than a hidden field', function (): void {

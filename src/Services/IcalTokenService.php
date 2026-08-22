@@ -137,25 +137,11 @@ class IcalTokenService
      */
     public function issueFor( ServiceProvider $provider ): string
     {
-        $minted = $this->mint();
+        $token = $this->issueOn( $provider, 'ical_token_hash' );
 
-        if ( $provider->exists ) {
-            $provider->newQueryWithoutScopes()
-                ->whereKey( $provider->getKey() )
-                ->toBase()
-                ->update( [ 'ical_token_hash' => $minted['hash'] ] );
-        }
+        doAction( 'ap.bookings.icalTokenIssued', $provider, $token );
 
-        // Only this attribute is synced, not the whole model: syncOriginal()
-        // would tell an instance carrying the caller's other pending edits that
-        // they had already been written, and the save that was meant to persist
-        // them would find nothing dirty and do nothing.
-        $provider->ical_token_hash = $minted['hash'];
-        $provider->syncOriginalAttribute( 'ical_token_hash' );
-
-        doAction( 'ap.bookings.icalTokenIssued', $provider, $minted['token'] );
-
-        return $minted['token'];
+        return $token;
     }
 
     /**

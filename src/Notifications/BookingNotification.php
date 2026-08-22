@@ -438,7 +438,6 @@ abstract class BookingNotification extends Notification
     protected function unfilteredSubject(): string
     {
         return match ( $this->audience ) {
-            NotificationAudience::Admin    => $this->adminSubject(),
             NotificationAudience::Provider => $this->providerSubject(),
             default                        => $this->defaultSubject(),
         };
@@ -454,7 +453,6 @@ abstract class BookingNotification extends Notification
     protected function currentOpeningLine(): string
     {
         return match ( $this->audience ) {
-            NotificationAudience::Admin    => $this->adminOpeningLine(),
             NotificationAudience::Provider => $this->providerOpeningLine(),
             default                        => $this->openingLine(),
         };

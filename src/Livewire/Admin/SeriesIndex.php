@@ -132,8 +132,10 @@ class SeriesIndex extends Component
 
         try {
             app( SeriesService::class )->cancel( $series, BookingActor::Admin );
-        } catch ( SeriesException $exception ) {
-            $this->addError( 'series', $exception->getMessage() );
+        } catch ( SeriesException ) {
+            // The exception text names rules and ids an operator cannot act on;
+            // a translated message stands in for it rather than reaching the bag.
+            $this->addError( 'series', __( 'This recurring booking could not be cancelled.' ) );
 
             return;
         }

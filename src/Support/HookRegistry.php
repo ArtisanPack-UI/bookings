@@ -203,6 +203,14 @@ final class HookRegistry
         |                                 third-party data.
         | calendarSync.eventPayload       ( array $payload, Booking $booking, string $providerSlug ): array
         | calendarSync.connectionDisabled ( CalendarConnection $connection, string $reason )
+        | calendarSync.renewChannels      ( int $renewed, Collection<int, CalendarWatchChannel> $due ): int
+        |                                 Fired by `bookings:calendar-watch-renew` with the push
+        |                                 channels that are due for renewal. Renewing one is a call
+        |                                 to the external calendar with a callback URL only the
+        |                                 driver package owns, so the renewal is deferred here: a
+        |                                 subscriber renews the channels it can and returns how many
+        |                                 it handled. With no subscriber the count stays 0 and the
+        |                                 sweep reports the channels as unrenewable.
         */
         'ap.bookings.calendarSync.providers' => [
             'type'   => 'filter',
@@ -227,6 +235,10 @@ final class HookRegistry
         'ap.bookings.calendarSync.connectionDisabled' => [
             'type'   => 'action',
             'issues' => '#41',
+        ],
+        'ap.bookings.calendarSync.renewChannels' => [
+            'type'   => 'filter',
+            'issues' => '#40',
         ],
 
         /*

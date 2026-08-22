@@ -36,17 +36,6 @@ namespace ArtisanPackUI\Bookings\Enums;
  */
 enum SeriesEditScope: string
 {
-    /**
-     * Determines whether the scope changes the recurrence rule itself.
-     *
-     * @since 1.0.0
-     *
-     * @return bool True when the series rule is rewritten or bounded.
-     */
-    public function touchesRule(): bool
-    {
-        return self::This !== $this;
-    }
     case This = 'this';
 
     case ThisAndFollowing = 'this_and_following';

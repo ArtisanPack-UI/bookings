@@ -574,6 +574,51 @@ describe( 'unsyncing a booking from a former provider', function (): void {
     } );
 } );
 
+describe( 'unsyncing a cancelled booking from every calendar', function (): void {
+    beforeEach( function (): void {
+        Queue::fake();
+        registerCalendarDriver( recordingCalendarDriver() );
+    } );
+
+    it( 'queues one removal per calendar the booking is recorded on, whatever the provider', function (): void {
+        $providerOne = ServiceProvider::factory()->create();
+        $providerTwo = ServiceProvider::factory()->create();
+
+        $connectionOne = CalendarConnection::factory()->google()->for( $providerOne, 'provider' )->create();
+        $connectionTwo = CalendarConnection::factory()->google()->for( $providerTwo, 'provider' )->create();
+
+        $booking = Booking::factory()->for( $providerOne, 'provider' )->create();
+        CalendarEvent::factory()->create( [
+            'booking_id'    => $booking->getKey(),
+            'connection_id' => $connectionOne->getKey(),
+        ] );
+        CalendarEvent::factory()->create( [
+            'booking_id'    => $booking->getKey(),
+            'connection_id' => $connectionTwo->getKey(),
+        ] );
+
+        calendarSyncOrchestrator()->unsyncAll( $booking );
+
+        Queue::assertPushed( RemoveBookingFromCalendars::class, 2 );
+        Queue::assertPushed(
+            RemoveBookingFromCalendars::class,
+            static fn ( RemoveBookingFromCalendars $job ): bool => $job->connectionId === $connectionOne->getKey(),
+        );
+        Queue::assertPushed(
+            RemoveBookingFromCalendars::class,
+            static fn ( RemoveBookingFromCalendars $job ): bool => $job->connectionId === $connectionTwo->getKey(),
+        );
+    } );
+
+    it( 'queues nothing when the booking was never written to a calendar', function (): void {
+        $booking = Booking::factory()->create();
+
+        calendarSyncOrchestrator()->unsyncAll( $booking );
+
+        Queue::assertNothingPushed();
+    } );
+} );
+
 describe( 'removing a booking from one connection', function (): void {
     it( 'deletes the external event and drops the ledger row', function (): void {
         $driver = deletingCalendarDriver();

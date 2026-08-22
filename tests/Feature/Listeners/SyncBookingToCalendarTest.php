@@ -110,7 +110,18 @@ it( 'leaves lifecycle events that are out of scope alone', function ( Closure $r
     $orchestrator->shouldNotHaveReceived( 'sync' );
 } )->with( [
     'booking.created'   => [ fn ( Booking $booking ) => BookingRequested::dispatch( $booking ) ],
-    'booking.cancelled' => [ fn ( Booking $booking ) => BookingCancelled::dispatch( $booking, BookingActor::Customer, 'Ill.' ) ],
     'booking.completed' => [ fn ( Booking $booking ) => BookingCompleted::dispatch( $booking ) ],
     'booking.no_show'   => [ fn ( Booking $booking ) => BookingNoShow::dispatch( $booking ) ],
 ] );
+
+it( 'removes a cancelled booking from every calendar it was written to', function (): void {
+    $orchestrator = spyCalendarSyncOrchestrator();
+
+    $booking = Booking::factory()->create();
+
+    BookingCancelled::dispatch( $booking, BookingActor::Customer, 'Ill.' );
+
+    $orchestrator->shouldHaveReceived( 'unsyncAll' )
+        ->once()
+        ->with( Mockery::on( fn ( Booking $cancelled ): bool => $cancelled->is( $booking ) ) );
+} );

@@ -93,9 +93,14 @@ class BookingController extends Controller
                 [ 'message' => __( 'That appointment time is busy right now. Please try again.' ) ],
                 JsonResponse::HTTP_SERVICE_UNAVAILABLE,
             );
-        } catch ( InvalidArgumentException $rejected ) {
+        } catch ( InvalidArgumentException ) {
+            // The request has already validated the shape, so an argument the
+            // service still rejects is a provider that cannot take the booking.
+            // The exception text is developer-phrased — raw ids and internal
+            // wording — so a translated message stands in for it rather than
+            // reaching the customer's error bag.
             throw ValidationException::withMessages( [
-                'provider_id' => $rejected->getMessage(),
+                'provider_id' => __( 'The selected provider is not available for this service.' ),
             ] );
         }
 

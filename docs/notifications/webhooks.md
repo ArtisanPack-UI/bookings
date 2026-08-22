@@ -105,6 +105,8 @@ Pass the site when you know it. Left out, the endpoint list is scoped to whateve
 
 **The endpoint URL is guarded against SSRF.** The address is checked against loopback, private, link-local, and unique-local ranges at delivery time, the vetted address is pinned into the connection to close the DNS-rebinding window, and redirects are refused. Apply the `ValidWebhookUrl` rule when you accept an endpoint URL below operator trust. This is covered in full under [Webhook Security](Advanced-Webhook-Security).
 
+**Every subscribed endpoint receives the full payload, including the customer's PII.** The `data.booking` payload carries the customer's name, email, and their `intake_data` answers, delivered as-is to every endpoint subscribed to the event — the package applies no per-endpoint field filtering. Subscribe only endpoints you trust with that data, and treat the stored delivery ledger as holding personal data (it is retention-bound and swept by the erasure routine). A payload-filtering hook or a config flag to narrow what goes out is a candidate for a later release.
+
 ## Retention
 
 Settled deliveries are pruned by `bookings:prune-webhook-deliveries` on `webhooks.delivery_retention_days` (or `retention.webhook_delivery_days` when set). A `pending` delivery is never pruned. See [GDPR, Retention & Erasure](Advanced-Gdpr-Data-Retention).

@@ -6,6 +6,7 @@ import {
 	formatTime,
 	groupSlotsByDay,
 	instantToZonedInput,
+	monthLabel,
 	slotDurationMinutes,
 	toDayKey,
 	zonedInputToInstant,
@@ -15,6 +16,16 @@ import type { Slot } from '../types.js';
 function slot(start: string, end: string, providerId: number | null = null): Slot {
 	return { start, end, provider_id: providerId };
 }
+
+describe('monthLabel', () => {
+	it('names a YYYY-MM key as its month and year', () => {
+		expect(monthLabel('2025-09', 'en-US')).toBe('September 2025');
+	});
+
+	it('returns the key unchanged when it does not parse', () => {
+		expect(monthLabel('not-a-month', 'en-US')).toBe('not-a-month');
+	});
+});
 
 describe('formatTime', () => {
 	it('renders the wall-clock time in the given zone', () => {

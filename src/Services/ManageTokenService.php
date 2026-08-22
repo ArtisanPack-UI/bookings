@@ -130,23 +130,7 @@ class ManageTokenService
      */
     public function issueFor( Booking $booking ): string
     {
-        $minted = $this->mint();
-
-        if ( $booking->exists ) {
-            $booking->newQueryWithoutScopes()
-                ->whereKey( $booking->getKey() )
-                ->toBase()
-                ->update( [ 'manage_token_hash' => $minted['hash'] ] );
-        }
-
-        // Only this attribute is synced, not the whole model: syncOriginal()
-        // would tell an instance carrying the caller's other pending edits that
-        // they had already been written, and the save that was meant to persist
-        // them would find nothing dirty and do nothing.
-        $booking->manage_token_hash = $minted['hash'];
-        $booking->syncOriginalAttribute( 'manage_token_hash' );
-
-        return $minted['token'];
+        return $this->issueOn( $booking, 'manage_token_hash' );
     }
 
     /**

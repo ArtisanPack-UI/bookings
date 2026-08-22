@@ -440,6 +440,24 @@ describe( 'rate limiting', function (): void {
         $this->postJson( manageUrl( $token, 'reschedule' ), [] )->assertStatus( 429 );
     } );
 
+    it( 'counts writes against the token as well as the address', function (): void {
+        [ , $first ]  = managedBooking( '10:00' );
+        [ , $second ] = managedBooking( '14:00' );
+
+        // The per-address post bucket is left wide so only the per-token bucket
+        // can be what refuses the third write on one link.
+        config()->set( 'artisanpack.bookings.public.rate_limits.post', 1000 );
+        config()->set( 'artisanpack.bookings.public.rate_limits.manage_token', 2 );
+
+        $this->postJson( manageUrl( $first, 'cancel' ) )->assertOk();
+        $this->postJson( manageUrl( $first, 'cancel' ) )->assertConflict();
+        $this->postJson( manageUrl( $first, 'cancel' ) )->assertStatus( 429 );
+
+        // A different link from the same machine still works — the per-token
+        // bucket is what refused the first link, not the per-address one.
+        $this->postJson( manageUrl( $second, 'cancel' ) )->assertOk();
+    } );
+
     it( 'counts a guess before it looks one up', function (): void {
         config()->set( 'artisanpack.bookings.public.rate_limits.manage_get', 3 );
 

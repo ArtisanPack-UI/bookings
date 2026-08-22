@@ -12,6 +12,8 @@ use ArtisanPackUI\Bookings\Models\Webhook;
 use ArtisanPackUI\Bookings\Models\WebhookDelivery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Tests\Concerns\TestsWithSqlite;
 
@@ -44,6 +46,19 @@ describe( 'the webhook factory', function (): void {
 
         expect( $webhook->toArray() )->not->toHaveKey( 'secret' )
             ->and( $webhook->secret )->not->toBeEmpty();
+    } );
+
+    it( 'stores the signing secret encrypted at rest', function (): void {
+        // A database dump must not hand over a secret an attacker can forge
+        // signed deliveries with, so the column holds ciphertext and the model
+        // decrypts it on read.
+        $webhook = Webhook::factory()->create( [ 'secret' => 'plain-signing-secret' ] );
+
+        $stored = DB::table( 'booking_webhooks' )->where( 'id', $webhook->getKey() )->value( 'secret' );
+
+        expect( $stored )->not->toBe( 'plain-signing-secret' )
+            ->and( Crypt::decryptString( $stored ) )->toBe( 'plain-signing-secret' )
+            ->and( $webhook->fresh()->secret )->toBe( 'plain-signing-secret' );
     } );
 } );
 
@@ -188,6 +203,38 @@ describe( 'webhook deliveries', function (): void {
 
         expect( $webhook->deliveries()->count() )->toBe( 3 )
             ->and( $webhook->deliveries()->first()->webhook->is( $webhook ) )->toBeTrue();
+    } );
+
+    it( 'lets exactly one caller claim a due delivery', function (): void {
+        // The compare-and-set behind the retry sweep: two producers holding the
+        // same due row must not both send the consumer the event.
+        $delivery = WebhookDelivery::factory()->pending()->create();
+
+        $lease = now()->addMinutes( 10 );
+
+        $first  = ( clone $delivery )->claim( $lease );
+        $second = ( clone $delivery )->claim( $lease );
+
+        expect( $first )->toBeTrue()
+            ->and( $second )->toBeFalse()
+            ->and( $delivery->fresh()->next_attempt_at )->not->toBeNull();
+    } );
+
+    it( 'refuses to claim a delivery that is not yet due', function (): void {
+        $delivery = WebhookDelivery::factory()->create( [
+            'status'          => WebhookDeliveryStatus::Failed,
+            'next_attempt_at' => now()->addHour(),
+        ] );
+
+        expect( $delivery->claim( now()->addMinutes( 10 ) ) )->toBeFalse();
+    } );
+
+    it( 'refuses to claim a terminal delivery', function (): void {
+        $success = WebhookDelivery::factory()->success()->create();
+        $dead    = WebhookDelivery::factory()->dead()->create();
+
+        expect( $success->claim( now()->addMinutes( 10 ) ) )->toBeFalse()
+            ->and( $dead->claim( now()->addMinutes( 10 ) ) )->toBeFalse();
     } );
 } );
 

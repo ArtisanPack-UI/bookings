@@ -33,6 +33,7 @@ use ArtisanPackUI\Bookings\Console\Commands\PruneWebhookDeliveriesCommand;
 use ArtisanPackUI\Bookings\Console\Commands\RefreshCalendarsCommand;
 use ArtisanPackUI\Bookings\Console\Commands\ReissueDetachedManageTokensCommand;
 use ArtisanPackUI\Bookings\Console\Commands\RenewCalendarWatchChannelsCommand;
+use ArtisanPackUI\Bookings\Console\Commands\RetryWebhookDeliveriesCommand;
 use ArtisanPackUI\Bookings\Console\Commands\SendBookingRemindersCommand;
 use ArtisanPackUI\Bookings\Contracts\CalendarDriverRegistry as CalendarDriverRegistryContract;
 use ArtisanPackUI\Bookings\Contracts\GoogleTokenProvider;
@@ -418,6 +419,7 @@ class BookingsServiceProvider extends ServiceProvider
                 RefreshCalendarsCommand::class,
                 ReissueDetachedManageTokensCommand::class,
                 RenewCalendarWatchChannelsCommand::class,
+                RetryWebhookDeliveriesCommand::class,
                 SendBookingRemindersCommand::class,
             ] );
         }
@@ -433,6 +435,8 @@ class BookingsServiceProvider extends ServiceProvider
         $this->invalidateAvailabilityOnWrites();
 
         $this->registerViews();
+
+        $this->registerTranslations();
 
         $this->registerPublicRoutes();
 
@@ -499,6 +503,32 @@ class BookingsServiceProvider extends ServiceProvider
                 __DIR__ . '/../../resources/views' => resource_path( 'views/vendor/bookings' ),
             ],
             'bookings-views',
+        );
+    }
+
+    /**
+     * Registers the package's JSON translations.
+     *
+     * Every user-facing string runs through `__()`, which resolves the English
+     * source as its own key — so the package reads correctly in English with no
+     * lang file at all. `lang/en.json` is the canonical catalogue of those keys:
+     * a translator copies it to their locale, and `loadJsonTranslationsFrom()`
+     * registers the path so `__()` resolves the copy. The `bookings-lang` tag
+     * publishes it into the application's own `lang/` for editing in place.
+     *
+     * @since 1.0.0
+     *
+     * @return void
+     */
+    protected function registerTranslations(): void
+    {
+        $this->loadJsonTranslationsFrom( __DIR__ . '/../../lang' );
+
+        $this->publishes(
+            [
+                __DIR__ . '/../../lang' => $this->app->langPath(),
+            ],
+            'bookings-lang',
         );
     }
 
@@ -843,6 +873,15 @@ class BookingsServiceProvider extends ServiceProvider
             $schedule->command( 'bookings:complete-past' )
                 ->hourly()
                 ->withoutOverlapping( self::LOCK_HOURLY );
+
+            // The backstop under the self-re-queuing retry chain: it picks up a
+            // delivery stranded when a worker died between writing the failed row
+            // and queuing the next attempt. Frequent, because a stranded delivery
+            // is waiting on nothing else, and the job it dispatches claims the row
+            // so a live attempt is never doubled.
+            $schedule->command( 'bookings:retry-webhook-deliveries' )
+                ->everyFifteenMinutes()
+                ->withoutOverlapping( self::LOCK_QUARTER_HOURLY );
 
             $this->scheduleCalendarCommands( $schedule );
 

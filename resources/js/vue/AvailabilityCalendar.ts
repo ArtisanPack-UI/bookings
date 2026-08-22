@@ -9,24 +9,7 @@
 
 import { defineComponent, h, type PropType, type VNode } from 'vue';
 
-import { type BookingFlow, type BookingFlowState, formatDate, formatTime } from '../core/index.js';
-
-/**
- * Names a `YYYY-MM` month key as, e.g., `September 2025`.
- */
-function monthLabel(month: string, locale: string | undefined): string {
-	const date = new Date(`${month}-01T00:00:00Z`);
-
-	if (Number.isNaN(date.getTime())) {
-		return month;
-	}
-
-	return new Intl.DateTimeFormat(locale, {
-		timeZone: 'UTC',
-		month: 'long',
-		year: 'numeric',
-	}).format(date);
-}
+import { type BookingFlow, type BookingFlowState, formatDate, formatTime, monthLabel } from '../core/index.js';
 
 /**
  * Draws the slot step from a flow and its snapshot.

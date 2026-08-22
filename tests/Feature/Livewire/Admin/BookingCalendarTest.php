@@ -32,6 +32,25 @@ describe( 'showing a week', function (): void {
             ->assertDontSee( 'Weeks Away' );
     } );
 
+    it( 'leaves a chip uncoloured when no readable text colour is available', function (): void {
+        // Without artisanpack-ui/accessibility the contrast colour is null, so a
+        // service colour is not painted onto the chip — an unreadable label is
+        // worse than a plain one. (The coloured branch needs the a11y package,
+        // which is a suggested dependency absent from the test environment.)
+        $service = Service::factory()->create( [ 'color' => '#3b82f6' ] );
+
+        Booking::factory()->for( $service )->create( [
+            'customer_name' => 'Plain Chip',
+            'start_time'    => '2035-06-05 10:00:00',
+            'end_time'      => '2035-06-05 10:30:00',
+        ] );
+
+        Livewire::test( BookingCalendar::class )
+            ->set( 'weekStart', '2035-06-04' )
+            ->assertSee( 'Plain Chip' )
+            ->assertDontSee( 'background-color:', false );
+    } );
+
     it( 'places a booking on its day in the application timezone', function (): void {
         // 02:00 UTC on 5 June is 21:00 the evening before in Chicago (UTC-5 in
         // June), so a timezone-aware calendar files it under 4 June, not 5 June.

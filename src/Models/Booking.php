@@ -506,22 +506,6 @@ class Booking extends Model
     }
 
     /**
-     * Scopes a query to the occurrences a series can still re-materialise.
-     *
-     * @since 1.0.0
-     *
-     * @param  Builder<Booking>  $query  The query being built.
-     *
-     * @return Builder<Booking> The scoped query.
-     */
-    public function scopeAttachedToSeries( Builder $query ): Builder
-    {
-        return $query
-            ->whereNotNull( $this->qualifyColumn( 'series_id' ) )
-            ->whereNull( $this->qualifyColumn( 'detached_from_series_at' ) );
-    }
-
-    /**
      * Erases the parent series once no occupied-by-real-data occurrence remains.
      *
      * Called from within {@see self::erasePersonalData()}'s transaction, after

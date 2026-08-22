@@ -61,6 +61,7 @@ class RateLimitBookings
      */
     protected const DEFAULTS = [
         'post'         => 5,
+        'read'         => 60,
         'manage_get'   => 20,
         'manage_token' => 60,
         'ical'         => 30,

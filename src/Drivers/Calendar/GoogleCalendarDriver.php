@@ -15,8 +15,8 @@ declare( strict_types=1 );
 
 namespace ArtisanPackUI\Bookings\Drivers\Calendar;
 
-use ArtisanPackUI\Bookings\Contracts\CalendarSyncDriver;
 use ArtisanPackUI\Bookings\Contracts\GoogleTokenProvider;
+use ArtisanPackUI\Bookings\Contracts\TwoWayCalendarDriver;
 use ArtisanPackUI\Bookings\Enums\BookingStatus;
 use ArtisanPackUI\Bookings\Enums\CalendarDriver;
 use ArtisanPackUI\Bookings\Exceptions\CalendarSyncException;
@@ -68,7 +68,7 @@ use UnexpectedValueException;
  *
  * @since      1.0.0
  */
-class GoogleCalendarDriver implements CalendarSyncDriver
+class GoogleCalendarDriver implements TwoWayCalendarDriver
 {
     /**
      * The Google Calendar API root.
@@ -165,8 +165,14 @@ class GoogleCalendarDriver implements CalendarSyncDriver
      * Creates the external event for a booking.
      *
      * The event is inserted under an identifier derived from the booking, so a
-     * retried create is a no-op: Google answers `409` for the identifier that
-     * already exists, and that is read as the success it is.
+     * retried create is idempotent. Google answers `409` when that identifier
+     * already exists — but "exists" includes a *tombstone*: an event this booking
+     * had before, cancelled when the booking was moved off this calendar and
+     * later moved back. A tombstoned id refuses a second insert while the event
+     * stays `cancelled`, so reading the `409` as success would leave the
+     * appointment invisible. On `409` the create follows with a PUT to the same
+     * id, which resurrects the event with the current body and status whether the
+     * id held a live event or a tombstone.
      *
      * @since 1.0.0
      *
@@ -185,7 +191,12 @@ class GoogleCalendarDriver implements CalendarSyncDriver
         $response = $this->send( $connection, fn ( PendingRequest $http ): Response => $http
             ->post( $this->eventsUrl( $connection ), $body + [ 'id' => $externalEventId ] ) );
 
-        if ( ! $response->successful() && 409 !== $response->status() ) {
+        if ( 409 === $response->status() ) {
+            $response = $this->send( $connection, fn ( PendingRequest $http ): Response => $http
+                ->put( $this->eventUrl( $connection, $externalEventId ), $body ) );
+        }
+
+        if ( ! $response->successful() ) {
             throw $this->failed( 'create the event for', $booking, $response );
         }
 
@@ -222,9 +233,18 @@ class GoogleCalendarDriver implements CalendarSyncDriver
         if ( $this->isGone( $response ) ) {
             $response = $this->send( $connection, fn ( PendingRequest $http ): Response => $http
                 ->post( $this->eventsUrl( $connection ), $body + [ 'id' => $externalEventId ] ) );
+
+            // The re-insert can itself hit a tombstone for the id — a cancelled
+            // event Google still remembers — which refuses the POST with `409`
+            // while leaving the event cancelled. A PUT to the same id resurrects
+            // it rather than the update reporting a success that never rendered.
+            if ( 409 === $response->status() ) {
+                $response = $this->send( $connection, fn ( PendingRequest $http ): Response => $http
+                    ->put( $this->eventUrl( $connection, $externalEventId ), $body ) );
+            }
         }
 
-        if ( ! $response->successful() && 409 !== $response->status() ) {
+        if ( ! $response->successful() ) {
             throw $this->failed( 'update the event for', $booking, $response );
         }
 

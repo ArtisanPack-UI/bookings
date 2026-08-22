@@ -4,7 +4,7 @@ title: Contracts
 
 # Contracts
 
-Six seams are interfaces under `ArtisanPackUI\Bookings\Contracts`. Bind your own implementation in a service provider and the package uses it instead of the default:
+`ArtisanPackUI\Bookings\Contracts` holds eleven interfaces. Six are replaceable seams — bind your own implementation in a service provider and the package uses it instead of the default:
 
 | Contract | Replaces | Default |
 | --- | --- | --- |
@@ -14,6 +14,8 @@ Six seams are interfaces under `ArtisanPackUI\Bookings\Contracts`. Bind your own
 | `NotificationChannel` | how one lifecycle message is delivered | CMS or Laravel channel |
 | `SmsDriver` | which gateway a text message is handed to | `null` (logs only) |
 | `MeetingTypeRegistry` | which shapes a service can be booked in | `MeetingTypeRegistry` |
+
+The other five are internal interfaces rather than seams you bind: `CalendarDriverRegistry` (the registry drivers register through), `GoogleTokenProvider` (bound by `artisanpack-ui/google`), `TwoWayCalendarDriver` (the two-way surface a read-back driver adds on top of `CalendarSyncDriver`), `MeetingType` (contributed through a filter, below), and `ResolvesHostAddresses` (the webhook guard's host resolver, replaceable for split-horizon DNS).
 
 ## Binding a contract
 

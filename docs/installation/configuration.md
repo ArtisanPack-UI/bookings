@@ -50,14 +50,12 @@ The published file documents every key inline. The full reference follows.
 | `booking_window.max_advance_minutes` | `129600` (90 days) | Maximum minutes ahead bookable; non-positive = no constraint |
 | `cancellation.allowed` | `true` | Whether customers may cancel their own bookings |
 | `cancellation.min_advance_minutes` | `1440` (24h) | How long before start the self-serve cancellation link stops working |
-| `cancellation.refund_policy_url` | `null` | Refund policy URL surfaced to customers |
 
 ## Recurring series
 
 | Key | Default | Controls |
 | --- | --- | --- |
 | `series.max_occurrences` | `52` | Hard cap on occurrences generated when an RRULE is expanded |
-| `series.default_rules` | `['weekly', 'biweekly', 'monthly']` | Recurrence rule presets offered |
 
 ## Notifications
 
@@ -68,7 +66,10 @@ The published file documents every key inline. The full reference follows.
 | `notifications.reminder.enabled` | `true` | Whether reminders are sent (also gates `bookings:send-reminders`) |
 | `notifications.reminder.hours_before` | `[24]` | Hours before start each reminder is sent |
 | `notifications.reminder.max_lookahead_hours` | `0` | How far ahead `bookings:send-reminders` scans; `0` = longest `hours_before` |
+| `notifications.reminder.max_catch_up_hours` | `0` | Skip a reminder whose moment is more than this many hours past (after cron downtime); `0` = always catch up |
 | `notifications.cancellation.enabled` | `true` | Whether cancellation notices are sent |
+| `notifications.reschedule.enabled` | `true` | Whether reschedule notices are sent |
+| `notifications.no_show.enabled` | `true` | Whether no-show notices are sent |
 | `notifications.provider_assigned.enabled` | `true` | Email a provider when a booking is assigned to them |
 | `notifications.provider_unassigned.enabled` | `true` | Email a provider when a booking leaves their calendar |
 | `notifications.database.driver` | `'auto'` | Staff `database`-channel implementation: `auto`, `cms`, or `laravel` |
@@ -87,8 +88,7 @@ See [Notifications Overview](Notifications) and [Text Messages](Notifications-Sm
 | `calendar.two_way_grace_hours` | `6` | Grace hours before a two-way connection is downgraded on failure |
 | `calendar.two_way_lookahead_days` | `60` | How many days ahead two-way sync reads busy blocks |
 | `calendar.connection_failure_threshold` | `5` | Consecutive failures before a connection stops retrying |
-| `calendar.ical_feed.enabled` | `true` | Whether outbound iCal feeds are enabled |
-| `calendar.ical_feed.signing_ttl_days` | `365` | Signing TTL (days) for iCal feeds |
+| `calendar.ical_feed.enabled` | `true` | Whether the subscribable iCal feed routes are registered; `false` unregisters them so a feed URL 404s |
 | `calendar.drivers.google.enabled` | `env( 'BOOKING_GOOGLE_ENABLED', false )` | Enables the Google driver (also requires `artisanpack-ui/google`) |
 | `calendar.drivers.microsoft.enabled` | `env( 'BOOKING_MICROSOFT_ENABLED', false )` | Enables the Microsoft driver (requires `artisanpack-ui/microsoft`) |
 | `calendar.drivers.apple.enabled` | `env( 'BOOKING_APPLE_ENABLED', false )` | Enables the Apple (CalDAV) driver; drives the 15-min poll schedule |
@@ -128,6 +128,7 @@ See [Outbound Webhooks](Notifications-Webhooks) and [Webhook Security](Advanced-
 | Key | Default | Controls |
 | --- | --- | --- |
 | `public.rate_limits.post` | `5` | Booking POST limit, per IP per minute |
+| `public.rate_limits.read` | `60` | Service / provider / slot GET limit, per IP per minute |
 | `public.rate_limits.manage_get` | `20` | Manage GET limit, per IP per minute |
 | `public.rate_limits.manage_token` | `60` | Manage limit, per manage token per minute |
 | `public.rate_limits.ical` | `30` | iCal feed limit, per IP per minute |
@@ -166,4 +167,23 @@ BOOKING_MICROSOFT_ENABLED=false
 BOOKING_APPLE_ENABLED=false
 BOOKING_PRUNE_DAYS=1095
 ARTISANPACK_BOOKINGS_MANAGE_URL="https://example.test/bookings/manage/{token}"
+```
+
+## Translations
+
+Every user-facing string in the package runs through Laravel's `__()`, keyed on its English source — so the package reads correctly in English out of the box with no lang file. The package also ships `lang/en.json`, the canonical catalogue of every one of those strings, registered with `loadJsonTranslationsFrom()`.
+
+To translate the package into another language, add a JSON file for the locale to your application's `lang/` directory — for example `lang/fr.json` — keyed on the same English source strings:
+
+```json
+{
+    "Booking confirmed": "Réservation confirmée",
+    "That appointment time is too soon to book.": "Ce créneau est trop proche pour être réservé."
+}
+```
+
+Copy `lang/en.json` from the package as the starting list of keys, or publish it into your application's `lang/` directory to edit in place:
+
+```bash
+php artisan vendor:publish --tag=bookings-lang
 ```

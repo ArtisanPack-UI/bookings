@@ -79,6 +79,24 @@ it( 'does nothing for a delivery that has been pruned away', function (): void {
     Queue::assertNothingPushed();
 } );
 
+it( 'does nothing for a delivery it cannot claim', function (): void {
+    Http::fake( [ '*' => Http::response( 'ok', 200 ) ] );
+    Queue::fake();
+
+    // A failed delivery whose next attempt is still in the future is not due, so
+    // the claim fails and the job steps aside — this is what stops the retry
+    // sweep and an in-flight attempt from both sending the same event.
+    $delivery = WebhookDelivery::factory()->create( [
+        'status'          => WebhookDeliveryStatus::Failed,
+        'next_attempt_at' => now()->addHour(),
+    ] );
+
+    runDeliveryJob( $delivery );
+
+    Http::assertNothingSent();
+    Queue::assertNothingPushed();
+} );
+
 it( 'does nothing for a delivery that already succeeded', function (): void {
     Http::fake( [ '*' => Http::response( 'ok', 200 ) ] );
     Queue::fake();

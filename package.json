@@ -3,7 +3,7 @@
 	"version": "1.0.0",
 	"description": "Framework-agnostic JavaScript core for the ArtisanPack UI bookings package, plus ready-made React and Vue booking widgets: typed public API client, date and timezone helpers, shared types, and the BookingWidget and ManageBooking components.",
 	"type": "module",
-	"license": "GPL-2.0-or-later",
+	"license": "MIT",
 	"author": "Jacob Martella <me@jacobmartella.com>",
 	"main": "./dist/core/index.js",
 	"types": "./dist/core/index.d.ts",

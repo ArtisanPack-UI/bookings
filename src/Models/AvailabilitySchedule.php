@@ -17,6 +17,7 @@ namespace ArtisanPackUI\Bookings\Models;
 
 use ArtisanPackUI\Bookings\Casts\WallClockTime;
 use ArtisanPackUI\Bookings\Database\Factories\AvailabilityScheduleFactory;
+use ArtisanPackUI\Bookings\Exceptions\NonexistentLocalTimeException;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -308,13 +309,16 @@ class AvailabilitySchedule extends Model
         // wall-clock design exists to get right. Reading the clock face back is
         // how that stops being silent.
         if ( $instant->format( 'H:i:s' ) !== $wallClock ) {
-            throw new RuntimeException( sprintf(
-                'Availability schedule %s names %s on %s, a local time that does not exist in %s: the clocks go forward over it.',
-                (string) $this->getKey(),
-                $wallClock,
-                $instant->toDateString(),
-                $timezone,
-            ) );
+            throw new NonexistentLocalTimeException(
+                sprintf(
+                    'Availability schedule %s names %s on %s, a local time that does not exist in %s: the clocks go forward over it.',
+                    (string) $this->getKey(),
+                    $wallClock,
+                    $instant->toDateString(),
+                    $timezone,
+                ),
+                $instant,
+            );
         }
 
         return $instant;

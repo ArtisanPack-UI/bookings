@@ -187,6 +187,43 @@ class WebhookDelivery extends Model
     }
 
     /**
+     * Claims this delivery for an attempt, leasing it against other producers.
+     *
+     * Two producers can hold the same still-due delivery — the retry sweep and
+     * the in-flight job it re-dispatched, or two sweep passes — and without a
+     * claim both would send the consumer the same event. This is the
+     * compare-and-set that stops them: it moves `next_attempt_at` forward to a
+     * lease only while the row is still due (the same predicate {@see scopeDue()}
+     * matches), so exactly one caller sees the update affect a row. Whoever wins
+     * attempts the delivery; a loser finds nothing updated and steps aside.
+     *
+     * The lease is a visibility timeout, not a lock: if the winner crashes mid
+     * attempt the row simply falls due again once the lease elapses, and the next
+     * sweep picks it up — which is the crash-safety the retry chain lacked when
+     * the failing attempt was the only thing that re-queued the next one.
+     *
+     * @since 1.0.0
+     *
+     * @param  DateTimeInterface  $leaseUntil  When the claim expires if the
+     *                                         attempt does not complete.
+     *
+     * @return bool True when this caller won the claim.
+     */
+    public function claim( DateTimeInterface $leaseUntil ): bool
+    {
+        $claimed = 1 === static::query()
+            ->whereKey( $this->getKey() )
+            ->due()
+            ->update( [ 'next_attempt_at' => $leaseUntil ] );
+
+        if ( $claimed ) {
+            $this->setAttribute( 'next_attempt_at', $leaseUntil )->syncOriginalAttribute( 'next_attempt_at' );
+        }
+
+        return $claimed;
+    }
+
+    /**
      * Creates a new factory instance for the model.
      *
      * @since 1.0.0

@@ -18,8 +18,9 @@ php artisan schedule:work    # or the usual cron entry for schedule:run
 | --- | --- | --- |
 | `bookings:send-reminders` | Every 15 minutes | Sends the reminders that have come due |
 | `bookings:complete-past` | Hourly | Marks confirmed bookings whose end time has passed as completed |
+| `bookings:retry-webhook-deliveries` | Every 15 minutes | Re-queues webhook deliveries stranded by a worker that died mid-retry |
 | `bookings:calendar-refresh` | Daily | Re-reads busy blocks for two-way connections |
-| `bookings:calendar-watch-renew` | Hourly | Renews Google/Microsoft push registrations before they lapse |
+| `bookings:calendar-watch-renew` | Hourly | Offers due push registrations to the driver package (via `ap.bookings.calendarSync.renewChannels`) to renew before they lapse |
 | `bookings:calendar-apple-poll` | Every 15 minutes | Polls Apple calendars, which cannot push |
 | `bookings:prune` | Daily, 03:00 | Soft-deletes bookings past their retention window |
 | `bookings:prune-notification-log` | Daily, 03:10 | Removes notification log rows past their window |

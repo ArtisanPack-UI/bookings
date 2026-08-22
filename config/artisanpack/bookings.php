@@ -138,7 +138,6 @@ return [
     'cancellation' => [
         'allowed'             => true,
         'min_advance_minutes' => 60 * 24,
-        'refund_policy_url'   => null,
     ],
 
     /*
@@ -153,7 +152,6 @@ return [
     */
     'series' => [
         'max_occurrences' => 52,
-        'default_rules'   => [ 'weekly', 'biweekly', 'monthly' ],
     ],
 
     /*
@@ -182,8 +180,21 @@ return [
             | one to look for, and a reminder outside this range never comes due.
             */
             'max_lookahead_hours' => 0,
+
+            /*
+            | How many hours late a reminder may still be sent after cron
+            | downtime. A run that comes back to find a "24-hour" reminder whose
+            | moment passed while it was gone would otherwise send it now — which
+            | can be minutes before the appointment, a reminder worse than none.
+            | Set this to skip any reminder whose scheduled moment is more than
+            | this many hours in the past. Zero or less (the default) keeps the
+            | catch-up behaviour: a late reminder still beats no reminder.
+            */
+            'max_catch_up_hours'  => 0,
         ],
         'cancellation' => [ 'enabled' => true ],
+        'reschedule'   => [ 'enabled' => true ],
+        'no_show'      => [ 'enabled' => true ],
 
         /*
         | Provider-facing notices sent when a booking is reassigned: the provider
@@ -276,7 +287,7 @@ return [
         'two_way_grace_hours'          => 6,
         'two_way_lookahead_days'       => 60,
         'connection_failure_threshold' => 5,
-        'ical_feed'                    => [ 'enabled' => true, 'signing_ttl_days' => 365 ],
+        'ical_feed'                    => [ 'enabled' => true ],
         'drivers'                      => [
             'google'    => [ 'enabled' => env( 'BOOKING_GOOGLE_ENABLED', false ) ],
             'microsoft' => [ 'enabled' => env( 'BOOKING_MICROSOFT_ENABLED', false ) ],
@@ -375,9 +386,11 @@ return [
     |--------------------------------------------------------------------------
     |
     | The route prefix for the customer-facing booking widget and the rate
-    | limits applied to it. The "post", "manage_get", and "ical" limits are per
-    | IP per minute; "manage_token" is per manage token and "ical_token" is per
-    | calendar feed token.
+    | limits applied to it. The "post", "read", "manage_get", and "ical" limits
+    | are per IP per minute; "manage_token" is per manage token and "ical_token"
+    | is per calendar feed token. "read" guards the public service, provider, and
+    | slot GET endpoints — slot resolution is the most expensive read in the
+    | package — so a script cannot walk a provider's whole calendar unbounded.
     |
     | "ical" configures the subscribable calendars at "{route_prefix}/ical/…".
     |
@@ -414,6 +427,7 @@ return [
         'manage_url'   => env( 'ARTISANPACK_BOOKINGS_MANAGE_URL' ),
         'rate_limits'  => [
             'post'         => 5,
+            'read'         => 60,
             'manage_get'   => 20,
             'manage_token' => 60,
             'ical'         => 30,

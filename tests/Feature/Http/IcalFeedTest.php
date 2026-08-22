@@ -14,6 +14,8 @@ use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Routing\RouteCollection;
+use Illuminate\Support\Facades\Route;
 use Tests\Concerns\TestsWithSqlite;
 
 uses( TestsWithSqlite::class, RefreshDatabase::class );
@@ -22,6 +24,28 @@ beforeEach( function (): void {
     // The Monday every booking helper works around, far enough ahead of the
     // 1 June diary that nothing the feed serves is in the past.
     $this->travelTo( CarbonImmutable::parse( '2026-05-25 12:00:00', 'UTC' ) );
+} );
+
+describe( 'the ical_feed.enabled off-switch', function (): void {
+    it( 'registers the feed routes while the feed is enabled', function (): void {
+        expect( Route::has( 'artisanpack.bookings.ical.provider' ) )->toBeTrue()
+            ->and( Route::has( 'artisanpack.bookings.ical.customer' ) )->toBeTrue();
+    } );
+
+    it( 'registers no feed routes when the feed is switched off', function (): void {
+        config()->set( 'artisanpack.bookings.calendar.ical_feed.enabled', false );
+
+        // Re-register the public routes under the new config against a fresh
+        // collection: the feed group is gated at registration, so the routes
+        // simply never appear when the switch is off.
+        app( 'router' )->setRoutes( new RouteCollection() );
+        Route::middleware( 'api' )->group( dirname( __DIR__, 3 ) . '/routes/public.php' );
+        app( 'router' )->getRoutes()->refreshNameLookups();
+
+        expect( Route::has( 'artisanpack.bookings.ical.provider' ) )->toBeFalse()
+            ->and( Route::has( 'artisanpack.bookings.ical.customer' ) )->toBeFalse()
+            ->and( Route::has( 'artisanpack.bookings.api.services.index' ) )->toBeTrue();
+    } );
 } );
 
 /**

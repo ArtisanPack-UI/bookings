@@ -540,6 +540,41 @@ describe( 'editing this and following', function (): void {
             ->and( $series->fresh()->occurrences()->active()->count() )->toBe( 2 );
     } );
 
+    it( 'counts the split by rule position, not by a rescheduled wall instant', function (): void {
+        // A customer rescheduled occurrence #5 off its rule time — later than the
+        // sixth occurrence's slot — the way ManageBooking does, without detaching.
+        // Splitting by wall instant would count seven occurrences before it and
+        // hand the tail COUNT=5; the split has to count by series_index instead,
+        // so the tail keeps the seven occurrences that genuinely follow it.
+        [ $service ] = bookableService();
+
+        $series = seriesService()->create( recurringCustomer( [
+            'service' => $service,
+            'rrule'   => 'FREQ=WEEKLY;COUNT=12',
+        ] ) );
+
+        $anchor = $series->occurrences()->where( 'series_index', 5 )->firstOrFail();
+
+        // 2026-07-06 (index 5) moved to 2026-07-13 12:00 — past the index-6 slot
+        // at 2026-07-13 10:00, and free because that occurrence ends at 11:00.
+        bookingService()->reschedule(
+            $anchor,
+            CarbonImmutable::parse( '2026-07-13 12:00', 'America/Chicago' ),
+            BookingActor::Customer,
+        );
+
+        $tail = seriesService()->edit(
+            $series,
+            SeriesEditScope::ThisAndFollowing,
+            [],
+            $series->occurrences()->where( 'series_index', 5 )->firstOrFail(),
+        );
+
+        expect( $tail->rrule )->toBe( 'FREQ=WEEKLY;COUNT=7' )
+            ->and( $tail->occurrence_count )->toBe( 7 )
+            ->and( $series->fresh()->occurrences()->active()->count() )->toBe( 5 );
+    } );
+
     it( 'leaves a caller\'s own rule alone rather than dividing it', function (): void {
         [ $service ] = bookableService();
 

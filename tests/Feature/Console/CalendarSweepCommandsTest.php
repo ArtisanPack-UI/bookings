@@ -2,9 +2,12 @@
 
 declare( strict_types=1 );
 
+use ArtisanPackUI\Bookings\Contracts\TwoWayCalendarDriver;
 use ArtisanPackUI\Bookings\Enums\CalendarDriver;
+use ArtisanPackUI\Bookings\Models\Booking;
 use ArtisanPackUI\Bookings\Models\CalendarConnection;
 use ArtisanPackUI\Bookings\Models\CalendarWatchChannel;
+use ArtisanPackUI\Bookings\Support\TimeRange;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Tests\Concerns\TestsWithSqlite;
@@ -17,7 +20,78 @@ beforeEach( function (): void {
 
 afterEach( function (): void {
     Carbon::setTestNow();
+
+    removeAllFilters( 'ap.bookings.calendarSync.providers' );
+    removeAllFilters( 'ap.bookings.calendarSync.renewChannels' );
 } );
+
+/**
+ * Registers a driver so the registry resolves it, replacing any under its key.
+ */
+function registerSweepDriver( TwoWayCalendarDriver $driver ): void
+{
+    addFilter(
+        'ap.bookings.calendarSync.providers',
+        static fn ( array $drivers ): array => array_merge( $drivers, [ $driver->driver()->value => $driver ] ),
+    );
+}
+
+/**
+ * Builds a two-way driver that records the connections it is asked to read back.
+ */
+function refreshingCalendarDriver( ?Throwable $failWith = null ): TwoWayCalendarDriver
+{
+    return new class( $failWith ) implements TwoWayCalendarDriver {
+        public array $refreshed = [];
+
+        public function __construct( public ?Throwable $failWith = null )
+        {
+        }
+
+        public function driver(): CalendarDriver
+        {
+            return CalendarDriver::Google;
+        }
+
+        public function createEvent( CalendarConnection $connection, Booking $booking ): string
+        {
+            return 'evt-created';
+        }
+
+        public function updateEvent( CalendarConnection $connection, Booking $booking, string $externalEventId ): string
+        {
+            return $externalEventId;
+        }
+
+        public function deleteEvent( CalendarConnection $connection, string $externalEventId ): void
+        {
+        }
+
+        public function busyPeriods( CalendarConnection $connection, TimeRange $window ): array
+        {
+            return [];
+        }
+
+        public function incrementalSync( CalendarConnection $connection ): void
+        {
+            if ( null !== $this->failWith ) {
+                throw $this->failWith;
+            }
+
+            $this->refreshed[] = $connection->getKey();
+        }
+
+        public function subscribeToChanges( CalendarConnection $connection, string $callbackUrl ): CalendarWatchChannel
+        {
+            return new CalendarWatchChannel();
+        }
+
+        public function renewSubscription( CalendarWatchChannel $channel, string $callbackUrl ): CalendarWatchChannel
+        {
+            return $channel;
+        }
+    };
+}
 
 describe( 'bookings:calendar-refresh', function (): void {
     it( 'says so when there is nothing two-way to refresh', function (): void {
@@ -45,6 +119,49 @@ describe( 'bookings:calendar-refresh', function (): void {
 
         $this->artisan( 'bookings:calendar-refresh' )
             ->expectsOutputToContain( 'No two-way calendar connections to refresh.' )
+            ->assertSuccessful();
+    } );
+
+    it( 'reads back every due connection through its registered driver', function (): void {
+        $driver = refreshingCalendarDriver();
+        registerSweepDriver( $driver );
+
+        $connections = CalendarConnection::factory()->twoWay()->count( 2 )->create( [
+            'driver' => CalendarDriver::Google,
+        ] );
+
+        $this->artisan( 'bookings:calendar-refresh' )
+            ->expectsOutputToContain( 'Refreshed 2 of 2 two-way calendar connection(s)' )
+            ->assertSuccessful();
+
+        expect( $driver->refreshed )->toEqualCanonicalizing( $connections->pluck( 'id' )->all() );
+
+        foreach ( $connections as $connection ) {
+            expect( $connection->fresh()->last_sync_at )->not->toBeNull();
+        }
+    } );
+
+    it( 'records a failure on the connection and carries on with the rest', function (): void {
+        registerSweepDriver( refreshingCalendarDriver( new RuntimeException( 'Google is unreachable.' ) ) );
+
+        $connection = CalendarConnection::factory()->twoWay()->create( [ 'driver' => CalendarDriver::Google ] );
+
+        $this->artisan( 'bookings:calendar-refresh' )
+            ->expectsOutputToContain( 'Calendar connection ' . $connection->getKey() . ' could not be refreshed.' )
+            ->assertSuccessful();
+
+        expect( $connection->fresh()->last_sync_error )->toBe( 'Google is unreachable.' );
+    } );
+
+    it( 'still reports the not-installed warning when no due connection has a driver', function (): void {
+        // A read-only iCal driver is not a two-way driver: a Google connection it
+        // cannot serve is still unsyncable, and the operator-facing warning must
+        // still fire rather than a false "refreshed" line.
+        CalendarConnection::factory()->twoWay()->count( 2 )->create( [ 'driver' => CalendarDriver::Google ] );
+
+        $this->artisan( 'bookings:calendar-refresh' )
+            ->expectsOutputToContain( '2 two-way calendar connection(s) are due a refresh.' )
+            ->expectsOutputToContain( 'No calendar sync driver is installed' )
             ->assertSuccessful();
     } );
 } );
@@ -85,6 +202,24 @@ describe( 'bookings:calendar-watch-renew', function (): void {
         $this->artisan( 'bookings:calendar-watch-renew' )
             ->expectsOutputToContain( '2 calendar watch channel(s) are due for renewal.' )
             ->expectsOutputToContain( 'No calendar sync driver is installed' )
+            ->assertSuccessful();
+    } );
+
+    it( 'defers the renewal to a subscriber and reports what it renewed', function (): void {
+        // The push side of two-way sync ships in the driver package that owns the
+        // callback URL. It subscribes to the renewChannels filter, renews the due
+        // channels, and returns the count; the sweep reports that rather than the
+        // not-installed warning.
+        CalendarWatchChannel::factory()->create( [ 'expires_at' => Carbon::parse( '-1 day' ) ] );
+        CalendarWatchChannel::factory()->create( [ 'expires_at' => Carbon::parse( '+30 minutes' ) ] );
+
+        addFilter(
+            'ap.bookings.calendarSync.renewChannels',
+            static fn ( int $renewed, $due ): int => $renewed + $due->count(),
+        );
+
+        $this->artisan( 'bookings:calendar-watch-renew' )
+            ->expectsOutputToContain( 'Renewed 2 of 2 calendar watch channel(s).' )
             ->assertSuccessful();
     } );
 } );

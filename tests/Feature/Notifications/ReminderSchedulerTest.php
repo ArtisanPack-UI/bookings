@@ -91,6 +91,30 @@ describe( 'sending what is due', function (): void {
         expect( $this->scheduler->sendDue( $this->now ) )->toBe( 1 );
     } );
 
+    it( 'skips a catch-up reminder staler than the configured floor', function (): void {
+        // The 24-hour moment is four hours in the past; a two-hour floor makes
+        // that too late to send — a reminder minutes before the start is worse
+        // than none.
+        Notifier::fake();
+        config()->set( 'artisanpack.bookings.notifications.reminder.max_catch_up_hours', 2 );
+
+        reminderBooking( $this->now, 20 );
+
+        expect( $this->scheduler->sendDue( $this->now ) )->toBe( 0 )
+            ->and( NotificationLog::query()->count() )->toBe( 0 );
+    } );
+
+    it( 'still sends a catch-up reminder within the configured floor', function (): void {
+        // The 24-hour moment is one hour in the past — inside a two-hour floor —
+        // so a briefly-delayed reminder still goes out.
+        Notifier::fake();
+        config()->set( 'artisanpack.bookings.notifications.reminder.max_catch_up_hours', 2 );
+
+        reminderBooking( $this->now, 23 );
+
+        expect( $this->scheduler->sendDue( $this->now ) )->toBe( 1 );
+    } );
+
     it( 'does not remind anybody about an appointment already under way', function (): void {
         Notifier::fake();
         reminderBooking( $this->now, -1 );

@@ -16,6 +16,7 @@ declare( strict_types=1 );
 namespace ArtisanPackUI\Bookings\Services;
 
 use ArtisanPackUI\Bookings\Contracts\SlotResolver;
+use ArtisanPackUI\Bookings\Exceptions\NonexistentLocalTimeException;
 use ArtisanPackUI\Bookings\Models\AvailabilityOverride;
 use ArtisanPackUI\Bookings\Models\AvailabilitySchedule;
 use ArtisanPackUI\Bookings\Models\Booking;
@@ -34,6 +35,7 @@ use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 use UnexpectedValueException;
 
 /**
@@ -450,8 +452,8 @@ class AvailabilityService implements SlotResolver
             // weekly schedule would quietly work the provider on a day they
             // said they were doing something else with.
             $overridden = true;
-            $start      = $override->startsAt( $timezone );
-            $end        = $override->endsAt( $timezone );
+            $start      = $this->clampNonexistentLocalTime( fn (): ?Carbon => $override->startsAt( $timezone ) );
+            $end        = $this->clampNonexistentLocalTime( fn (): ?Carbon => $override->endsAt( $timezone ) );
 
             if ( null !== $start && null !== $end && $end->greaterThan( $start ) ) {
                 $windows[] = new TimeRange( $start, $end );
@@ -470,17 +472,44 @@ class AvailabilityService implements SlotResolver
             ->get();
 
         foreach ( $schedules as $schedule ) {
-            $start = $schedule->startsAtOn( $date, $timezone );
-            $end   = $schedule->endsAtOn( $date, $timezone );
+            $start = $this->clampNonexistentLocalTime( fn (): ?Carbon => $schedule->startsAtOn( $date, $timezone ) );
+            $end   = $this->clampNonexistentLocalTime( fn (): ?Carbon => $schedule->endsAtOn( $date, $timezone ) );
 
             // A window that does not end after it starts is a row somebody has
             // to fix, not a slot; overnight hours are two rows, not one.
-            if ( $end->greaterThan( $start ) ) {
+            if ( null !== $start && null !== $end && $end->greaterThan( $start ) ) {
                 $windows[] = new TimeRange( $start, $end );
             }
         }
 
         return $windows;
+    }
+
+    /**
+     * Resolves a wall-clock boundary, clamping one the clocks skipped over.
+     *
+     * A schedule or override authored inside the spring-forward gap names a local
+     * time that does not exist on that one date. Left to throw, it would 500 the
+     * provider's entire day on the public availability path once a year. This
+     * catches only that case — a {@see NonexistentLocalTimeException}, distinct
+     * from the plain exception a genuinely unreadable value raises — and clamps to
+     * the instant the clock jumped to, so the window simply starts (or ends) at
+     * the resumption of valid time. A truly broken row still throws.
+     *
+     * @since 1.0.0
+     *
+     * @param  callable(): ?Carbon  $resolve  Resolves the boundary instant.
+     *
+     * @return Carbon|null The instant, clamped past a DST gap, or null when the
+     *                     boundary is unset.
+     */
+    protected function clampNonexistentLocalTime( callable $resolve ): ?Carbon
+    {
+        try {
+            return $resolve();
+        } catch ( NonexistentLocalTimeException $gap ) {
+            return $gap->clampedInstant();
+        }
     }
 
     /**
@@ -771,6 +800,19 @@ class AvailabilityService implements SlotResolver
 
         if ( null !== $custom ) {
             $minutes = $custom;
+        }
+
+        // Validated before the filter runs, so a service (or attachment) stored
+        // with a non-positive duration surfaces as what it is rather than as a
+        // hook-contract failure. Without this, a zero-length service reached the
+        // filter as 0 and the post-filter guard blamed a subscriber that never
+        // touched it. Forbidden at write time in ServiceEditor too.
+        if ( $minutes < 1 ) {
+            throw new UnexpectedValueException( sprintf(
+                'Service %d resolves to a slot duration of %d minutes; a bookable service must be at least one minute long.',
+                (int) $service->getKey(),
+                $minutes,
+            ) );
         }
 
         $filtered = applyFilters( 'ap.bookings.slotDuration', $minutes, $service, $provider );

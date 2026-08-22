@@ -647,14 +647,23 @@ class SeriesService
         array $changes,
         BookingActor $actor,
     ): BookingSeries {
-        $timezone  = (string) ( $changes['dtstart_timezone'] ?? $series->dtstart_timezone );
-        $splitFrom = CarbonImmutable::instance( $occurrence->start_time )->utc();
-        $kept      = $this->countBefore( $this->expandSeries( $series ), $splitFrom );
+        $timezone = (string) ( $changes['dtstart_timezone'] ?? $series->dtstart_timezone );
+
+        // The split point is the anchor's position in the *rule*, not its wall
+        // instant. A customer who rescheduled this occurrence off its rule time —
+        // which `ManageBooking` does without detaching it — leaves `start_time`
+        // pointing somewhere the rule never named, so counting rule instants
+        // before that wall time would miscount the halves. `series_index` is the
+        // anchor's rule position and survives the move; the rule instant behind it
+        // is what the head is bounded at and the tail starts from.
+        $ruleInstants  = $this->expandSeries( $series );
+        $kept          = min( max( 0, $occurrence->series_index ), count( $ruleInstants ) );
+        $splitFrom     = $ruleInstants[ $occurrence->series_index ]
+            ?? CarbonImmutable::instance( $occurrence->start_time )->utc();
 
         $tail = $this->cloneSeries( $series, $changes, $timezone, $this->tailRule( $series, $changes, $kept ), [
             'dtstart_local' => $this->floating(
-                $changes['dtstart_local'] ?? CarbonImmutable::instance( $occurrence->start_time )
-                    ->setTimezone( $timezone ),
+                $changes['dtstart_local'] ?? $splitFrom->setTimezone( $timezone ),
             ),
             // The original's own upper bound, read before the original is
             // bounded below — that is the end of the arrangement, whereas what
@@ -676,7 +685,10 @@ class SeriesService
             throw $exception;
         }
 
-        $this->cancelOccurrencesFrom( $series, $splitFrom, $actor, null, true );
+        // Cancelled by rule position rather than by wall instant, so a customer
+        // who rescheduled the anchor earlier than its rule time is still swept
+        // into the tail rather than left standing on the head.
+        $this->cancelOccurrencesFromIndex( $series, $occurrence->series_index, $actor );
 
         $series->forceFill(
             0 === $kept
@@ -689,9 +701,7 @@ class SeriesService
                 // head.
                 : [
                     'until_local' => $this->floating(
-                        CarbonImmutable::instance( $occurrence->start_time )
-                            ->setTimezone( $series->dtstart_timezone )
-                            ->subSecond(),
+                        $splitFrom->setTimezone( $series->dtstart_timezone )->subSecond(),
                     ),
                 ],
         )->save();
@@ -863,29 +873,6 @@ class SeriesService
     }
 
     /**
-     * Counts how many of a set of instants fall before another.
-     *
-     * @since 1.0.0
-     *
-     * @param  array<int, CarbonImmutable>  $instants  The instants to count.
-     * @param  CarbonImmutable  $boundary  The instant to count up to, exclusive.
-     *
-     * @return int How many fall strictly before the boundary.
-     */
-    protected function countBefore( array $instants, CarbonImmutable $boundary ): int
-    {
-        $before = 0;
-
-        foreach ( $instants as $instant ) {
-            if ( $instant->lessThan( $boundary ) ) {
-                $before++;
-            }
-        }
-
-        return $before;
-    }
-
-    /**
      * Cancels a series' occurrences from an instant onwards.
      *
      * @since 1.0.0
@@ -923,6 +910,45 @@ class SeriesService
             }
 
             $this->bookings->cancel( $occurrence, $actor, $reason );
+            $cancelled++;
+        }
+
+        return $cancelled;
+    }
+
+    /**
+     * Cancels a series' attached occurrences from a rule position onwards.
+     *
+     * The counterpart to {@see cancelOccurrencesFrom()} used by a split, keyed on
+     * `series_index` rather than on the wall instant. An occurrence rescheduled
+     * off its rule time keeps its index, so this catches it whichever way it was
+     * moved — where a `start_time >= boundary` comparison would miss one moved
+     * earlier. Detached occurrences are left alone: detaching is the record that
+     * the rule no longer describes them.
+     *
+     * @since 1.0.0
+     *
+     * @param  BookingSeries  $series  The series whose occurrences to cancel.
+     * @param  int  $fromIndex  The rule position to cancel from, inclusive.
+     * @param  BookingActor  $actor  Who cancelled them.
+     *
+     * @return int How many were cancelled.
+     */
+    protected function cancelOccurrencesFromIndex( BookingSeries $series, int $fromIndex, BookingActor $actor ): int
+    {
+        $occurrences = $series->occurrences()
+            ->where( 'series_index', '>=', $fromIndex )
+            ->whereNull( 'detached_from_series_at' )
+            ->get();
+
+        $cancelled = 0;
+
+        foreach ( $occurrences as $occurrence ) {
+            if ( ! $occurrence->occupiesSlot() ) {
+                continue;
+            }
+
+            $this->bookings->cancel( $occurrence, $actor, null );
             $cancelled++;
         }
 

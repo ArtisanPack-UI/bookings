@@ -50,6 +50,27 @@ it( 'resolves the package views under the bookings namespace', function (): void
         ->and( view()->exists( 'bookings::livewire.public.manage-booking' ) )->toBeTrue();
 } );
 
+it( 'publishes the translations under the bookings-lang tag', function (): void {
+    $paths = ServiceProvider::pathsToPublish( BookingsServiceProvider::class, 'bookings-lang' );
+
+    expect( $paths )->not->toBeEmpty()
+        ->and( array_values( $paths )[ 0 ] )->toBe( app()->langPath() );
+} );
+
+it( 'ships an English catalogue for every user-facing string', function (): void {
+    $catalogue = json_decode(
+        (string) file_get_contents( dirname( __DIR__, 2 ) . '/lang/en.json' ),
+        true,
+    );
+
+    // A JSON catalogue keys each source string to its own English text, so a
+    // translator copies the file and overrides the values. A sampling proves the
+    // file is present, well-formed, and resolves keys to themselves.
+    expect( $catalogue )->toBeArray()
+        ->and( $catalogue )->not->toBeEmpty()
+        ->and( $catalogue['Booking confirmed'] ?? null )->toBe( 'Booking confirmed' );
+} );
+
 it( 'registers the booking widget under the name an embed writes by hand', function (): void {
     expect( Livewire::new( 'artisanpack-booking-widget' ) )->toBeInstanceOf( BookingWidget::class );
 } );

@@ -98,6 +98,7 @@ class Webhook extends Model
      */
     protected $casts = [
         'events'                    => 'array',
+        'secret'                    => 'encrypted',
         'is_active'                 => 'boolean',
         'consecutive_failure_count' => 'integer',
         'disabled_at'               => 'datetime',

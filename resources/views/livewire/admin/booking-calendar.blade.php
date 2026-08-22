@@ -60,15 +60,23 @@
                 </div>
 
                 @forelse ( $dayBookings as $booking )
+                    @php ( $service = $booking->service )
+                    {{-- Painted in the service colour only when a readable text
+                         colour is available too: contrast_color is null when
+                         artisanpack-ui/accessibility is not installed, and a
+                         coloured chip with unreadable text is worse than none. --}}
                     <button
                         type="button"
-                        class="block w-full rounded-box border px-2 py-1 text-left text-sm hover:bg-base-200"
+                        @class( [ 'block w-full rounded-box border px-2 py-1 text-left text-sm', 'hover:bg-base-200' => null === $service?->contrast_color ] )
+                        @if ( null !== $service?->color && null !== $service?->contrast_color )
+                            style="background-color: {{ $service->color }}; color: {{ $service->contrast_color }}; border-color: {{ $service->color }};"
+                        @endif
                         wire:key="cal-booking-{{ $booking->id }}"
                         wire:click="view( {{ $booking->id }} )"
                     >
                         <span class="font-medium">{{ $booking->start_time->copy()->setTimezone( $timezone )->isoFormat( 'LT' ) }}</span>
                         <span class="block truncate">{{ $booking->customer_name }}</span>
-                        <span class="block truncate text-xs opacity-60">{{ $booking->service?->name }}</span>
+                        <span class="block truncate text-xs opacity-60">{{ $service?->name }}</span>
                     </button>
                 @empty
                     <p class="text-xs opacity-40">{{ __( 'No bookings' ) }}</p>

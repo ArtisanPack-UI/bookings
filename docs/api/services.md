@@ -84,5 +84,5 @@ See [iCal Feeds](Usage-Ical-Feeds).
 ## Delivery services
 
 - `NotificationService` — sends booking notifications across the configured channels. See [Notifications](Notifications).
-- `WebhookDispatcher` — queues an outbound delivery per subscribed endpoint: `dispatch( string $event, array $payload, ?int $siteId = null )`. See [Webhooks](Notifications-Webhooks).
+- `WebhookDispatcher` — queues an outbound delivery per subscribed endpoint: `dispatch( string $event, array $payload, int|string|null $siteId = null )`. See [Webhooks](Notifications-Webhooks).
 - `CalendarSyncOrchestrator` — fans a confirmed/rescheduled/reassigned booking out to connected calendars. See [Calendar Sync](Integrations-Calendar-Sync).

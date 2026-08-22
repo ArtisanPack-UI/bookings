@@ -31,17 +31,6 @@ namespace ArtisanPackUI\Bookings\Enums;
  */
 enum BookingActor: string
 {
-    /**
-     * Determines whether the change came from outside the organisation.
-     *
-     * @since 1.0.0
-     *
-     * @return bool True when the customer themselves acted.
-     */
-    public function isCustomer(): bool
-    {
-        return self::Customer === $this;
-    }
     case Customer = 'customer';
 
     case Provider = 'provider';

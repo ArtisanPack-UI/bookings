@@ -3,10 +3,9 @@
 Appointment scheduling and booking management for Laravel — services, providers,
 availability, bookings, calendar sync, and a public booking widget.
 
-> **Status: v1.0 development.** The domain layer, HTTP surface, notifications,
+> **Status: released, v1.0.** The domain layer, HTTP surface, notifications,
 > calendar sync, GDPR tooling, and the Livewire and React/Vue frontends are all
-> in place and documented below. Work on the `release/1.0` branch is the run-up to
-> the first tagged release.
+> in place and documented below.
 
 ## Documentation
 
@@ -902,7 +901,7 @@ with no phone number, and one whose personal data has been erased.
 **The null driver writes the number and the message to your log.** That is what
 it is for, and it is also customer contact details and an appointment time
 sitting in a file that erasing a booking does not reach — the erasure routine
-sweeps `bookings` and `booking_notification_log`, not `storage/logs`. Fine in
+scrubs the booking and its related rows (see [GDPR & Erasure](Advanced-Gdpr-Data-Retention)), never `storage/logs`. Fine in
 development, and a disclosure you have to be able to make if you leave `sms`
 enabled without a gateway in production. Bind a driver that discards the body, or
 take `sms` back out of the channel list, if you cannot.
@@ -1021,10 +1020,15 @@ policy requires. It defaults from `BOOKING_PRUNE_DAYS`, and zeroing it (a blank
 environment variable, most often) switches the prune off rather than deleting
 everything.
 
-The calendar sweeps find what is due and then need a `CalendarSyncDriver` to act
-on it. Those ship in `artisanpack-ui/google`, `artisanpack-ui/microsoft`, and
-`artisanpack-ui/apple`; until one is installed the sweeps report what they found
-and warn that nothing was synced.
+The read-only iCal feed driver and the Google Calendar driver are implemented in
+this package (the Google driver runs on OAuth gated behind `artisanpack-ui/google`).
+Microsoft and Apple are recognised by the `CalendarDriver` enum but delivered by
+`artisanpack-ui/microsoft` and `artisanpack-ui/apple`. `bookings:calendar-refresh`
+routes each due two-way connection to its driver and runs the driver's own
+read-back; a connection whose driver is not installed has nothing to sync it and
+the sweep says so. The push-channel renewal (`bookings:calendar-watch-renew`)
+belongs to the driver package that owns the callback URL, which it does by
+subscribing to `ap.bookings.calendarSync.renewChannels`.
 
 ### Admin surface
 
@@ -1144,6 +1148,7 @@ Actions fire; filters transform a value and must return one.
 | `ap.bookings.calendarSync.pullReceived` | action | `(array $payload, string $providerSlug)` |
 | `ap.bookings.calendarSync.eventPayload` | filter | `(array $payload, Booking $booking, string $providerSlug)` |
 | `ap.bookings.calendarSync.connectionDisabled` | action | `(CalendarConnection $connection, string $reason)` |
+| `ap.bookings.calendarSync.renewChannels` | filter | `(int $renewed, Collection $due)` |
 | `ap.bookings.availableProviders` | filter | `(array $providers, Service $service, CarbonImmutable $start)` |
 | `ap.bookings.roundRobin.selectProvider` | filter | `(?ServiceProvider $selected, array $candidates, Booking $draft)` |
 | `ap.bookings.intakeSchema` | filter | `(array $schema, Service $service, int $version)` |

@@ -12,11 +12,14 @@ The `mail` channel sends the customer- and provider-facing booking notices. It i
 | --- | --- | --- |
 | Confirmation | Customer | `notifications.confirmation.enabled` |
 | Cancellation | Customer | `notifications.cancellation.enabled` |
-| Reschedule | Customer | (part of confirmation flow) |
+| Reschedule | Customer | `notifications.reschedule.enabled` |
+| No-show | Customer | `notifications.no_show.enabled` |
 | Provider assigned | Provider | `notifications.provider_assigned.enabled` |
 | Provider unassigned | Provider | `notifications.provider_unassigned.enabled` |
 
 Reminders are also email (and any other enabled channel) — see [Reminders](Notifications-Reminders).
+
+**Times are per-customer; wording is per-application.** Each message renders its dates and times in the booking's own `customer_timezone` (the provider's zone for a staff copy), so a customer in Auckland reads Auckland times. The message *wording*, though, renders in the application's configured locale — the package sets no per-recipient locale — so a multi-language installation that wants each customer emailed in their own language should set the locale around the send itself (for example from an `ap.bookings.notification.sending` subscriber).
 
 ## The manage link in confirmation emails
 

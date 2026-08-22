@@ -3,14 +3,26 @@
 declare( strict_types=1 );
 
 use ArtisanPackUI\Bookings\Enums\BookingStatus;
+use ArtisanPackUI\Bookings\Exceptions\SlotUnavailableException;
 use ArtisanPackUI\Bookings\Models\Booking;
 use ArtisanPackUI\Bookings\Models\ServiceProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Tests\Concerns\TestsWithSqlite;
 
 uses( TestsWithSqlite::class, RefreshDatabase::class );
 
+beforeEach( function (): void {
+    // The bookable slots {@see bookingStart()} names sit on a fixed date, so the
+    // booking-window guard needs "now" pinned before them or every slot reads as
+    // in the past. Frozen to the start of that day, well ahead of the 10:00-local
+    // slot the happy-path cases use.
+    Carbon::setTestNow( '2026-06-01 00:00:00' );
+} );
+
 afterEach( function (): void {
+    Carbon::setTestNow();
+
     removeAllActions( 'ap.bookings.creating' );
     removeAllActions( 'ap.bookings.created' );
     removeAllActions( 'ap.bookings.confirmed' );
@@ -126,6 +138,32 @@ describe( 'createFromFormSubmission', function (): void {
             'start_time'   => bookingStart()->toIso8601String(),
         ] ) )->toThrow( InvalidArgumentException::class, 'No active service' );
     } );
+
+    it( 'refuses a slot in the past however free the provider is', function (): void {
+        // Availability ignores "now", so a stale or tampered submission naming a
+        // slot already gone would otherwise be booked. Now is moved past the slot.
+        [ $service ] = bookableService();
+
+        Carbon::setTestNow( bookingStart()->addHour() );
+
+        expect( static fn (): Booking => bookingService()->createFromFormSubmission( bookingCustomer( [
+            'service_slug' => $service->slug,
+            'start_time'   => bookingStart()->toIso8601String(),
+        ] ) ) )->toThrow( SlotUnavailableException::class );
+    } );
+
+    it( 'refuses a slot inside the minimum-notice window', function (): void {
+        [ $service ] = bookableService();
+
+        // The slot is 15 hours ahead; a 24-hour minimum notice puts it inside the
+        // window the widget and HTTP API would both refuse.
+        config()->set( 'artisanpack.bookings.booking_window.min_advance_minutes', 24 * 60 );
+
+        expect( static fn (): Booking => bookingService()->createFromFormSubmission( bookingCustomer( [
+            'service_slug' => $service->slug,
+            'start_time'   => bookingStart()->toIso8601String(),
+        ] ) ) )->toThrow( SlotUnavailableException::class );
+    } );
 } );
 
 describe( 'formSubmissionIsBookable', function (): void {
@@ -158,6 +196,28 @@ describe( 'formSubmissionIsBookable', function (): void {
         expect( bookingService()->formSubmissionIsBookable( [
             'service_slug' => $service->slug,
             'start_time'   => bookingStart( '03:00' )->toIso8601String(),
+        ] ) )->toBeFalse();
+    } );
+
+    it( 'is false for a slot in the past even when the provider is free', function (): void {
+        [ $service ] = bookableService();
+
+        Carbon::setTestNow( bookingStart()->addHour() );
+
+        expect( bookingService()->formSubmissionIsBookable( [
+            'service_slug' => $service->slug,
+            'start_time'   => bookingStart()->toIso8601String(),
+        ] ) )->toBeFalse();
+    } );
+
+    it( 'is false for a slot inside the minimum-notice window', function (): void {
+        [ $service ] = bookableService();
+
+        config()->set( 'artisanpack.bookings.booking_window.min_advance_minutes', 24 * 60 );
+
+        expect( bookingService()->formSubmissionIsBookable( [
+            'service_slug' => $service->slug,
+            'start_time'   => bookingStart()->toIso8601String(),
         ] ) )->toBeFalse();
     } );
 

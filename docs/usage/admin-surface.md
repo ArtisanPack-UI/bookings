@@ -41,6 +41,10 @@ Gate::define( 'bookings.manage', fn ( User $user ) => $user->isStaff() );
 
 The gate is also applied to Livewire update requests through a persistent middleware, so a screen cannot be driven past its guard once it has loaded.
 
+### One gate covers every admin action
+
+`bookings.admin` is a single all-or-nothing gate: anyone who holds it can do everything the admin exposes — edit services and providers, manage webhooks, and **erase customer PII**. There is no finer-grained permission in v1.0; a "staff" ability is the whole model. That is a deliberate fit for a single-role installation, but if your application needs to separate, say, day-to-day booking management from PII erasure or webhook administration, gate the sensitive actions in your own application layer for now. Per-surface abilities (`bookings.erase-pii`, `bookings.manage-webhooks`, …) defaulting to the main gate are a candidate for a future minor release — track it if it matters to you.
+
 ## Layout
 
 Each screen renders inside a layout chosen for you: `cms::admin.layouts.app` when `artisanpack-ui/cms-framework` is installed, and the package's own `bookings::admin.layouts.app` when it is not. Publish the standalone layout with `php artisan vendor:publish --tag=bookings-views` and edit the copy under `resources/views/vendor/bookings/admin/layouts/app.blade.php` to wrap the screens in your own chrome.

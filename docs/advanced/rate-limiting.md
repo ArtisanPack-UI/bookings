@@ -11,12 +11,15 @@ Every public route is reachable without credentials, so each one carries a bucke
 | Bucket | Default (per minute) | Keyed by | Guards |
 | --- | --- | --- | --- |
 | `post` | 5 | address | `POST api/bookings`, the widget, and the self-serve cancel / reschedule |
+| `read` | 60 | address | `GET services`, `GET services/{slug}/providers`, `GET services/{slug}/slots` |
 | `manage_get` | 20 | address | The manage page read |
-| `manage_token` | 60 | manage token | The manage read and the customer feed |
+| `manage_token` | 60 | manage token | The manage read, the self-serve cancel / reschedule, and the customer feed |
 | `ical` | 30 | address | The provider and customer calendar feeds |
 | `ical_token` | 30 | feed token | The provider calendar feed |
 
-The reads that carry a link's whole credential are guarded twice — once per address, once per token — because the two bound different abuses: a machine grinding through guesses, and a link that has escaped into the world being fetched from everywhere at once.
+The public service, provider, and slot reads carry the `read` bucket because slot resolution is the most expensive read in the package — without it a script could walk a provider's whole calendar unbounded.
+
+The routes that carry a link's whole credential are guarded twice — once per address, once per token — because the two bound different abuses: a machine grinding through guesses, and a link that has escaped into the world being hit from everywhere at once. The self-serve cancel and reschedule writes carry both the `post` (per address) and `manage_token` (per link) buckets, matching the manage read's stack.
 
 ## Raising a limit
 
@@ -25,6 +28,7 @@ The reads that carry a link's whole credential are guarded twice — once per ad
 'public' => [
     'rate_limits' => [
         'post'         => 20,
+        'read'         => 120,
         'manage_get'   => 60,
         'manage_token' => 120,
         'ical'         => 60,

@@ -2,6 +2,7 @@
 
 declare( strict_types=1 );
 
+use ArtisanPackUI\Bookings\Models\Service;
 use ArtisanPackUI\Bookings\Support\BookingWindow;
 use Carbon\CarbonImmutable;
 
@@ -66,4 +67,54 @@ it( 'holds a booking off until a positive minimum has passed', function (): void
 
     expect( BookingWindow::earliest( $now )->toIso8601String() )
         ->toBe( $now->addMinutes( 60 )->toIso8601String() );
+} );
+
+/*
+ * DST end-bound drift — the span end must add a day/month in the local zone, not
+ * to the UTC instant, or the last local hour of a fall-back day vanishes and the
+ * first local hour of the day after a spring-forward day leaks in. Both bounds
+ * are cleared so clip() returns the raw span, and now is pinned well before the
+ * dates so the earliest bound cannot trim the start.
+ */
+describe( 'the day and month spans across a DST transition', function (): void {
+    beforeEach( function (): void {
+        CarbonImmutable::setTestNow( '2026-01-01 00:00:00' );
+
+        config()->set( 'artisanpack.bookings.booking_window.min_advance_minutes', 0 );
+        config()->set( 'artisanpack.bookings.booking_window.max_advance_minutes', 0 );
+    } );
+
+    afterEach( function (): void {
+        CarbonImmutable::setTestNow();
+    } );
+
+    it( 'ends a fall-back day at the true next local midnight, keeping the 25th hour', function (): void {
+        $service = Service::factory()->make();
+
+        $window = BookingWindow::day( $service, '2026-11-01', 'America/Chicago' );
+
+        expect( $window )->not->toBeNull()
+            ->and( $window->start->toIso8601String() )->toBe( '2026-11-01T05:00:00+00:00' )
+            ->and( $window->end->toIso8601String() )->toBe( '2026-11-02T06:00:00+00:00' );
+    } );
+
+    it( 'ends a spring-forward day at the true next local midnight, not leaking the next day in', function (): void {
+        $service = Service::factory()->make();
+
+        $window = BookingWindow::day( $service, '2026-03-08', 'America/Chicago' );
+
+        expect( $window )->not->toBeNull()
+            ->and( $window->start->toIso8601String() )->toBe( '2026-03-08T06:00:00+00:00' )
+            ->and( $window->end->toIso8601String() )->toBe( '2026-03-09T05:00:00+00:00' );
+    } );
+
+    it( 'ends a month that contains a DST change at the true next local month start', function (): void {
+        $service = Service::factory()->make();
+
+        $window = BookingWindow::month( $service, '2026-11', 'America/Chicago' );
+
+        expect( $window )->not->toBeNull()
+            ->and( $window->start->toIso8601String() )->toBe( '2026-11-01T05:00:00+00:00' )
+            ->and( $window->end->toIso8601String() )->toBe( '2026-12-01T06:00:00+00:00' );
+    } );
 } );

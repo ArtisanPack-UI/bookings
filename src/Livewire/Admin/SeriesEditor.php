@@ -355,7 +355,7 @@ class SeriesEditor extends Component
         try {
             app( SeriesService::class )->edit( $series, $scope, $changes, $occurrence, BookingActor::Admin );
         } catch ( SeriesException|SlotUnavailableException|InvalidArgumentException $exception ) {
-            $this->addError( 'scope', $exception->getMessage() );
+            $this->addError( 'scope', $this->seriesErrorMessage( $exception ) );
 
             return;
         }
@@ -383,7 +383,7 @@ class SeriesEditor extends Component
         try {
             app( SeriesService::class )->cancel( $this->series(), BookingActor::Admin );
         } catch ( SeriesException $exception ) {
-            $this->addError( 'scope', $exception->getMessage() );
+            $this->addError( 'scope', $this->seriesErrorMessage( $exception ) );
 
             return;
         }
@@ -461,6 +461,27 @@ class SeriesEditor extends Component
             'occurrences' => $this->occurrences(),
             'providers'   => $this->providers(),
         ] );
+    }
+
+    /**
+     * Maps a series-edit failure to translated, operator-facing copy.
+     *
+     * The exception messages name rules, ids, and enum slugs an operator cannot
+     * act on, so they are mapped by type rather than shown — keeping internal
+     * wording out of the admin's error bag and leaving every message translatable.
+     *
+     * @since 1.0.0
+     *
+     * @param  InvalidArgumentException|SeriesException|SlotUnavailableException  $exception  The failure.
+     *
+     * @return string The translated message.
+     */
+    protected function seriesErrorMessage( SeriesException|SlotUnavailableException|InvalidArgumentException $exception ): string
+    {
+        return match ( true ) {
+            $exception instanceof SlotUnavailableException => __( 'The times this change needs are no longer available. Please choose another.' ),
+            default                                        => __( 'This recurring booking could not be changed.' ),
+        };
     }
 
     /**

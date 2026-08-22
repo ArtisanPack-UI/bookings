@@ -17,6 +17,9 @@ namespace ArtisanPackUI\Bookings\Livewire\Admin;
 
 use ArtisanPackUI\Bookings\Enums\BookingActor;
 use ArtisanPackUI\Bookings\Exceptions\BookingException;
+use ArtisanPackUI\Bookings\Exceptions\InvalidBookingTransitionException;
+use ArtisanPackUI\Bookings\Exceptions\SlotLockTimeoutException;
+use ArtisanPackUI\Bookings\Exceptions\SlotUnavailableException;
 use ArtisanPackUI\Bookings\Models\Booking;
 use ArtisanPackUI\Bookings\Models\IntakeSchemaVersion;
 use ArtisanPackUI\Bookings\Services\BookingService;
@@ -133,7 +136,7 @@ class BookingDetail extends Component
         try {
             app( BookingService::class )->cancel( $this->booking(), BookingActor::Admin, $reason );
         } catch ( BookingException $exception ) {
-            $this->addError( 'booking', $exception->getMessage() );
+            $this->addError( 'booking', $this->bookingErrorMessage( $exception ) );
 
             return;
         }
@@ -174,7 +177,7 @@ class BookingDetail extends Component
         try {
             app( BookingService::class )->reschedule( $this->booking(), $start, BookingActor::Admin );
         } catch ( BookingException $exception ) {
-            $this->addError( 'rescheduleStart', $exception->getMessage() );
+            $this->addError( 'rescheduleStart', $this->bookingErrorMessage( $exception ) );
 
             return;
         }
@@ -196,7 +199,7 @@ class BookingDetail extends Component
         try {
             app( BookingService::class )->markNoShow( $this->booking(), BookingActor::Admin );
         } catch ( BookingException $exception ) {
-            $this->addError( 'booking', $exception->getMessage() );
+            $this->addError( 'booking', $this->bookingErrorMessage( $exception ) );
 
             return;
         }
@@ -287,6 +290,29 @@ class BookingDetail extends Component
             'booking'       => $booking,
             'intakeAnswers' => $this->intakeAnswers( $booking ),
         ] );
+    }
+
+    /**
+     * Maps a domain exception to translated, operator-facing copy.
+     *
+     * The exception messages are developer-phrased — raw ids, enum slugs — so
+     * they are mapped by type rather than shown, keeping internal wording out of
+     * the admin's error bag and leaving every message translatable.
+     *
+     * @since 1.0.0
+     *
+     * @param  BookingException  $exception  The exception the service raised.
+     *
+     * @return string The translated message.
+     */
+    protected function bookingErrorMessage( BookingException $exception ): string
+    {
+        return match ( true ) {
+            $exception instanceof SlotUnavailableException          => __( 'That appointment time is no longer available. Please choose another.' ),
+            $exception instanceof SlotLockTimeoutException          => __( 'That appointment time is busy right now. Please try again.' ),
+            $exception instanceof InvalidBookingTransitionException => __( 'That change can no longer be made to this booking.' ),
+            default                                                 => __( 'The booking could not be updated.' ),
+        };
     }
 
     /**

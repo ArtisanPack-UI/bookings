@@ -5,6 +5,7 @@ declare( strict_types=1 );
 use ArtisanPackUI\Bookings\Models\Service;
 use ArtisanPackUI\Bookings\Models\ServiceProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\Concerns\TestsWithSqlite;
 
 uses( TestsWithSqlite::class, RefreshDatabase::class );
@@ -53,6 +54,39 @@ it( 'offers no slot at a local time the clocks skipped', function (): void {
             '2026-03-08 08:00',
             '2026-03-08 09:00',
         ] );
+} );
+
+it( 'clamps a window that opens inside the spring-forward gap rather than failing the day', function (): void {
+    // A schedule authored to open at 02:30 names a local time that does not exist
+    // on 2026-03-08 — the clocks jump 02:00 to 03:00. Resolving the day used to
+    // throw and 500 the whole public availability path once a year; now the
+    // window clamps to the instant the clock jumped to and the day still resolves.
+    [ $service, $provider ] = serviceWorkedEveryDayIn( 'America/Chicago', '02:30', '06:00' );
+
+    $slots = availability()->resolve( $service, $provider, localDayWindow( '2026-03-08', 'America/Chicago' ) );
+
+    expect( $slots )->not->toBeEmpty();
+
+    foreach ( localStarts( $slots, 'America/Chicago' ) as $start ) {
+        expect( $start >= '03:00' )->toBeTrue();
+    }
+} );
+
+it( 'still fails the day on a genuinely unreadable schedule time', function (): void {
+    // The clamp is for the one local hour that does not exist, not for a corrupt
+    // value: a stored time that is not a time of day must still surface rather
+    // than be silently swallowed into an empty day.
+    [ $service, $provider ] = serviceWorkedEveryDayIn( 'America/Chicago', '09:00', '17:00' );
+
+    DB::table( 'availability_schedules' )
+        ->where( 'provider_id', $provider->getKey() )
+        ->update( [ 'start_time_local' => '38:00:00' ] );
+
+    expect( fn (): array => availability()->resolve(
+        $service,
+        $provider,
+        localDayWindow( '2026-09-01', 'America/Chicago' ),
+    ) )->toThrow( RuntimeException::class );
 } );
 
 it( 'offers both occurrences of a repeated local hour when the clocks go back', function (): void {

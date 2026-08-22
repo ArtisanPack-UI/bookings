@@ -45,6 +45,31 @@ function parseInstant(iso: string): Date {
 }
 
 /**
+ * Names a `YYYY-MM` month key, e.g. `September 2025`.
+ *
+ * Shared by the React and Vue availability calendars so the two frameworks
+ * label a month identically. A key that does not parse is returned unchanged
+ * rather than rendered as `Invalid Date`.
+ *
+ * @param month - A `YYYY-MM` month key.
+ * @param locale - The BCP 47 locale, defaulting to the runtime's.
+ * @returns The localized month and year, e.g. `September 2025`.
+ */
+export function monthLabel(month: string, locale?: string): string {
+	const date = new Date(`${month}-01T00:00:00Z`);
+
+	if (Number.isNaN(date.getTime())) {
+		return month;
+	}
+
+	return new Intl.DateTimeFormat(locale, {
+		timeZone: 'UTC',
+		month: 'long',
+		year: 'numeric',
+	}).format(date);
+}
+
+/**
  * Formats a slot's start time as a wall-clock time.
  *
  * @param iso - An ISO 8601 instant, typically a slot's `start` or `end`.

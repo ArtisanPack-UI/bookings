@@ -34,6 +34,11 @@ use Illuminate\Support\Carbon;
  * Apple has no push mechanism, so an Apple connection has no row here and is
  * polled instead.
  *
+ * `subscription_id` is unused by the bundled Google driver, which identifies a
+ * channel by `channel_id` and `resource_id`. It is a deliberate seam for
+ * `artisanpack-ui/microsoft`, whose Graph subscriptions are keyed by a single
+ * subscription id — kept so a future sweep does not read it as dead and drop it.
+ *
  * @package    ArtisanPack_UI
  * @subpackage Bookings
  *
