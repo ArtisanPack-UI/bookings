@@ -41,7 +41,10 @@ jobs:
       - name: Run tests
         env:
           XDEBUG_MODE: off
-        run: vendor/bin/pest --no-coverage
+        # The mysql/postgres groups need live DB servers this job does not
+        # provision; ci.yml already runs them against service containers on every
+        # push and PR. Exclude them here so the release gate is the sqlite suite.
+        run: vendor/bin/pest --no-coverage --exclude-group=mysql,postgres
 
   test-js:
     runs-on: ubuntu-latest
