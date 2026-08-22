@@ -7,6 +7,8 @@ use PhpCsFixer\Finder;
 
 $finder = Finder::create()
     ->in([
+        __DIR__ . '/config',
+        __DIR__ . '/database',
         __DIR__ . '/src',
         __DIR__ . '/tests',
     ])
@@ -45,6 +47,14 @@ $config
 
         // Blank lines
         'blank_line_after_opening_tag' => true,
+        // Set explicitly. Without it, the "use" token below strips the blank
+        // line between the class, function, and constant import groups, which
+        // the Laravel preset Pint runs on top of puts straight back — leaving
+        // `composer fix` and `composer lint` fighting over any file importing
+        // both a class and a native function. With both rules on, PHP-CS-Fixer
+        // collapses stray blank lines *within* a group and leaves the ones
+        // *between* groups alone, which is what Pint wants too.
+        'blank_line_between_import_groups' => true,
         'no_extra_blank_lines' => [
             'tokens' => ['extra', 'throw', 'use'],
         ],
@@ -131,9 +141,6 @@ $config
         // WordPress-style spacing (custom fixers)
         'ArtisanPackUI/spaces_inside_parenthesis' => true,
         'ArtisanPackUI/spaces_inside_brackets' => true,
-
-        // NOTE: declare_strict_types is intentionally NOT enabled
-        // to maintain flexibility for packages built from this blueprint
     ])
     ->setFinder($finder);
 

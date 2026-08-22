@@ -1,2 +1,7 @@
+.php-cs-fixer.cache
 vendor/
+storage/
+node_modules/
+dist/
 .idea/
+.DS_Store

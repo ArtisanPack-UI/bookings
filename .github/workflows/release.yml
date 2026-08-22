@@ -43,8 +43,36 @@ jobs:
           XDEBUG_MODE: off
         run: vendor/bin/pest --no-coverage
 
+  test-js:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    name: Test JS before release
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run JS tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
   release:
-    needs: test
+    needs: [test, test-js]
     runs-on: ubuntu-latest
     name: Create Release
 
@@ -104,3 +132,49 @@ jobs:
             "https://packagist.org/api/update-package?username=${{ secrets.PACKAGIST_USERNAME }}&apiToken=${{ secrets.PACKAGIST_API_TOKEN }}" \
             -d "{\"repository\":{\"url\":\"https://github.com/${{ github.repository }}\"}}" \
             -H "Content-Type: application/json"
+
+  publish-npm:
+    needs: [test, test-js]
+    runs-on: ubuntu-latest
+    name: Publish @artisanpack-ui/bookings-js to npm
+
+    permissions:
+      contents: read
+      # Required for npm provenance (`npm publish --provenance`).
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Verify tag matches package.json version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "Tag version ($TAG_VERSION) does not match package.json version ($PKG_VERSION)" >&2
+            echo "Bump package.json to match the tag before releasing." >&2
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish to npm
+        # First publish creates @artisanpack-ui/bookings-js on the registry; the
+        # NPM_TOKEN secret must belong to the @artisanpack-ui npm org. --provenance
+        # attaches a signed build attestation (needs the id-token permission above).
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

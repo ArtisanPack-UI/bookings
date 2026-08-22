@@ -1,12 +1,20 @@
 {
   "name": "artisanpack-ui/bookings",
-  "description": "Bookings package for the ArtisanPack UI ecosystem.",
+  "description": "Appointment scheduling and booking management for Laravel — services, availability, bookings, calendar sync, and a public booking widget.",
   "type": "library",
-  "license": "GPL-3.0-or-later",
-  "version": "1.0.0",
+  "license": "MIT",
+  "keywords": [
+    "laravel",
+    "bookings",
+    "appointments",
+    "scheduling",
+    "availability",
+    "calendar"
+  ],
   "autoload": {
     "psr-4": {
-      "ArtisanPackUI\\Bookings\\": "src/"
+      "ArtisanPackUI\\Bookings\\": "src/",
+      "ArtisanPackUI\\Bookings\\Database\\Factories\\": "database/factories/"
     },
     "files": [
       "src/helpers.php"
@@ -14,7 +22,8 @@
   },
   "autoload-dev": {
     "psr-4": {
-      "Tests\\": "tests/"
+      "Tests\\": "tests/",
+      "ArtisanPackUI\\Bookings\\Benchmarks\\": "benchmarks/support/"
     }
   },
   "authors": [
@@ -25,39 +34,79 @@
   ],
   "require": {
     "php": "^8.2",
-    "illuminate/support": "^10.0|^11.0|^12.0",
-    "artisanpack-ui/core": "^1.0"
+    "artisanpack-ui/core": "^1.3",
+    "artisanpack-ui/hooks": "^1.2",
+    "artisanpack-ui/security": "^2.0",
+    "illuminate/bus": "^11.0|^12.0|^13.0",
+    "illuminate/console": "^11.0|^12.0|^13.0",
+    "illuminate/database": "^11.0|^12.0|^13.0",
+    "illuminate/http": "^11.0|^12.0|^13.0",
+    "illuminate/notifications": "^11.0|^12.0|^13.0",
+    "illuminate/queue": "^11.0|^12.0|^13.0",
+    "illuminate/support": "^11.0|^12.0|^13.0",
+    "nesbot/carbon": "^2.0|^3.0",
+    "sabre/vobject": "^4.5",
+    "simshaun/recurr": "^5.0"
   },
   "require-dev": {
-    "pestphp/pest": "^3.8",
-    "pestphp/pest-plugin-laravel": "^3.2",
     "artisanpack-ui/code-style": "^1.1",
     "artisanpack-ui/code-style-pint": "^1.1",
     "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
+    "friendsofphp/php-cs-fixer": "^3.75",
     "laravel/pint": "^1.26",
-    "orchestra/testbench": "^10.2",
-    "friendsofphp/php-cs-fixer": "^3.75"
+    "livewire/livewire": "^3.6|^4.0",
+    "orchestra/testbench": "^9.0|^10.0|^11.0",
+    "pestphp/pest": "^3.8",
+    "pestphp/pest-plugin-laravel": "^3.2"
+  },
+  "suggest": {
+    "artisanpack-ui/accessibility": "Derives accessible text colours for the admin screens and the public booking widget theme.",
+    "artisanpack-ui/apple": "Enables the Apple/CalDAV calendar sync driver.",
+    "artisanpack-ui/cms-framework": "Adds the bookings admin navigation, permissions, and settings module. The package runs standalone without it.",
+    "artisanpack-ui/forms": "Enables the booking_slot custom field type and lets a form submission create a booking.",
+    "artisanpack-ui/google": "Enables the Google Calendar sync driver.",
+    "artisanpack-ui/icons": "Renders the icon names the admin navigation carries (e.g. fas.calendar-check). The package references them as strings; the consuming app registers the icon set.",
+    "artisanpack-ui/livewire-ui-components": "Renders the admin and widget screens with x-artisanpack-* components. Falls back to plain HTML/DaisyUI when absent.",
+    "artisanpack-ui/media-library": "Stores service and provider images. Plain image URLs are supported when absent.",
+    "artisanpack-ui/microsoft": "Enables the Outlook/Microsoft 365 calendar sync driver.",
+    "livewire/livewire": "Renders the public booking widget and the admin screens. The REST API, the iCal feeds, and the no-JavaScript booking form work without it."
   },
   "scripts": {
     "lint": [
       "./vendor/bin/php-cs-fixer fix --dry-run --diff",
+      "./vendor/bin/pint --test",
       "./vendor/bin/phpcs"
     ],
-    "fix": "./vendor/bin/php-cs-fixer fix",
+    "fix": [
+      "./vendor/bin/pint",
+      "./vendor/bin/php-cs-fixer fix"
+    ],
     "cs": "./vendor/bin/phpcs",
     "cs:fix": "./vendor/bin/phpcbf",
-    "test": "./vendor/bin/pest"
+    "test": "./vendor/bin/pest",
+    "test:sqlite": "./vendor/bin/pest --exclude-group=mysql,postgres",
+    "test:mysql": "./vendor/bin/pest --group=mysql",
+    "test:postgres": "./vendor/bin/pest --group=postgres",
+    "bench": [
+      "@php benchmarks/availability.php",
+      "@php benchmarks/calendar-sync.php"
+    ],
+    "bench:availability": "@php benchmarks/availability.php",
+    "bench:calendar-sync": "@php benchmarks/calendar-sync.php"
   },
   "config": {
     "allow-plugins": {
-      "pestphp/pest-plugin": true,
-      "dealerdirect/phpcodesniffer-composer-installer": true
-    }
+      "dealerdirect/phpcodesniffer-composer-installer": true,
+      "pestphp/pest-plugin": true
+    },
+    "sort-packages": true
   },
+  "minimum-stability": "dev",
+  "prefer-stable": true,
   "extra": {
     "laravel": {
       "providers": [
-        "ArtisanPackUI\\Bookings\\BookingsServiceProvider"
+        "ArtisanPackUI\\Bookings\\Providers\\BookingsServiceProvider"
       ],
       "aliases": {
         "Bookings": "ArtisanPackUI\\Bookings\\Facades\\Bookings"
