@@ -358,11 +358,22 @@ return [
     | CMS navigation entry is registered only when artisanpack-ui/cms-framework
     | is installed and "auto_register_cms_nav" is true.
     |
+    | "routesEnabled" is for the host that brings its own admin. The package's
+    | "bookings-admin/…" screens are a face for its services, and an application
+    | that has built its own face for them — an Inertia or React admin, say — has
+    | no use for a second one, live where Livewire is installed and dead route
+    | table entries where it is not. Turn it off and "routes/admin.php" is not
+    | mounted at all; the services, models, and events those screens drove are
+    | untouched, and so are the public API and iCal feeds. The gate and the
+    | ability stay yours to define either way — this decides only whether the
+    | package's own screens exist, not who may reach them.
+    |
     */
     'admin' => [
         'route_prefix'          => 'bookings-admin',
         'gate'                  => 'bookings.manage',
         'auto_register_cms_nav' => true,
+        'routesEnabled'         => true,
     ],
 
     /*
@@ -421,11 +432,19 @@ return [
     | an email. Left unset, the confirmation carries no link at all rather than
     | one that goes nowhere.
     |
+    | "widgetEnabled" mounts the no-JS Blade widget's form target, the one
+    | "POST {route_prefix}/widget" that a plain HTML booking form submits to. A
+    | host whose booking flow never renders that widget — one routing bookings
+    | through its own forms — turns it off, and the JSON API, the iCal feeds, and
+    | the manage endpoints on the same public surface carry on unchanged. It is
+    | the widget's session-backed form target alone that stops registering.
+    |
     */
     'public' => [
-        'route_prefix' => 'bookings',
-        'manage_url'   => env( 'ARTISANPACK_BOOKINGS_MANAGE_URL' ),
-        'rate_limits'  => [
+        'route_prefix'   => 'bookings',
+        'widgetEnabled'  => true,
+        'manage_url'     => env( 'ARTISANPACK_BOOKINGS_MANAGE_URL' ),
+        'rate_limits'    => [
             'post'         => 5,
             'read'         => 60,
             'manage_get'   => 20,
@@ -433,7 +452,7 @@ return [
             'ical'         => 30,
             'ical_token'   => 30,
         ],
-        'ical'         => [
+        'ical'           => [
             'past_days'   => 30,
             'future_days' => 365,
             'max_age'     => 300,
