@@ -627,8 +627,14 @@ class BookingsServiceProvider extends ServiceProvider
         Route::middleware( 'api' )->group( __DIR__ . '/../../routes/public.php' );
 
         // The widget's plain-HTML form target, which needs the session and the
-        // CSRF token the `api` group deliberately does without.
-        Route::middleware( 'web' )->group( __DIR__ . '/../../routes/widget.php' );
+        // CSRF token the `api` group deliberately does without. A host whose
+        // booking flow never renders the no-JS widget — one routing bookings
+        // through its own forms — switches this off, and the JSON API, iCal
+        // feeds, and manage endpoints loaded just above are untouched: only the
+        // widget's `POST {prefix}/widget` target stops registering.
+        if ( (bool) config( 'artisanpack.bookings.public.widgetEnabled', true ) ) {
+            Route::middleware( 'web' )->group( __DIR__ . '/../../routes/widget.php' );
+        }
     }
 
     /**
@@ -666,6 +672,19 @@ class BookingsServiceProvider extends ServiceProvider
         } );
 
         if ( $this->app->routesAreCached() ) {
+            return;
+        }
+
+        // A host that has built its own admin over this package's services —
+        // an Inertia or React one, where Livewire is not even installed — has
+        // no use for the `bookings-admin/*` screens, and every one of them
+        // registered is a dead route resolving to a component it will never
+        // render (or, where Livewire is present, a live second admin it did not
+        // build). Off, the screens do not register at all. The `bookings.admin`
+        // alias and the view composer above are left in place regardless: they
+        // cost nothing, and a cached admin route from a build made while this
+        // was on must still resolve its middleware and choose its layout.
+        if ( ! (bool) config( 'artisanpack.bookings.admin.routesEnabled', true ) ) {
             return;
         }
 
