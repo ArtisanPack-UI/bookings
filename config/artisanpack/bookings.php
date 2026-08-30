@@ -363,10 +363,12 @@ return [
     | that has built its own face for them — an Inertia or React admin, say — has
     | no use for a second one, live where Livewire is installed and dead route
     | table entries where it is not. Turn it off and "routes/admin.php" is not
-    | mounted at all; the services, models, and events those screens drove are
-    | untouched, and so are the public API and iCal feeds. The gate and the
-    | ability stay yours to define either way — this decides only whether the
-    | package's own screens exist, not who may reach them.
+    | mounted at all, and the cms-framework nav entries go with it, so the host
+    | is not handed a menu of links into screens that no longer exist. The
+    | services, models, and events those screens drove are untouched, and so are
+    | the public API and iCal feeds. The gate and the ability stay yours to
+    | define either way — this decides only whether the package's own screens
+    | exist, not who may reach them.
     |
     */
     'admin' => [

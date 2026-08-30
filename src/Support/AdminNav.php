@@ -196,10 +196,13 @@ final class AdminNav
     /**
      * Subscribes the bookings entries to cms-framework's admin menu.
      *
-     * Bound only when the application has left `admin.auto_register_cms_nav` on —
-     * an installation that mounts the screens somewhere of its own choosing turns
-     * it off and keeps the shell's menu its own — and only when cms-framework is
-     * actually installed. The gate is {@see HookSubscriptions::whenInstalled()}
+     * Bound only when the admin routes are registered (`admin.routesEnabled`) —
+     * the menu links into those screens, so it is suppressed with them rather
+     * than left publishing `#` entries — and when the application has left
+     * `admin.auto_register_cms_nav` on, an installation that mounts the screens
+     * somewhere of its own choosing turning that off to keep the shell's menu
+     * its own. And only when cms-framework is actually installed: the gate is
+     * {@see HookSubscriptions::whenInstalled()}
      * rather than a bare `addFilter()` because the callback references a hook
      * that only exists in cms-framework, and the gate keeps it from being wired
      * onto a filter the application will never apply.
@@ -210,6 +213,15 @@ final class AdminNav
      */
     public static function subscribeToCmsMenu(): bool
     {
+        // The menu is nothing but links into the admin screens, so once those
+        // routes are switched off it has nowhere to point — every entry would
+        // resolve to `#` through `self::url()`. A host that disabled the routes
+        // and left auto-registration on gets no menu rather than a dead one; the
+        // routes not existing is the stronger fact, so it is checked first.
+        if ( ! config( 'artisanpack.bookings.admin.routesEnabled', true ) ) {
+            return false;
+        }
+
         if ( ! config( 'artisanpack.bookings.admin.auto_register_cms_nav', true ) ) {
             return false;
         }
