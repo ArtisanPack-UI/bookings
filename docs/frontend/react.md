@@ -75,6 +75,19 @@ function CustomWidget() {
 
 Both hooks take the same options object as `BookingWidget` (`UseBookingFlowOptions` / `UseManageBookingOptions`).
 
+## The `booking_slot` forms field
+
+For a React host built on `artisanpack-ui/forms` `^1.5`, the package also ships a `booking_slot` field for the form builder — the React parallel of the server-side integration. Call `registerBookingSlotField` once at bootstrap with forms' field-registry seam and the bookings API base URL:
+
+```ts
+import * as forms from '@artisanpack-ui/forms';
+import { registerBookingSlotField } from '@artisanpack-ui/bookings-js/react';
+
+registerBookingSlotField( forms, { baseUrl: '/api/bookings' } );
+```
+
+It registers the field's palette group, settings panel, card preview, and public slot picker, reading and writing the same shapes the server field does — see [Forms](Integrations-Forms) for the full field and how a submission becomes a booking.
+
 ## The client
 
 Every component ultimately talks to `BookingsClient`. Build one yourself and pass it as `client` to share it across components — see [Headless Client](Frontend-Headless-Client).

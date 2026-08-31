@@ -10,6 +10,12 @@ shipped hook is treated as breaking.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-31
+
+### Added
+
+- A React `booking_slot` form field, `registerBookingSlotField`, so a host whose form builder and renderer are React reaches the same parity with its Livewire counterpart that the server-side `Integrations\Forms\BookingSlotField` gives a Blade one. It is the React parallel of `FormsIntegration`: one call at bootstrap, handed the `artisanpack-ui/forms` `^1.5` field-registry seam and this package's public API base URL, registers the same four surfaces the PHP integration binds to the `ap.forms.*` filters — the public slot picker, the editor settings panel, the builder canvas card preview, and a `Bookings` palette group — and each is drawn from the same `field_config` keys and writes the same slot JSON, so a form built in a React host books through the identical `FormBookingListener` a Livewire-built one does. The seam is a structural interface: the forms registry module, or the four `registerField*` functions passed by hand, satisfies it, and nothing in bookings imports forms, so the field is inert until a host wires it. Shipped from `resources/js/react/forms` behind the `@artisanpack-ui/bookings-js/react` subpath, with the component factories and the `field_config` readers exported too for a host that registers a subset or reads the stored shape itself (`ArtisanPack-UI/bookings#138`).
+
 ## [1.1.0] - 2026-08-30
 
 ### Added
