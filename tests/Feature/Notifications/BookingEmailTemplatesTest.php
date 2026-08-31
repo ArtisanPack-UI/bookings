@@ -407,12 +407,12 @@ describe( 'sending the confirmation', function (): void {
 
 dataset( 'lifecycleMessages', static function (): iterable {
     // Customer lifecycle messages are written for the customer; the two
-    // provider-facing messages are written only for the provider. Staff who are
-    // not the provider are notified through the database channel, not by email,
-    // so there is no staff email audience. Pairing a customer type with the
-    // provider audience — or a provider type with the customer audience — has no
-    // template and no meaning, so the matrix is built from the audiences each
-    // type actually renders for.
+    // provider-facing messages are written only for the provider. The four
+    // terminal transitions also render an admin copy — the opt-in staff email —
+    // for the same reader the provider copy addresses, minus the reminder, which
+    // has no admin template. Pairing a type with an audience it does not render
+    // for has no template and no meaning, so the matrix is built from the
+    // audiences each type actually renders for.
     foreach ( [
         NotificationType::Confirmation,
         NotificationType::Reminder,
@@ -421,6 +421,15 @@ dataset( 'lifecycleMessages', static function (): iterable {
         NotificationType::NoShow,
     ] as $type ) {
         yield $type->value . ' / ' . NotificationAudience::Customer->value => [ $type, NotificationAudience::Customer ];
+    }
+
+    foreach ( [
+        NotificationType::Confirmation,
+        NotificationType::Cancellation,
+        NotificationType::Reschedule,
+        NotificationType::NoShow,
+    ] as $type ) {
+        yield $type->value . ' / ' . NotificationAudience::Admin->value => [ $type, NotificationAudience::Admin ];
     }
 
     foreach ( [ NotificationType::ProviderAssigned, NotificationType::ProviderUnassigned ] as $type ) {

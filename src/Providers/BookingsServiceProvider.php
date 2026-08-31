@@ -454,6 +454,44 @@ class BookingsServiceProvider extends ServiceProvider
     }
 
     /**
+     * Determines whether staff notices go through cms-framework's centre.
+     *
+     * Detection is the default rather than the only answer. An installation may
+     * have cms-framework present for its admin shell while wanting booking
+     * notices kept in Laravel's own notification table — or the reverse, in a
+     * test — and `notifications.database.driver` says so outright:
+     *
+     * - `auto` (default) — the CMS centre when cms-framework is installed.
+     * - `cms` — always the CMS centre.
+     * - `laravel` — always Laravel's database notifications.
+     *
+     * Public because it is the one place this decision is made, and the admin
+     * email path in {@see \ArtisanPackUI\Bookings\Notifications\AdminAudienceRecipients}
+     * has to resolve its audience the same way the bound channel does: by role
+     * when the CMS centre answers, by the notifiable id list when Laravel's own
+     * channel does. Reading the answer here rather than re-deriving it keeps the
+     * email and the database notice pointed at the same staff.
+     *
+     * @since 1.0.0
+     *
+     * @return bool True when the CMS notification centre should be used.
+     */
+    public static function usesCmsNotifications(): bool
+    {
+        $driver = config( 'artisanpack.bookings.notifications.database.driver', 'auto' );
+
+        if ( 'cms' === $driver ) {
+            return true;
+        }
+
+        if ( 'laravel' === $driver ) {
+            return false;
+        }
+
+        return HookSubscriptions::isInstalled( 'cms-framework' );
+    }
+
+    /**
      * Registers the built calendar drivers into the providers filter.
      *
      * The read-only iCal driver is seeded on the registry directly; every driver
@@ -726,37 +764,6 @@ class BookingsServiceProvider extends ServiceProvider
     protected function registerFormsIntegration(): void
     {
         FormsIntegration::subscribe();
-    }
-
-    /**
-     * Determines whether staff notices go through cms-framework's centre.
-     *
-     * Detection is the default rather than the only answer. An installation may
-     * have cms-framework present for its admin shell while wanting booking
-     * notices kept in Laravel's own notification table — or the reverse, in a
-     * test — and `notifications.database.driver` says so outright:
-     *
-     * - `auto` (default) — the CMS centre when cms-framework is installed.
-     * - `cms` — always the CMS centre.
-     * - `laravel` — always Laravel's database notifications.
-     *
-     * @since 1.0.0
-     *
-     * @return bool True when the CMS notification centre should be used.
-     */
-    protected static function usesCmsNotifications(): bool
-    {
-        $driver = config( 'artisanpack.bookings.notifications.database.driver', 'auto' );
-
-        if ( 'cms' === $driver ) {
-            return true;
-        }
-
-        if ( 'laravel' === $driver ) {
-            return false;
-        }
-
-        return HookSubscriptions::isInstalled( 'cms-framework' );
     }
 
     /**
