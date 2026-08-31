@@ -22,6 +22,7 @@ namespace ArtisanPackUI\Bookings\Providers;
 
 use ArtisanPackUI\Bookings\Bookings;
 use ArtisanPackUI\Bookings\Calendar\CalendarDriverRegistry;
+use ArtisanPackUI\Bookings\Console\Commands\BackfillSiteIdCommand;
 use ArtisanPackUI\Bookings\Console\Commands\CompletePastBookingsCommand;
 use ArtisanPackUI\Bookings\Console\Commands\EraseBookingsCommand;
 use ArtisanPackUI\Bookings\Console\Commands\IcalTokenCommand;
@@ -408,6 +409,7 @@ class BookingsServiceProvider extends ServiceProvider
 
         if ( $this->app->runningInConsole() ) {
             $this->commands( [
+                BackfillSiteIdCommand::class,
                 CompletePastBookingsCommand::class,
                 EraseBookingsCommand::class,
                 IcalTokenCommand::class,
