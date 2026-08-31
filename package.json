@@ -1,6 +1,6 @@
 {
 	"name": "@artisanpack-ui/bookings-js",
-	"version": "1.0.0",
+	"version": "1.1.0",
 	"description": "Framework-agnostic JavaScript core for the ArtisanPack UI bookings package, plus ready-made React and Vue booking widgets: typed public API client, date and timezone helpers, shared types, and the BookingWidget and ManageBooking components.",
 	"type": "module",
 	"license": "MIT",

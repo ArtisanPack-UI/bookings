@@ -21,6 +21,7 @@ use ArtisanPackUI\Bookings\Enums\NotificationType;
 use ArtisanPackUI\Bookings\Models\Booking;
 use ArtisanPackUI\Bookings\Models\NotificationLog;
 use ArtisanPackUI\Bookings\Models\ServiceProvider;
+use ArtisanPackUI\Bookings\Notifications\AdminAudienceRecipients;
 use ArtisanPackUI\Bookings\Notifications\BookingCancellation;
 use ArtisanPackUI\Bookings\Notifications\BookingConfirmation;
 use ArtisanPackUI\Bookings\Notifications\BookingNoShow;
@@ -96,6 +97,27 @@ class NotificationService
     protected const PROVIDER_NOTIFICATIONS = [
         'provider_assigned'   => BookingProviderAssigned::class,
         'provider_unassigned' => BookingProviderUnassigned::class,
+    ];
+
+    /**
+     * The lifecycle messages the admin-audience email path is willing to send.
+     *
+     * The four terminal transitions a member of staff acts on, and the four with
+     * a template under `resources/views/emails/admin/`. The reminder is left out
+     * deliberately: a staff mailbox does not need a nudge about a customer's
+     * appointment, and admitting it would render a view that was never written.
+     * A type outside this set is refused by {@see self::sendToAdmins()} rather
+     * than fataling on a missing view at send time.
+     *
+     * @since 1.1.0
+     *
+     * @var array<int, string>
+     */
+    protected const ADMIN_EMAIL_TYPES = [
+        'confirmation',
+        'cancellation',
+        'reschedule',
+        'no_show',
     ];
 
     /**
@@ -222,6 +244,99 @@ class NotificationService
                 'type'        => $type->value,
                 'provider_id' => $provider->getKey(),
                 'exception'   => $e->getMessage(),
+            ] );
+
+            return null;
+        }
+
+        $log->markSent();
+
+        return $log;
+    }
+
+    /**
+     * Emails an admin-audience copy of a lifecycle message to staff, opt-in.
+     *
+     * The staff-facing counterpart to {@see self::send()}'s customer email, for
+     * the people the `database` channel notifies: the same event, in the
+     * provider's working zone, carrying the customer's details and no manage
+     * link. It is off unless `notifications.admin.email.enabled` is set, because
+     * those staff already get the database notice and emailing them as well costs
+     * and duplicates it — so the default is to leave this path inert and change
+     * nothing about how a booking is notified.
+     *
+     * The safety rails {@see self::sendToProvider()} has are kept for the same
+     * reasons: the type's enabled flag is honoured, a booking whose personal data
+     * has been erased is refused because the staff copy carries the customer's
+     * details, and `ap.bookings.notification.sending` can still replace or
+     * suppress the message. Only the four terminal transitions in
+     * {@see self::ADMIN_EMAIL_TYPES} are sent; a type outside that set — the
+     * reminder, a provider notice — is refused rather than rendered from a view
+     * that does not exist.
+     *
+     * The whole audience is one claim and one log row keyed by booking, type, and
+     * the `admin_mail` channel — distinct from the customer's `mail` channel so
+     * the two do not race for the same key and lock one another out — recording
+     * an internal reference to the audience rather than staff addresses, the way
+     * {@see Channels\DatabaseChannel} records its own. The addresses are read by
+     * Laravel from the recipient models at send time and never stored here.
+     *
+     * @since 1.1.0
+     *
+     * @param  NotificationType  $type  Which lifecycle message to send.
+     * @param  Booking  $booking  The booking it concerns.
+     *
+     * @return NotificationLog|null The claimed row, or null when nothing was sent.
+     */
+    public function sendToAdmins( NotificationType $type, Booking $booking ): ?NotificationLog
+    {
+        if ( ! $this->isEnabled( $type ) ) {
+            return null;
+        }
+
+        if ( ! $this->isAdminEmailType( $type ) ) {
+            return null;
+        }
+
+        if ( ! $this->adminEmailEnabled() ) {
+            return null;
+        }
+
+        if ( $booking->isPiiErased() ) {
+            return null;
+        }
+
+        $recipients = new AdminAudienceRecipients();
+        $audience   = $recipients->recipients();
+
+        if ( $audience->isEmpty() ) {
+            return null;
+        }
+
+        $notification = $this->filterNotification(
+            $this->notificationFor( $type, $booking )->for( NotificationAudience::Admin ),
+            $booking,
+        );
+
+        if ( null === $notification ) {
+            return null;
+        }
+
+        $log = NotificationLog::logSend( $booking, $type, 'admin_mail', $recipients->logReference() );
+
+        if ( null === $log ) {
+            return null;
+        }
+
+        try {
+            Notifier::sendNow( $audience, $notification, [ 'mail' ] );
+        } catch ( Throwable $e ) {
+            $log->markFailed( $e->getMessage() );
+
+            Log::warning( 'A booking admin notification could not be emailed.', [
+                'booking_id' => $booking->getKey(),
+                'type'       => $type->value,
+                'exception'  => $e->getMessage(),
             ] );
 
             return null;
@@ -491,5 +606,35 @@ class NotificationService
             sprintf( 'artisanpack.bookings.notifications.%s.enabled', $type->value ),
             true,
         );
+    }
+
+    /**
+     * Determines whether a lifecycle message has an admin-audience email copy.
+     *
+     * @since 1.1.0
+     *
+     * @param  NotificationType  $type  The lifecycle message being sent.
+     *
+     * @return bool True when the type is one the admin email path sends.
+     */
+    protected function isAdminEmailType( NotificationType $type ): bool
+    {
+        return in_array( $type->value, self::ADMIN_EMAIL_TYPES, true );
+    }
+
+    /**
+     * Determines whether the admin-audience email path has been opted into.
+     *
+     * Off by default, the reason {@see self::sendToAdmins()} gives: the staff it
+     * would email already get the database notice, so an installation has to ask
+     * for the duplicate before it is sent.
+     *
+     * @since 1.1.0
+     *
+     * @return bool True when admin-audience emails should be sent.
+     */
+    protected function adminEmailEnabled(): bool
+    {
+        return (bool) config( 'artisanpack.bookings.notifications.admin.email.enabled', false );
     }
 }

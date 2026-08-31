@@ -76,6 +76,7 @@ The published file documents every key inline. The full reference follows.
 | `notifications.database.role` | `null` | Role that receives booking notices via cms-framework's notification centre |
 | `notifications.database.notifiable` | `null` | Model class notified via Laravel-native database notifications |
 | `notifications.database.ids` | `[]` | Primary keys of the notifiable model |
+| `notifications.admin.email.enabled` | `false` | Also email the staff-facing confirmation / cancellation / reschedule / no-show notices to the `database`-channel recipients (reminder excluded) |
 | `notifications.sms_driver` | `env( 'BOOKING_SMS_DRIVER', 'null' )` | Gateway class implementing `Contracts\SmsDriver`; `null` logs and sends nothing |
 
 See [Notifications Overview](Notifications) and [Text Messages](Notifications-Sms).
@@ -119,8 +120,10 @@ See [Outbound Webhooks](Notifications-Webhooks) and [Webhook Security](Advanced-
 | `admin.route_prefix` | `'bookings-admin'` | Route prefix for staff-facing admin screens |
 | `admin.gate` | `'bookings.manage'` | Authorization gate name for admin screens |
 | `admin.auto_register_cms_nav` | `true` | Register the CMS nav entry (only when cms-framework installed) |
+| `admin.routes_enabled` | `true` | Mount the `bookings-admin/*` Livewire screens; set `false` when the host brings its own admin |
 | `forms.auto_register` | `true` | Auto-register the `booking_slot` field type and submission listener |
 | `public.route_prefix` | `'bookings'` | Route prefix for the customer-facing widget/API and iCal feeds |
+| `public.widget_enabled` | `true` | Mount the no-JS Blade widget's `POST {prefix}/widget` target; set `false` when booking through your own forms |
 | `public.manage_url` | `env( 'ARTISANPACK_BOOKINGS_MANAGE_URL' )` | URL template of your self-serve manage page with `{token}` |
 
 ## Public rate limits & iCal window

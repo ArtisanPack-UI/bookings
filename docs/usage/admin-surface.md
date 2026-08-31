@@ -50,3 +50,15 @@ The gate is also applied to Livewire update requests through a persistent middle
 Each screen renders inside a layout chosen for you: `cms::admin.layouts.app` when `artisanpack-ui/cms-framework` is installed, and the package's own `bookings::admin.layouts.app` when it is not. Publish the standalone layout with `php artisan vendor:publish --tag=bookings-views` and edit the copy under `resources/views/vendor/bookings/admin/layouts/app.blade.php` to wrap the screens in your own chrome.
 
 With cms-framework installed, the screens also register themselves in its admin navigation through the `ap.cmsFramework.admin.menu` filter — a single **Bookings** section with every screen beneath it, each gated by the same `bookings.manage` ability. Turn that off with `admin.auto_register_cms_nav` when you would rather place the screens in the shell's menu yourself. See [CMS Framework](Integrations-Cms-Framework).
+
+## Disabling the admin entirely
+
+`admin.routes_enabled` (default `true`) is for the host that brings its own admin — an Inertia or React back office, say, that may not even install Livewire. The `bookings-admin/*` screens are one face for the package's services; an application that has built its own has no use for a second, live where Livewire is present and a dead route-table entry where it is not.
+
+```php
+'admin' => [
+    'routes_enabled' => false,
+],
+```
+
+Off, `routes/admin.php` is not mounted at all, and the cms-framework nav entries go with it, so the host is not handed a menu of links into screens that no longer exist. The `bookings.admin` alias and the layout view composer stay registered regardless — they cost nothing, and a cached admin route from a build made while this was on must still resolve. Nothing else moves: the services, models, and events those screens drove, the public API, and the iCal feeds are all untouched. This decides only whether the package's own screens exist, not who may reach them — the gate and its ability stay yours to define either way.

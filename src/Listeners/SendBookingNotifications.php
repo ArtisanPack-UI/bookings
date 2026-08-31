@@ -40,6 +40,12 @@ use Illuminate\Events\Dispatcher;
  * The events are `ShouldDispatchAfterCommit`, so by the time this runs the
  * booking is committed and readable by a queue worker on another connection.
  *
+ * Each terminal transition also offers staff an email copy through
+ * {@see NotificationService::sendToAdmins()}. That path is opt-in and off by
+ * default, so on a stock installation it does nothing; where it is switched on
+ * it claims its own `admin_mail` channel, so it neither races the customer's
+ * mail send nor changes the reasoning below.
+ *
  * **No listener for `BookingRequested`.** A requested booking is not yet an
  * appointment; the confirmation goes out when it becomes one. A configuration
  * that auto-confirms gets both at once, which is the same single email.
@@ -110,6 +116,7 @@ class SendBookingNotifications
     public function handleConfirmed( BookingConfirmed $event ): void
     {
         $this->notifications->send( NotificationType::Confirmation, $event->booking );
+        $this->notifications->sendToAdmins( NotificationType::Confirmation, $event->booking );
     }
 
     /**
@@ -124,6 +131,7 @@ class SendBookingNotifications
     public function handleCancelled( BookingCancelled $event ): void
     {
         $this->notifications->send( NotificationType::Cancellation, $event->booking );
+        $this->notifications->sendToAdmins( NotificationType::Cancellation, $event->booking );
     }
 
     /**
@@ -138,6 +146,7 @@ class SendBookingNotifications
     public function handleRescheduled( BookingRescheduled $event ): void
     {
         $this->notifications->send( NotificationType::Reschedule, $event->booking );
+        $this->notifications->sendToAdmins( NotificationType::Reschedule, $event->booking );
     }
 
     /**
@@ -200,5 +209,6 @@ class SendBookingNotifications
     public function handleNoShow( BookingNoShow $event ): void
     {
         $this->notifications->send( NotificationType::NoShow, $event->booking );
+        $this->notifications->sendToAdmins( NotificationType::NoShow, $event->booking );
     }
 }

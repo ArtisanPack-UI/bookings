@@ -16,6 +16,7 @@ How the booking lifecycle reaches customers, staff, and your own systems. A life
 ## In this section
 
 - [Email Notifications](Notifications-Email) - Confirmation, cancellation, and provider notices
+- [Admin Email Copies](Notifications-Admin-Emails) - Emailing staff a copy of the lifecycle notices
 - [Reminders](Notifications-Reminders) - Scheduled reminders and the cadence filter
 - [Text Messages (SMS)](Notifications-Sms) - The SMS channel and writing a gateway driver
 - [Outbound Webhooks](Notifications-Webhooks) - Signed, retried, SSRF-guarded deliveries
@@ -50,6 +51,8 @@ The `database` channel writes staff notices. Its `notifications.database.driver`
 - `laravel` — forces Laravel-native database notifications; set `notifications.database.notifiable` (a model class) and `notifications.database.ids`.
 
 Laravel's own notification storage expects a UUID key and a JSON `data` column. `artisanpack-ui/cms-framework` ships its own `notifications` table with an incompatible schema, so an application running both under the `laravel` driver has to point its notifiable at storage of its own. A failed write is recorded against the notification log rather than thrown, so the customer's email goes out either way; the admin row is what goes missing. See [CMS Framework](Integrations-Cms-Framework).
+
+The same staff this channel resolves can be sent an email copy of the lifecycle notices, off by default — see [Admin Email Copies](Notifications-Admin-Emails).
 
 ## The notification log & idempotency
 

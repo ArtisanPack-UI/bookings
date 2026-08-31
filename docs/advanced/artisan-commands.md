@@ -4,7 +4,7 @@ title: Artisan Commands
 
 # Artisan Commands
 
-The package ships twelve `bookings:*` commands. Some go on the schedule automatically; the rest you run in response to something.
+The package ships fourteen `bookings:*` commands. Some go on the schedule automatically; the rest you run in response to something.
 
 ## Scheduled commands
 
@@ -33,17 +33,19 @@ Every command is registered `withoutOverlapping()`. None needs it for correctnes
 
 ## On-demand commands
 
-Three commands are never scheduled — they are things you do in response to something, in front of the output:
+Four commands are never scheduled — they are things you do in response to something, in front of the output:
 
 | Command | Signature | What it does |
 | --- | --- | --- |
 | `bookings:erase` | `{--booking=} {--email=} {--dry-run}` | Scrubs personal data on a booking, or every booking for an address |
 | `bookings:reissue-detached-manage-tokens` | `{--chunk=} {--force}` | Rotates every manage token, invalidating all outstanding links |
 | `bookings:ical-token` | `{provider} {--revoke} {--force}` | Issues, rotates, or revokes a provider's feed token |
+| `bookings:backfill-site-id` | `{--site=} {--dry-run}` | Stamps a site onto pre-scoping rows before multi-tenancy is switched on |
 
 - `bookings:erase` — see [GDPR, Retention & Erasure](Advanced-Gdpr-Data-Retention).
 - `bookings:reissue-detached-manage-tokens` — see [Manage Tokens](Usage-Manage-Tokens).
 - `bookings:ical-token` — see [iCal Feeds](Usage-Ical-Feeds).
+- `bookings:backfill-site-id` — see [Multi-Site](Advanced-Multi-Site).
 
 ## `--dry-run` everywhere destructive
 

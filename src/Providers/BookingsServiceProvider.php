@@ -22,6 +22,7 @@ namespace ArtisanPackUI\Bookings\Providers;
 
 use ArtisanPackUI\Bookings\Bookings;
 use ArtisanPackUI\Bookings\Calendar\CalendarDriverRegistry;
+use ArtisanPackUI\Bookings\Console\Commands\BackfillSiteIdCommand;
 use ArtisanPackUI\Bookings\Console\Commands\CompletePastBookingsCommand;
 use ArtisanPackUI\Bookings\Console\Commands\EraseBookingsCommand;
 use ArtisanPackUI\Bookings\Console\Commands\IcalTokenCommand;
@@ -408,6 +409,7 @@ class BookingsServiceProvider extends ServiceProvider
 
         if ( $this->app->runningInConsole() ) {
             $this->commands( [
+                BackfillSiteIdCommand::class,
                 CompletePastBookingsCommand::class,
                 EraseBookingsCommand::class,
                 IcalTokenCommand::class,
@@ -449,6 +451,44 @@ class BookingsServiceProvider extends ServiceProvider
         $this->registerFormsIntegration();
 
         $this->registerCalendarDrivers();
+    }
+
+    /**
+     * Determines whether staff notices go through cms-framework's centre.
+     *
+     * Detection is the default rather than the only answer. An installation may
+     * have cms-framework present for its admin shell while wanting booking
+     * notices kept in Laravel's own notification table — or the reverse, in a
+     * test — and `notifications.database.driver` says so outright:
+     *
+     * - `auto` (default) — the CMS centre when cms-framework is installed.
+     * - `cms` — always the CMS centre.
+     * - `laravel` — always Laravel's database notifications.
+     *
+     * Public because it is the one place this decision is made, and the admin
+     * email path in {@see \ArtisanPackUI\Bookings\Notifications\AdminAudienceRecipients}
+     * has to resolve its audience the same way the bound channel does: by role
+     * when the CMS centre answers, by the notifiable id list when Laravel's own
+     * channel does. Reading the answer here rather than re-deriving it keeps the
+     * email and the database notice pointed at the same staff.
+     *
+     * @since 1.0.0
+     *
+     * @return bool True when the CMS notification centre should be used.
+     */
+    public static function usesCmsNotifications(): bool
+    {
+        $driver = config( 'artisanpack.bookings.notifications.database.driver', 'auto' );
+
+        if ( 'cms' === $driver ) {
+            return true;
+        }
+
+        if ( 'laravel' === $driver ) {
+            return false;
+        }
+
+        return HookSubscriptions::isInstalled( 'cms-framework' );
     }
 
     /**
@@ -627,8 +667,14 @@ class BookingsServiceProvider extends ServiceProvider
         Route::middleware( 'api' )->group( __DIR__ . '/../../routes/public.php' );
 
         // The widget's plain-HTML form target, which needs the session and the
-        // CSRF token the `api` group deliberately does without.
-        Route::middleware( 'web' )->group( __DIR__ . '/../../routes/widget.php' );
+        // CSRF token the `api` group deliberately does without. A host whose
+        // booking flow never renders the no-JS widget — one routing bookings
+        // through its own forms — switches this off, and the JSON API, iCal
+        // feeds, and manage endpoints loaded just above are untouched: only the
+        // widget's `POST {prefix}/widget` target stops registering.
+        if ( (bool) config( 'artisanpack.bookings.public.widget_enabled', true ) ) {
+            Route::middleware( 'web' )->group( __DIR__ . '/../../routes/widget.php' );
+        }
     }
 
     /**
@@ -669,6 +715,19 @@ class BookingsServiceProvider extends ServiceProvider
             return;
         }
 
+        // A host that has built its own admin over this package's services —
+        // an Inertia or React one, where Livewire is not even installed — has
+        // no use for the `bookings-admin/*` screens, and every one of them
+        // registered is a dead route resolving to a component it will never
+        // render (or, where Livewire is present, a live second admin it did not
+        // build). Off, the screens do not register at all. The `bookings.admin`
+        // alias and the view composer above are left in place regardless: they
+        // cost nothing, and a cached admin route from a build made while this
+        // was on must still resolve its middleware and choose its layout.
+        if ( ! (bool) config( 'artisanpack.bookings.admin.routes_enabled', true ) ) {
+            return;
+        }
+
         Route::group( [], __DIR__ . '/../../routes/admin.php' );
     }
 
@@ -705,37 +764,6 @@ class BookingsServiceProvider extends ServiceProvider
     protected function registerFormsIntegration(): void
     {
         FormsIntegration::subscribe();
-    }
-
-    /**
-     * Determines whether staff notices go through cms-framework's centre.
-     *
-     * Detection is the default rather than the only answer. An installation may
-     * have cms-framework present for its admin shell while wanting booking
-     * notices kept in Laravel's own notification table — or the reverse, in a
-     * test — and `notifications.database.driver` says so outright:
-     *
-     * - `auto` (default) — the CMS centre when cms-framework is installed.
-     * - `cms` — always the CMS centre.
-     * - `laravel` — always Laravel's database notifications.
-     *
-     * @since 1.0.0
-     *
-     * @return bool True when the CMS notification centre should be used.
-     */
-    protected static function usesCmsNotifications(): bool
-    {
-        $driver = config( 'artisanpack.bookings.notifications.database.driver', 'auto' );
-
-        if ( 'cms' === $driver ) {
-            return true;
-        }
-
-        if ( 'laravel' === $driver ) {
-            return false;
-        }
-
-        return HookSubscriptions::isInstalled( 'cms-framework' );
     }
 
     /**

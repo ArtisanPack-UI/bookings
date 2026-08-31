@@ -80,6 +80,16 @@ describe( 'the cms-framework menu subscription', function (): void {
         expect( AdminNav::subscribeToCmsMenu() )->toBeFalse();
     } );
 
+    it( 'binds nothing while the admin routes are switched off', function (): void {
+        // The menu is only links into the admin screens, so with the routes gone
+        // it would publish a set of `#` entries into the host's shell. Disabling
+        // the routes disables the menu with them, even where a host left
+        // auto-registration on.
+        config()->set( 'artisanpack.bookings.admin.routes_enabled', false );
+
+        expect( AdminNav::subscribeToCmsMenu() )->toBeFalse();
+    } );
+
     it( 'lands the bookings entries when cms-framework applies its menu filter', function (): void {
         // The subscription's own gate cannot be opened here without aliasing the
         // cms-framework probe class, and that alias is process-wide and

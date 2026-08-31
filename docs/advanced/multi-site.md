@@ -25,6 +25,15 @@ ArtisanPackSite::withoutSite( fn () => /* unscoped, for maintenance work */ );
 
 Enabling scoping on an installation that already holds bookings needs `site_id` backfilled first: rows written while it was off carry a null `site_id`, and the scope matches on equality, so they leave every site-scoped query the moment a site resolves. `acrossAllSites()` still sees them.
 
+Backfill before you switch scoping on, with `bookings:backfill-site-id`:
+
+```bash
+php artisan bookings:backfill-site-id --site=1 --dry-run   # preview the per-table counts
+php artisan bookings:backfill-site-id --site=1             # stamp the rows
+```
+
+`--site` is the identifier every pre-scoping row belongs to — on a single-tenant installation becoming site 1, that is `1`. The command walks each of the seven tables a site owns directly, spans every site with `withoutGlobalScope()` so nothing already scoped is missed, and reaches soft-deleted rows so a booking pruned for retention is stamped too. Only rows whose `site_id` is null are touched; a row already carrying a site is left as it is, so a re-run is safe. `--dry-run` reports the counts and writes nothing, and an out-of-range or missing `--site` is refused rather than guessed. Once every count reads zero, switch `artisanpack.core.multi_tenant.enabled` on.
+
 ## Interactions to know
 
 - **Series edits** run pinned to the series' own site, not the ambient one — see [Recurring Bookings](Usage-Recurring-Bookings).

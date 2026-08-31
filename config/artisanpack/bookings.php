@@ -245,6 +245,35 @@ return [
         ],
 
         /*
+        | Optional email copies of the lifecycle notices to the same staff the
+        | "database" channel notifies. Off by default: those staff already get
+        | the database notice, and emailing them as well costs and duplicates it.
+        |
+        | Turn "email.enabled" on to additionally email the confirmation,
+        | cancellation, reschedule, and no-show notices — the reminder is left
+        | out, as a staff mailbox does not need a nudge about a customer's
+        | appointment, and a message whose lifecycle type is switched off above
+        | is not emailed here either. The recipients are the same staff the
+        | "database" channel resolves, chosen the same way it is: by the "role"
+        | when this installation's database notices go through cms-framework's
+        | centre (see "driver"), otherwise by the "notifiable" model and its
+        | "ids". Named nobody, nothing is emailed.
+        |
+        | This is a direct email, not a second copy in the CMS centre, so it does
+        | not consult the per-user notification preferences that centre keeps —
+        | it goes to whichever staff the role or id list names. Suppress it for a
+        | booking through the "ap.bookings.notification.sending" filter.
+        |
+        | The copy is the staff wording in the provider's working zone, carrying
+        | the customer's contact details and no manage link — the same body the
+        | provider audience renders. It is suppressed for a booking whose
+        | personal data has been erased, which the customer's own copy is too.
+        */
+        'admin' => [
+            'email' => [ 'enabled' => false ],
+        ],
+
+        /*
         | The gateway the "sms" channel sends through.
         |
         | "null" — the default — logs the message at info level and sends
@@ -358,11 +387,24 @@ return [
     | CMS navigation entry is registered only when artisanpack-ui/cms-framework
     | is installed and "auto_register_cms_nav" is true.
     |
+    | "routes_enabled" is for the host that brings its own admin. The package's
+    | "bookings-admin/…" screens are a face for its services, and an application
+    | that has built its own face for them — an Inertia or React admin, say — has
+    | no use for a second one, live where Livewire is installed and dead route
+    | table entries where it is not. Turn it off and "routes/admin.php" is not
+    | mounted at all, and the cms-framework nav entries go with it, so the host
+    | is not handed a menu of links into screens that no longer exist. The
+    | services, models, and events those screens drove are untouched, and so are
+    | the public API and iCal feeds. The gate and the ability stay yours to
+    | define either way — this decides only whether the package's own screens
+    | exist, not who may reach them.
+    |
     */
     'admin' => [
-        'route_prefix'          => 'bookings-admin',
-        'gate'                  => 'bookings.manage',
-        'auto_register_cms_nav' => true,
+        'route_prefix'           => 'bookings-admin',
+        'gate'                   => 'bookings.manage',
+        'auto_register_cms_nav'  => true,
+        'routes_enabled'         => true,
     ],
 
     /*
@@ -421,11 +463,19 @@ return [
     | an email. Left unset, the confirmation carries no link at all rather than
     | one that goes nowhere.
     |
+    | "widget_enabled" mounts the no-JS Blade widget's form target, the one
+    | "POST {route_prefix}/widget" that a plain HTML booking form submits to. A
+    | host whose booking flow never renders that widget — one routing bookings
+    | through its own forms — turns it off, and the JSON API, the iCal feeds, and
+    | the manage endpoints on the same public surface carry on unchanged. It is
+    | the widget's session-backed form target alone that stops registering.
+    |
     */
     'public' => [
-        'route_prefix' => 'bookings',
-        'manage_url'   => env( 'ARTISANPACK_BOOKINGS_MANAGE_URL' ),
-        'rate_limits'  => [
+        'route_prefix'    => 'bookings',
+        'widget_enabled'  => true,
+        'manage_url'      => env( 'ARTISANPACK_BOOKINGS_MANAGE_URL' ),
+        'rate_limits'     => [
             'post'         => 5,
             'read'         => 60,
             'manage_get'   => 20,
@@ -433,7 +483,7 @@ return [
             'ical'         => 30,
             'ical_token'   => 30,
         ],
-        'ical'         => [
+        'ical'           => [
             'past_days'   => 30,
             'future_days' => 365,
             'max_age'     => 300,
@@ -498,7 +548,12 @@ return [
     | resolves, every one of those rows drops out of every site-scoped query at
     | once — only acrossAllSites() still sees them.
     | Backfill site_id before enabling this on an installation that already has
-    | bookings in it.
+    | bookings in it. Run
+    |
+    |     php artisan bookings:backfill-site-id --site={id}
+    |
+    | (with --dry-run first to preview the counts) to stamp every pre-scoping
+    | row with the site those rows belong to, then switch scoping on.
     |
     */
 
