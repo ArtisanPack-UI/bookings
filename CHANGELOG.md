@@ -10,6 +10,12 @@ shipped hook is treated as breaking.
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-08-31
+
+### Fixed
+
+- The JS package version (`package.json`) is bumped to match the release tag so the `@artisanpack-ui/bookings-js` npm publish completes. It was left at `1.2.0` for the v1.2.1 tag, which the release workflow rejects (`Tag version does not match package.json version`), so v1.2.1 published the composer package but not the npm one. No source changes: the JS is identical to 1.2.0/1.2.1, and the composer package is identical to 1.2.1 — this patch exists only to carry a matching `package.json` past the publish gate. Tags are immutable in this repo, so the fix is a new tag rather than a move of v1.2.1 (`ArtisanPack-UI/bookings#141`).
+
 ## [1.2.1] - 2026-08-31
 
 ### Changed
