@@ -185,3 +185,156 @@ body {
 	font-size: 0.8rem;
 	text-transform: capitalize;
 }
+
+/* booking_slot field — renderer extras */
+
+.apbk-booking-slot-label {
+	display: block;
+	margin-bottom: 0.5rem;
+}
+
+.apbk-booking-slot-description {
+	margin: 0 0 0.75rem;
+	font-size: 0.85rem;
+	color: #6b7280;
+}
+
+.apbk-booking-slot-empty,
+.apbk-empty,
+.apbk-loading {
+	margin: 0;
+	font-size: 0.9rem;
+	color: #6b7280;
+}
+
+.apbk-booking-slot-empty {
+	padding: 0.75rem;
+	border: 1px dashed #d1d5db;
+	border-radius: 0.5rem;
+	background: #f9fafb;
+}
+
+/* booking_slot field — editor settings panel */
+
+.apbk-booking-settings {
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+	padding: 1rem;
+	border: 1px solid #e5e7eb;
+	border-left: 3px solid #4f46e5;
+	border-radius: 0.5rem;
+	background: #fff;
+}
+
+.apbk-booking-settings-heading {
+	margin: 0;
+	font-size: 0.75rem;
+	font-weight: 700;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+	color: #4f46e5;
+}
+
+.apbk-booking-settings-services {
+	display: flex;
+	flex-direction: column;
+	gap: 0.4rem;
+}
+
+.apbk-booking-settings-service {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	font-size: 0.9rem;
+	cursor: pointer;
+}
+
+.apbk-booking-settings-service input {
+	width: 1rem;
+	height: 1rem;
+	accent-color: #4f46e5;
+}
+
+.apbk-booking-settings-hint {
+	margin: 0.15rem 0 0;
+	font-size: 0.8rem;
+	color: #6b7280;
+}
+
+.apbk-booking-settings-map {
+	display: flex;
+	flex-direction: column;
+	gap: 0.3rem;
+}
+
+.apbk-select {
+	padding: 0.45rem 0.5rem;
+	border: 1px solid #d1d5db;
+	border-radius: 0.5rem;
+	background: #fff;
+	font: inherit;
+}
+
+/* booking_slot field — builder-canvas preview */
+
+.apbk-booking-preview {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+}
+
+.apbk-booking-preview-heading {
+	margin: 0;
+	font-weight: 600;
+}
+
+.apbk-booking-preview-card {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	padding: 0.75rem;
+	border: 1px solid #e5e7eb;
+	border-radius: 0.5rem;
+	background: #f9fafb;
+}
+
+.apbk-booking-preview-service {
+	margin: 0;
+	font-weight: 600;
+	font-size: 0.9rem;
+}
+
+.apbk-booking-preview-calendar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	font-size: 0.8rem;
+	color: #6b7280;
+}
+
+.apbk-booking-preview-month {
+	font-variant-numeric: tabular-nums;
+}
+
+.apbk-booking-preview + .apbk-booking-preview {
+	margin-top: 1rem;
+}
+
+/* booking_slot field seam demo — value read-outs */
+
+.demo-value-label {
+	margin: 0.75rem 0 0.25rem;
+	font-size: 0.8rem;
+	font-weight: 600;
+	color: #6b7280;
+}
+
+.demo-value {
+	margin: 0;
+	padding: 0.6rem 0.75rem;
+	border-radius: 0.5rem;
+	background: #f3f4f6;
+	font-size: 0.8rem;
+	overflow-x: auto;
+}

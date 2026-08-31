@@ -38,6 +38,30 @@ A submission with no `booking_slot` field is ignored. Expected booking failures 
 
 > **Note:** forms' `FormSubmitted` event is dispatched after the submission's values are committed (it implements `ShouldDispatchAfterCommit`), so the listener always sees a complete submission.
 
+## The React field
+
+A host whose form builder and renderer are React gets the same field from the JS package. `registerBookingSlotField` is the React parallel of the PHP `FormsIntegration`: called once at bootstrap with forms' React field-registry seam and this package's public API base URL, it registers the same four surfaces — the public slot picker, the editor settings panel, the builder card preview, and a `Bookings` palette group — that the server integration binds to the `ap.forms.*` filters.
+
+```ts
+import * as forms from '@artisanpack-ui/forms';
+import { registerBookingSlotField } from '@artisanpack-ui/bookings-js/react';
+
+registerBookingSlotField( forms, { baseUrl: '/api/bookings' } );
+```
+
+`registerBookingSlotField` takes the forms seam and an options bag:
+
+| Option | Type | Meaning |
+| --- | --- | --- |
+| `baseUrl` | `string` | The bookings public API the field fetches services and slots from |
+| `timezone` | `string` | The IANA zone to render times in (defaults to the browser's) |
+| `locale` | `string` | The BCP 47 locale to format times with |
+| `client` | `BookingsClient` | A ready-made client, used in preference to `baseUrl` (chiefly for tests) |
+
+The React field reads the same `field_config` keys the server field writes and emits the same slot JSON the `FormBookingListener` reads, so a form built in a React host books through the identical listener a Livewire-built one does. The component factories (`createBookingSlotField`, `createBookingSlotSettings`, `BookingSlotCardPreview`) and the `field_config` readers (`readBookingSlotConfig`, `configuredServiceSlugs`) are exported too, for a host that registers a subset or reads the stored shape by hand. Nothing in bookings imports forms; the field is inert until a host calls `registerBookingSlotField`.
+
+Requires `artisanpack-ui/forms` `^1.5` (its React field-registry seam) — see [React Components](Frontend-React).
+
 ## Related
 
 - [Creating a Booking](Usage-Creating-Bookings) — the lifecycle a form booking joins

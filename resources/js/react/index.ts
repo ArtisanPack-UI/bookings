@@ -6,6 +6,10 @@
  * {@link useBookingFlow} and {@link useManageBooking} hooks for wiring a custom
  * layout to the same framework-agnostic flow.
  *
+ * The `forms/` module adds the {@link registerBookingSlotField} bootstrap for an
+ * `artisanpack-ui/forms` React host, bringing the `booking_slot` field to parity
+ * with the Livewire one.
+ *
  * @packageDocumentation
  */
 
@@ -23,3 +27,5 @@ export { useBookingFlow } from './useBookingFlow.js';
 export type { UseBookingFlowOptions } from './useBookingFlow.js';
 export { useManageBooking } from './useManageBooking.js';
 export type { UseManageBookingOptions } from './useManageBooking.js';
+
+export * from './forms/index.js';
