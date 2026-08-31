@@ -82,8 +82,7 @@ describe( 'the opt-in gate', function (): void {
         Notifier::assertSentTo(
             $admin,
             BookingConfirmation::class,
-            static fn ( BookingNotification $notification, array $channels ): bool =>
-                [ 'mail' ] === $channels && NotificationAudience::Admin === $notification->audience(),
+            static fn ( BookingNotification $notification, array $channels ): bool => [ 'mail' ] === $channels && NotificationAudience::Admin === $notification->audience(),
         );
     } );
 
