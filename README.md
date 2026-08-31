@@ -423,7 +423,7 @@ That `POST` route sits in the `web` middleware group — it needs the session an
 the CSRF token the JSON API deliberately does without — and redirects to the
 session's previous URL rather than to anything in the payload. A host that never
 renders this widget — one routing bookings through its own forms — stops that
-route registering with `public.widget_enabled` (default `true`); only the widget's
+route registering with `public.widgetEnabled` (default `true`); only the widget's
 session-backed form target goes, and the JSON API, the iCal feeds, and the manage
 endpoints on the same public surface carry on unchanged.
 
@@ -1089,7 +1089,7 @@ place the screens in the shell's menu yourself.
 
 A host that brings its own admin — an Inertia or React back office that may not
 even install Livewire — turns the package's screens off wholesale with
-`admin.routes_enabled` (default `true`). Off, `routes/admin.php` is not mounted at
+`admin.routesEnabled` (default `true`). Off, `routes/admin.php` is not mounted at
 all and the cms-framework nav entries go with it, so the host is not handed links
 into screens that no longer exist. The services, models, events, public API, and
 iCal feeds are untouched; this decides only whether the package's own screens

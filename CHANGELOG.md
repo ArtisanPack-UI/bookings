@@ -10,6 +10,12 @@ shipped hook is treated as breaking.
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-08-31
+
+### Changed
+
+- The two host-admin route seams are back to camelCase keys: `admin.routesEnabled` and `public.widgetEnabled` (they were snake_cased to `admin.routes_enabled` / `public.widget_enabled` in v1.1.0). This restores the casing the seams were introduced with and standardises the two on the ecosystem's config-key convention. **Breaking for a host that adopted the v1.1.0/v1.2.0 snake_case names:** rename the keys in your published `config/artisanpack/bookings.php` to `routesEnabled` / `widgetEnabled`, or the seams read their `true` default and the `bookings-admin/*` screens and `POST {prefix}/widget` target register again. The gate, the ability, and every other behaviour are unchanged (`ArtisanPack-UI/bookings#141`).
+
 ## [1.2.0] - 2026-08-31
 
 ### Added

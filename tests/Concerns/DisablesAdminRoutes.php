@@ -16,7 +16,7 @@ namespace Tests\Concerns;
 /**
  * Boots the package with the staff-facing admin routes switched off.
  *
- * The `admin.routes_enabled` seam is read once, when the provider mounts its
+ * The `admin.routesEnabled` seam is read once, when the provider mounts its
  * routes during boot, so a test cannot set it after the fact — the routes are
  * already registered by the time its body runs. Setting it here, in the
  * environment the application is built from, is what lets a test assert the
@@ -39,6 +39,6 @@ trait DisablesAdminRoutes
     {
         parent::defineEnvironment( $app );
 
-        $app['config']->set( 'artisanpack.bookings.admin.routes_enabled', false );
+        $app['config']->set( 'artisanpack.bookings.admin.routesEnabled', false );
     }
 }

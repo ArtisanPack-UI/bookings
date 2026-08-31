@@ -672,7 +672,7 @@ class BookingsServiceProvider extends ServiceProvider
         // through its own forms — switches this off, and the JSON API, iCal
         // feeds, and manage endpoints loaded just above are untouched: only the
         // widget's `POST {prefix}/widget` target stops registering.
-        if ( (bool) config( 'artisanpack.bookings.public.widget_enabled', true ) ) {
+        if ( (bool) config( 'artisanpack.bookings.public.widgetEnabled', true ) ) {
             Route::middleware( 'web' )->group( __DIR__ . '/../../routes/widget.php' );
         }
     }
@@ -724,7 +724,7 @@ class BookingsServiceProvider extends ServiceProvider
         // alias and the view composer above are left in place regardless: they
         // cost nothing, and a cached admin route from a build made while this
         // was on must still resolve its middleware and choose its layout.
-        if ( ! (bool) config( 'artisanpack.bookings.admin.routes_enabled', true ) ) {
+        if ( ! (bool) config( 'artisanpack.bookings.admin.routesEnabled', true ) ) {
             return;
         }
 

@@ -196,7 +196,7 @@ final class AdminNav
     /**
      * Subscribes the bookings entries to cms-framework's admin menu.
      *
-     * Bound only when the admin routes are registered (`admin.routes_enabled`) —
+     * Bound only when the admin routes are registered (`admin.routesEnabled`) —
      * the menu links into those screens, so it is suppressed with them rather
      * than left publishing `#` entries — and when the application has left
      * `admin.auto_register_cms_nav` on, an installation that mounts the screens
@@ -218,7 +218,7 @@ final class AdminNav
         // resolve to `#` through `self::url()`. A host that disabled the routes
         // and left auto-registration on gets no menu rather than a dead one; the
         // routes not existing is the stronger fact, so it is checked first.
-        if ( ! config( 'artisanpack.bookings.admin.routes_enabled', true ) ) {
+        if ( ! config( 'artisanpack.bookings.admin.routesEnabled', true ) ) {
             return false;
         }
 

@@ -53,11 +53,11 @@ With cms-framework installed, the screens also register themselves in its admin 
 
 ## Disabling the admin entirely
 
-`admin.routes_enabled` (default `true`) is for the host that brings its own admin — an Inertia or React back office, say, that may not even install Livewire. The `bookings-admin/*` screens are one face for the package's services; an application that has built its own has no use for a second, live where Livewire is present and a dead route-table entry where it is not.
+`admin.routesEnabled` (default `true`) is for the host that brings its own admin — an Inertia or React back office, say, that may not even install Livewire. The `bookings-admin/*` screens are one face for the package's services; an application that has built its own has no use for a second, live where Livewire is present and a dead route-table entry where it is not.
 
 ```php
 'admin' => [
-    'routes_enabled' => false,
+    'routesEnabled' => false,
 ],
 ```
 
