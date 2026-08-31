@@ -439,6 +439,7 @@ abstract class BookingNotification extends Notification
     {
         return match ( $this->audience ) {
             NotificationAudience::Provider => $this->providerSubject(),
+            NotificationAudience::Admin    => $this->adminSubject(),
             default                        => $this->defaultSubject(),
         };
     }
@@ -454,6 +455,7 @@ abstract class BookingNotification extends Notification
     {
         return match ( $this->audience ) {
             NotificationAudience::Provider => $this->providerOpeningLine(),
+            NotificationAudience::Admin    => $this->adminOpeningLine(),
             default                        => $this->openingLine(),
         };
     }

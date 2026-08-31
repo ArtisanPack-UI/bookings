@@ -245,6 +245,35 @@ return [
         ],
 
         /*
+        | Optional email copies of the lifecycle notices to the same staff the
+        | "database" channel notifies. Off by default: those staff already get
+        | the database notice, and emailing them as well costs and duplicates it.
+        |
+        | Turn "email.enabled" on to additionally email the confirmation,
+        | cancellation, reschedule, and no-show notices — the reminder is left
+        | out, as a staff mailbox does not need a nudge about a customer's
+        | appointment, and a message whose lifecycle type is switched off above
+        | is not emailed here either. The recipients are the same staff the
+        | "database" channel resolves, chosen the same way it is: by the "role"
+        | when this installation's database notices go through cms-framework's
+        | centre (see "driver"), otherwise by the "notifiable" model and its
+        | "ids". Named nobody, nothing is emailed.
+        |
+        | This is a direct email, not a second copy in the CMS centre, so it does
+        | not consult the per-user notification preferences that centre keeps —
+        | it goes to whichever staff the role or id list names. Suppress it for a
+        | booking through the "ap.bookings.notification.sending" filter.
+        |
+        | The copy is the staff wording in the provider's working zone, carrying
+        | the customer's contact details and no manage link — the same body the
+        | provider audience renders. It is suppressed for a booking whose
+        | personal data has been erased, which the customer's own copy is too.
+        */
+        'admin' => [
+            'email' => [ 'enabled' => false ],
+        ],
+
+        /*
         | The gateway the "sms" channel sends through.
         |
         | "null" — the default — logs the message at info level and sends
