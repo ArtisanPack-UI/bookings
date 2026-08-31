@@ -15,7 +15,7 @@ when you want more than the summary below.
 
 - **Getting started** — [Quick start][docs-getting-started]
 - **Usage** — [Creating a booking][docs-creating] · [Recurring bookings][docs-recurring] · [Public booking widget][docs-widget] · [Manage tokens][docs-manage-tokens] · [Self-serve page][docs-self-serve] · [iCal feeds][docs-ical] · [Admin surface][docs-admin]
-- **Notifications & webhooks** — [Email][docs-email] · [Reminders][docs-reminders] · [Text messages (SMS)][docs-sms] · [Outbound webhooks][docs-webhooks]
+- **Notifications & webhooks** — [Email][docs-email] · [Admin email copies][docs-admin-emails] · [Reminders][docs-reminders] · [Text messages (SMS)][docs-sms] · [Outbound webhooks][docs-webhooks]
 - **Integrations** — [Calendar sync (two-way)][docs-calendar-sync] · [CMS framework][docs-cms] · [Forms][docs-forms] · [Media library][docs-media]
 - **Frontend** — [React][docs-react] · [Vue][docs-vue] · [Headless client][docs-headless]
 - **API reference** — [REST API][docs-rest] · [Services][docs-services] · [Models][docs-models] · [Events][docs-events] · [Hooks & filters][docs-hooks] · [Contracts][docs-contracts]
@@ -31,6 +31,7 @@ when you want more than the summary below.
 [docs-ical]: https://github.com/ArtisanPack-UI/bookings/wiki/Usage-Ical-Feeds
 [docs-admin]: https://github.com/ArtisanPack-UI/bookings/wiki/Usage-Admin-Surface
 [docs-email]: https://github.com/ArtisanPack-UI/bookings/wiki/Notifications-Email
+[docs-admin-emails]: https://github.com/ArtisanPack-UI/bookings/wiki/Notifications-Admin-Emails
 [docs-reminders]: https://github.com/ArtisanPack-UI/bookings/wiki/Notifications-Reminders
 [docs-sms]: https://github.com/ArtisanPack-UI/bookings/wiki/Notifications-Sms
 [docs-webhooks]: https://github.com/ArtisanPack-UI/bookings/wiki/Notifications-Webhooks
@@ -420,7 +421,11 @@ leaving it to be guessed.
 
 That `POST` route sits in the `web` middleware group — it needs the session and
 the CSRF token the JSON API deliberately does without — and redirects to the
-session's previous URL rather than to anything in the payload.
+session's previous URL rather than to anything in the payload. A host that never
+renders this widget — one routing bookings through its own forms — stops that
+route registering with `public.widgetEnabled` (default `true`); only the widget's
+session-backed form target goes, and the JSON API, the iCal feeds, and the manage
+endpoints on the same public surface carry on unchanged.
 
 Because the state lives in the query string, a link is shareable and
 deep-linkable:
@@ -1082,6 +1087,14 @@ section with every screen beneath it, each gated by the same `bookings.manage`
 ability. Turn that off with `admin.auto_register_cms_nav` when you would rather
 place the screens in the shell's menu yourself.
 
+A host that brings its own admin — an Inertia or React back office that may not
+even install Livewire — turns the package's screens off wholesale with
+`admin.routesEnabled` (default `true`). Off, `routes/admin.php` is not mounted at
+all and the cms-framework nav entries go with it, so the host is not handed links
+into screens that no longer exist. The services, models, events, public API, and
+iCal feeds are untouched; this decides only whether the package's own screens
+exist, not who may reach them.
+
 ## Extending
 
 ### Contracts
@@ -1305,6 +1318,14 @@ key and a JSON `data` column. `artisanpack-ui/cms-framework` ships its own
 has to point its notifiable at storage of its own. A failed write is recorded
 against the notification log rather than thrown, so the customer's email goes out
 either way; the admin row is what goes missing.
+
+The same staff this channel resolves — the `notifications.database.role` when the
+notice goes through cms-framework's centre, otherwise the `notifiable` model and
+its `ids` — can also be emailed a copy of the confirmation, cancellation,
+reschedule, and no-show notices. It is off by default (`notifications.admin.email.enabled`),
+since those staff already get the database notice; the reminder is left out, a
+booking whose data has been erased sends nothing, and the `ap.bookings.notification.sending`
+filter suppresses it per booking. See [Admin Email Copies][docs-admin-emails].
 
 Where one of these is subscribed to rather than merely used, the binding goes
 through `Support\HookSubscriptions`, which is the single place that answers "is
