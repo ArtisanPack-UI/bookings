@@ -120,10 +120,10 @@ See [Outbound Webhooks](Notifications-Webhooks) and [Webhook Security](Advanced-
 | `admin.route_prefix` | `'bookings-admin'` | Route prefix for staff-facing admin screens |
 | `admin.gate` | `'bookings.manage'` | Authorization gate name for admin screens |
 | `admin.auto_register_cms_nav` | `true` | Register the CMS nav entry (only when cms-framework installed) |
-| `admin.routes_enabled` | `true` | Mount the `bookings-admin/*` Livewire screens; set `false` when the host brings its own admin |
+| `admin.routesEnabled` | `true` | Mount the `bookings-admin/*` Livewire screens; set `false` when the host brings its own admin |
 | `forms.auto_register` | `true` | Auto-register the `booking_slot` field type and submission listener |
 | `public.route_prefix` | `'bookings'` | Route prefix for the customer-facing widget/API and iCal feeds |
-| `public.widget_enabled` | `true` | Mount the no-JS Blade widget's `POST {prefix}/widget` target; set `false` when booking through your own forms |
+| `public.widgetEnabled` | `true` | Mount the no-JS Blade widget's `POST {prefix}/widget` target; set `false` when booking through your own forms |
 | `public.manage_url` | `env( 'ARTISANPACK_BOOKINGS_MANAGE_URL' )` | URL template of your self-serve manage page with `{token}` |
 
 ## Public rate limits & iCal window

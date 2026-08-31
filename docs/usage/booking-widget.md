@@ -29,11 +29,11 @@ What JavaScript adds is the one thing the server cannot know: the visitor's time
 
 That `POST` route sits in the `web` middleware group — it needs the session and the CSRF token the JSON API deliberately does without — and redirects to the session's previous URL rather than to anything in the payload.
 
-A host whose booking flow never renders this widget — one routing bookings through its own forms — can stop that route registering with `public.widget_enabled`:
+A host whose booking flow never renders this widget — one routing bookings through its own forms — can stop that route registering with `public.widgetEnabled`:
 
 ```php
 'public' => [
-    'widget_enabled' => false,
+    'widgetEnabled' => false,
 ],
 ```
 
