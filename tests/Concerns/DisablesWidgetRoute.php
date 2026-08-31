@@ -16,7 +16,7 @@ namespace Tests\Concerns;
 /**
  * Boots the package with the no-JS Blade widget route switched off.
  *
- * The `public.widgetEnabled` seam is read while the provider mounts the public
+ * The `public.widget_enabled` seam is read while the provider mounts the public
  * surface during boot, so — like its admin counterpart — it has to be set in
  * the environment the application is built from rather than in the test body,
  * where the route would already exist.
@@ -38,6 +38,6 @@ trait DisablesWidgetRoute
     {
         parent::defineEnvironment( $app );
 
-        $app['config']->set( 'artisanpack.bookings.public.widgetEnabled', false );
+        $app['config']->set( 'artisanpack.bookings.public.widget_enabled', false );
     }
 }

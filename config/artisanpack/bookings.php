@@ -387,7 +387,7 @@ return [
     | CMS navigation entry is registered only when artisanpack-ui/cms-framework
     | is installed and "auto_register_cms_nav" is true.
     |
-    | "routesEnabled" is for the host that brings its own admin. The package's
+    | "routes_enabled" is for the host that brings its own admin. The package's
     | "bookings-admin/…" screens are a face for its services, and an application
     | that has built its own face for them — an Inertia or React admin, say — has
     | no use for a second one, live where Livewire is installed and dead route
@@ -401,10 +401,10 @@ return [
     |
     */
     'admin' => [
-        'route_prefix'          => 'bookings-admin',
-        'gate'                  => 'bookings.manage',
-        'auto_register_cms_nav' => true,
-        'routesEnabled'         => true,
+        'route_prefix'           => 'bookings-admin',
+        'gate'                   => 'bookings.manage',
+        'auto_register_cms_nav'  => true,
+        'routes_enabled'         => true,
     ],
 
     /*
@@ -463,7 +463,7 @@ return [
     | an email. Left unset, the confirmation carries no link at all rather than
     | one that goes nowhere.
     |
-    | "widgetEnabled" mounts the no-JS Blade widget's form target, the one
+    | "widget_enabled" mounts the no-JS Blade widget's form target, the one
     | "POST {route_prefix}/widget" that a plain HTML booking form submits to. A
     | host whose booking flow never renders that widget — one routing bookings
     | through its own forms — turns it off, and the JSON API, the iCal feeds, and
@@ -472,10 +472,10 @@ return [
     |
     */
     'public' => [
-        'route_prefix'   => 'bookings',
-        'widgetEnabled'  => true,
-        'manage_url'     => env( 'ARTISANPACK_BOOKINGS_MANAGE_URL' ),
-        'rate_limits'    => [
+        'route_prefix'    => 'bookings',
+        'widget_enabled'  => true,
+        'manage_url'      => env( 'ARTISANPACK_BOOKINGS_MANAGE_URL' ),
+        'rate_limits'     => [
             'post'         => 5,
             'read'         => 60,
             'manage_get'   => 20,

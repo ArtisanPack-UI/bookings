@@ -7,7 +7,7 @@ use Tests\Concerns\DisablesWidgetRoute;
 
 uses( DisablesWidgetRoute::class );
 
-describe( 'the public.widgetEnabled seam', function (): void {
+describe( 'the public.widget_enabled seam', function (): void {
     it( 'does not register the widget form target when switched off', function (): void {
         // A host routing bookings through its own forms never renders the no-JS
         // widget, so its `POST {prefix}/widget` target is dead weight — off, it

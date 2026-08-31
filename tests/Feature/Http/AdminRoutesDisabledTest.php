@@ -22,7 +22,7 @@ function routeNamesStartingWith( string $prefix ): array
     ) );
 }
 
-describe( 'the admin.routesEnabled seam', function (): void {
+describe( 'the admin.routes_enabled seam', function (): void {
     it( 'registers not one bookings-admin screen when switched off', function (): void {
         // The whole point of the seam: the screens are a face for the package's
         // services, and a host with its own face has no use for a second one.

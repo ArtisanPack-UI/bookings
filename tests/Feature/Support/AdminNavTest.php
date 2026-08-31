@@ -85,7 +85,7 @@ describe( 'the cms-framework menu subscription', function (): void {
         // it would publish a set of `#` entries into the host's shell. Disabling
         // the routes disables the menu with them, even where a host left
         // auto-registration on.
-        config()->set( 'artisanpack.bookings.admin.routesEnabled', false );
+        config()->set( 'artisanpack.bookings.admin.routes_enabled', false );
 
         expect( AdminNav::subscribeToCmsMenu() )->toBeFalse();
     } );
