@@ -519,7 +519,12 @@ return [
     | resolves, every one of those rows drops out of every site-scoped query at
     | once — only acrossAllSites() still sees them.
     | Backfill site_id before enabling this on an installation that already has
-    | bookings in it.
+    | bookings in it. Run
+    |
+    |     php artisan bookings:backfill-site-id --site={id}
+    |
+    | (with --dry-run first to preview the counts) to stamp every pre-scoping
+    | row with the site those rows belong to, then switch scoping on.
     |
     */
 

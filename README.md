@@ -201,6 +201,21 @@ backfilled first: rows written while it was off carry a null `site_id`, and the
 scope matches on equality, so they leave every site-scoped query the moment a
 site resolves. `acrossAllSites()` still sees them.
 
+Backfill them before switching scoping on:
+
+```bash
+# Preview the counts per table without writing anything.
+php artisan bookings:backfill-site-id --site=1 --dry-run
+
+# Stamp every pre-scoping row with the site they belong to.
+php artisan bookings:backfill-site-id --site=1
+```
+
+The command walks every table a site owns directly, spans every site, and
+reaches soft-deleted rows, so a booking already pruned for retention is
+backfilled too. Run it once against the site the existing data belongs to, then
+set `ARTISANPACK_MULTI_TENANT_ENABLED=true`.
+
 ## Usage
 
 The package entry point resolves through the container, a facade, or a helper —
