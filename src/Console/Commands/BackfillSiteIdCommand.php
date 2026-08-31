@@ -151,8 +151,11 @@ class BackfillSiteIdCommand extends Command
      * Reads and validates the target site identifier.
      *
      * The `site_id` columns are unsigned big integers, so a value that is not a
-     * positive integer could never own a row and is refused rather than coerced
-     * into stamping every table with a zero.
+     * positive integer could never own a row and is refused. `FILTER_VALIDATE_INT`
+     * does the refusing rather than a regex-and-cast: a value past `PHP_INT_MAX`
+     * matches a digits-only pattern but `(int)` would clamp it to `PHP_INT_MAX`,
+     * stamping every row with a site the operator never named — so the whole
+     * point is to reject the out-of-range value instead of coercing it.
      *
      * @since 1.1.0
      *
@@ -164,21 +167,17 @@ class BackfillSiteIdCommand extends Command
 
         // The command line always hands options over as strings; a programmatic
         // caller such as Artisan::call() can pass the integer directly.
-        if ( is_int( $value ) ) {
-            return $value > 0 ? $value : null;
+        if ( is_string( $value ) ) {
+            $value = trim( $value );
         }
 
-        if ( ! is_string( $value ) ) {
+        $siteId = filter_var( $value, FILTER_VALIDATE_INT );
+
+        if ( false === $siteId || $siteId < 1 ) {
             return null;
         }
 
-        $value = trim( $value );
-
-        if ( '' === $value || 1 !== preg_match( '/^[1-9][0-9]*$/', $value ) ) {
-            return null;
-        }
-
-        return (int) $value;
+        return $siteId;
     }
 
     /**

@@ -131,9 +131,12 @@ describe( 'the --site option', function (): void {
 
         expect( $booking->fresh()->site_id )->toBeNull();
     } )->with( [
-        'zero'      => [ '0' ],
-        'negative'  => [ '-1' ],
-        'non-digit' => [ 'abc' ],
-        'empty'     => [ '' ],
+        'zero'         => [ '0' ],
+        'negative'     => [ '-1' ],
+        'non-digit'    => [ 'abc' ],
+        'empty'        => [ '' ],
+        // Past PHP_INT_MAX: a digits-only cast would clamp this to PHP_INT_MAX
+        // and stamp every row with a site the operator never named.
+        'out of range' => [ ( (string) PHP_INT_MAX ) . '0' ],
     ] );
 } );
