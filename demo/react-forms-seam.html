@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Bookings — React forms field seam demo</title>
+		<link rel="stylesheet" href="./demo.css" />
+	</head>
+	<body>
+		<div class="demo-header">
+			<h1>React booking_slot field</h1>
+			<p>
+				<a href="./index.html">← Back</a> — the <code>registerBookingSlotField</code> consumer of the
+				forms React field seam, driven by an in-memory mock API.
+			</p>
+		</div>
+
+		<div class="demo-grid">
+			<div class="demo-panel">
+				<h2>1. Renderer — one service</h2>
+				<p>A sole configured service auto-selects to the calendar.</p>
+				<div id="renderer-single"></div>
+			</div>
+			<div class="demo-panel">
+				<h2>2. Renderer — several services</h2>
+				<p>With more than one, the visitor picks the service first.</p>
+				<div id="renderer-multi"></div>
+			</div>
+			<div class="demo-panel">
+				<h2>3. Renderer — unconfigured</h2>
+				<p>No service configured yet.</p>
+				<div id="renderer-empty"></div>
+			</div>
+			<div class="demo-panel">
+				<h2>4. Editor settings panel</h2>
+				<p>Services multi-select and the Name/Email/Phone/Opt-In field mappings.</p>
+				<div id="settings"></div>
+			</div>
+			<div class="demo-panel">
+				<h2>5. Canvas preview</h2>
+				<p>Configured (left) and the unconfigured notice (right).</p>
+				<div id="preview-configured"></div>
+				<div id="preview-empty"></div>
+			</div>
+			<div class="demo-panel">
+				<h2>6. Palette group</h2>
+				<div id="palette"></div>
+			</div>
+		</div>
+
+		<script type="module" src="./react-forms-seam.tsx"></script>
+	</body>
+</html>
