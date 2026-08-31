@@ -165,6 +165,21 @@ describe('BookingSlotField renderer', () => {
 		expect(screen.getByRole('button', { name: /Color/ })).toBeTruthy();
 	});
 
+	it('renders without crashing when the config description is not a string', async () => {
+		const BookingSlot = createBookingSlotField({ baseUrl: '/api', client: client(), ...DISPLAY });
+		render(
+			<BookingSlot
+				field={field({ field_config: { service_slugs: ['haircut'], description: { bad: true } } })}
+				value={undefined}
+				onChange={() => {}}
+			/>,
+		);
+
+		// A non-string description is coerced away rather than reaching JSX, so the
+		// field still renders through to its calendar.
+		expect(await screen.findByRole('button', { name: '9:00 AM' })).toBeTruthy();
+	});
+
 	it('ignores a configured slug no active service answers to', async () => {
 		const BookingSlot = createBookingSlotField({ baseUrl: '/api', client: client(), ...DISPLAY });
 		render(

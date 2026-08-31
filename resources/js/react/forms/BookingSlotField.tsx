@@ -55,7 +55,10 @@ export function createBookingSlotField(
 	return function BookingSlotField({ field, error, onChange }: FieldComponentProps): JSX.Element {
 		const config = readBookingSlotConfig(field.field_config);
 		const slugs = useMemo(() => configuredServiceSlugs(config), [config]);
-		const description = config.description ?? '';
+		// `field_config` is a loosely-typed bag, so a malformed description could be
+		// a non-string; coercing here keeps a bad value from reaching JSX, where a
+		// non-string child throws. Mirrors the server-side `(string)` cast.
+		const description = typeof config.description === 'string' ? config.description : '';
 
 		const { state, flow } = useBookingFlow({
 			client: options.client,
